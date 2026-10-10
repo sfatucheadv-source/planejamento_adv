@@ -4,6 +4,7 @@ storage/*.sqlite-*
 storage/uploads/*
 !storage/uploads/.gitkeep
 storage/sessions/*
+storage/codigo-instalacao.txt
 !storage/sessions/.gitkeep
 app/config.local.php
 .DS_Store

@@ -57,16 +57,22 @@ php tests/fluxo_completo.php
 
 ## Publicar na Hostinger
 
-1. No hPanel, escolha **PHP 8.1 ou superior** (Avançado → Configuração do PHP) e confirme que a extensão `pdo_sqlite` está ativa (vem ativa por padrão).
-2. Envie **todos os arquivos** deste repositório para `public_html` (Gerenciador de Arquivos ou Git). O `.htaccess` da raiz serve o site a partir de `public/` e bloqueia `app/`, `storage/`, `scripts/` e `tests/`.
-   - Se preferir, aponte a raiz do domínio direto para a pasta `public/`.
-3. Crie o primeiro acesso ao painel pelo Terminal do hPanel (ou SSH):
-   ```bash
-   php scripts/criar-usuario.php "Sidney Fatuche" sidney@fatuche.adv.br "gestor,advogado,calculos,negociador,financeiro,supervisor"
-   ```
-   A senha é gerada e mostrada uma vez. Depois, adicione a equipe em **Painel → Equipe**.
-4. Ative o SSL (HTTPS) do domínio. O cookie de sessão passa a ser seguro automaticamente.
-5. Faça backup periódico de `storage/` (banco `fatuche.sqlite` e documentos em `storage/uploads/`).
+Sem terminal, só pelo hPanel. O repositório é público, então não precisa de chave de acesso.
+
+1. **PHP:** em *Avançado → Configuração do PHP*, escolha **PHP 8.1 ou mais recente**. As extensões `pdo_sqlite`, `mbstring` e `fileinfo` costumam vir ativas; se faltar alguma, o próprio site avisa qual ativar.
+2. **Código:** em *Avançado → Git*, crie um repositório com:
+   - Repositório: `https://github.com/sfatucheadv-source/planejamento_adv.git`
+   - Branch: `claude/epic-ride-hbdg7z`
+   - Diretório: deixe vazio para instalar em `public_html` (a pasta precisa estar vazia; mova ou apague o site antigo antes).
+
+   Clique em **Implantar**. Para atualizar no futuro, basta clicar em *Implantar* de novo (ou ativar a implantação automática).
+   O `.htaccess` da raiz serve o site a partir de `public/` e bloqueia `app/`, `storage/`, `scripts/` e `tests/`.
+   *Alternativa sem Git:* baixe o ZIP do GitHub (*Code → Download ZIP*), envie pelo *Gerenciador de Arquivos* para `public_html` e extraia, deixando os arquivos direto em `public_html` (não dentro de uma subpasta).
+3. **SSL:** em *Segurança → SSL*, ative o certificado do domínio.
+4. **Primeiro acesso:** abra `https://seu-dominio/painel/instalar`. A página pede um código que fica no arquivo `storage/codigo-instalacao.txt` (abra pelo *Gerenciador de Arquivos*). Informe o código, seu e-mail e uma senha. O arquivo é apagado e a página de instalação se desativa sozinha.
+   *Com terminal (SSH):* `php scripts/criar-usuario.php "Sidney Fatuche" sidney@fatuche.adv.br` também cria o acesso.
+5. **Equipe:** no painel, em *Equipe*, cadastre os colegas e as funções de cada um.
+6. **Backup:** guarde periodicamente a pasta `storage/` (banco `fatuche.sqlite` e documentos em `storage/uploads/`). Ela não vai para o Git e não é apagada pelas atualizações.
 
 Ajustes sem editar o código: copie `app/config.local.example.php` para `app/config.local.php`.
 

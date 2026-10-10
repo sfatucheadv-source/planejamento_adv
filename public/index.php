@@ -11,6 +11,17 @@ if (PHP_SAPI === 'cli-server') {
 
 require dirname(__DIR__) . '/app/bootstrap.php';
 
+// Hospedagem sem os requisitos mínimos: explica o que ativar, em vez de uma tela em branco.
+$missing = environment_problems();
+if ($missing) {
+    http_response_code(503);
+    header('Content-Type: text/html; charset=utf-8');
+    echo '<!doctype html><meta charset="utf-8"><title>Configuração pendente</title><body style="font:16px/1.6 system-ui;max-width:640px;margin:60px auto;padding:0 20px">'
+        . '<h1>Falta um ajuste na hospedagem</h1><ul><li>' . implode('</li><li>', array_map('e', $missing)) . '</li></ul>'
+        . '<p>No hPanel da Hostinger: <strong>Avançado → Configuração do PHP</strong>. Depois de salvar, recarregue esta página.</p></body>';
+    exit;
+}
+
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('X-Frame-Options: SAMEORIGIN');
@@ -28,8 +39,11 @@ try {
     $router->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', request_path());
 } catch (Throwable $e) {
     error_log('[fatuche] ' . $e->getMessage() . ' em ' . $e->getFile() . ':' . $e->getLine());
-    if (db()->inTransaction()) {
-        db()->rollBack();
+    try {
+        if (db()->inTransaction()) {
+            db()->rollBack();
+        }
+    } catch (Throwable) {
     }
     view('site/error', [
         'title'   => 'Algo deu errado do nosso lado',

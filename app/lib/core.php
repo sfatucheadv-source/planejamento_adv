@@ -392,3 +392,27 @@ function plural(int $n, string $one, string $many): string
 {
     return $n . ' ' . ($n === 1 ? $one : $many);
 }
+
+/**
+ * Requisitos que impedem o site de funcionar. Lista vazia = tudo certo.
+ * @return string[]
+ */
+function environment_problems(): array
+{
+    $p = [];
+    if (PHP_VERSION_ID < 80100) {
+        $p[] = 'Versão do PHP ' . PHP_VERSION . ': escolha PHP 8.1 ou mais recente.';
+    }
+    foreach (['pdo_sqlite' => 'pdo_sqlite (banco de dados)', 'mbstring' => 'mbstring (textos com acento)', 'fileinfo' => 'fileinfo (conferência dos arquivos enviados)'] as $ext => $label) {
+        if (!extension_loaded($ext)) {
+            $p[] = 'Ative a extensão ' . $label . '.';
+        }
+    }
+    $dir = (string) config('storage_dir');
+    if (!is_dir($dir) && !@mkdir($dir, 0700, true)) {
+        $p[] = 'A pasta storage/ não existe e não pôde ser criada.';
+    } elseif (!is_writable($dir)) {
+        $p[] = 'A pasta storage/ precisa permitir gravação (permissão 755 ou 775).';
+    }
+    return $p;
+}

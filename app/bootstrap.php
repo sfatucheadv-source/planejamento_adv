@@ -5,7 +5,9 @@ define('APP_DIR', __DIR__);
 define('ROOT_DIR', dirname(__DIR__));
 
 date_default_timezone_set('America/Sao_Paulo');
-mb_internal_encoding('UTF-8');
+if (function_exists('mb_internal_encoding')) {
+    mb_internal_encoding('UTF-8');
+}
 
 $GLOBALS['CONFIG'] = require APP_DIR . '/config.php';
 if (is_file(APP_DIR . '/config.local.php')) {

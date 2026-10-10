@@ -13,6 +13,77 @@ $router->get('/painel/entrar', function () {
     view('panel/entrar', ['meta_title' => 'Painel da equipe', 'has_users' => $hasUsers], 'panel_bare');
 });
 
+/* ---------- Instalação: primeiro acesso, sem terminal ---------- */
+
+function install_code_file(): string
+{
+    return config('storage_dir') . '/codigo-instalacao.txt';
+}
+
+$router->get('/painel/instalar', function () {
+    if ((int) scalar('SELECT COUNT(*) FROM users') > 0) {
+        redirect('painel/entrar');
+    }
+    $file = install_code_file();
+    if (!is_file($file)) {
+        @file_put_contents($file, random_code(10) . PHP_EOL);
+        @chmod($file, 0600);
+    }
+    $https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+    view('panel/instalar', [
+        'meta_title' => 'Instalação',
+        'code_ready' => is_file($file),
+        'https' => $https,
+    ], 'panel_bare');
+});
+
+$router->post('/painel/instalar', function () {
+    $bucket = 'install:' . client_ip();
+    if (too_many_attempts($bucket, 6, 15)) {
+        flash('error', 'Muitas tentativas. Aguarde 15 minutos.');
+        redirect('painel/instalar');
+    }
+    $file = install_code_file();
+    $expected = is_file($file) ? strtoupper(trim((string) file_get_contents($file))) : '';
+    $code = strtoupper(preg_replace('/\s+/', '', (string) input('code')) ?? '');
+    if ($expected === '' || strlen($expected) < 10 || !hash_equals($expected, $code)) {
+        record_attempt($bucket);
+        flash('error', 'Código de instalação incorreto. Copie o conteúdo do arquivo storage/codigo-instalacao.txt.');
+        redirect('painel/instalar');
+    }
+    $name = trim((string) input('name'));
+    $email = mb_strtolower(trim((string) input('email')));
+    $pass = (string) ($_POST['password'] ?? '');
+    if (mb_strlen($name) < 2 || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        flash('error', 'Informe nome e e-mail válidos.');
+        redirect('painel/instalar');
+    }
+    if (mb_strlen($pass) < 10 || $pass !== (string) ($_POST['password2'] ?? '')) {
+        flash('error', 'A senha precisa ter pelo menos 10 caracteres e as duas digitações precisam ser iguais.');
+        redirect('painel/instalar');
+    }
+    $pdo = db();
+    $pdo->exec('BEGIN IMMEDIATE');
+    if ((int) scalar('SELECT COUNT(*) FROM users') > 0) {
+        $pdo->exec('ROLLBACK');
+        redirect('painel/entrar');
+    }
+    $id = insert('users', [
+        'name' => $name,
+        'email' => $email,
+        'roles' => implode(',', array_keys(ROLES)),
+        'pass_hash' => password_hash($pass, PASSWORD_DEFAULT),
+        'active' => 1,
+        'created_at' => now_str(),
+    ]);
+    $pdo->exec('COMMIT');
+    @unlink($file);
+    login_user(one('SELECT * FROM users WHERE id = ?', [$id]));
+    audit('instalacao', null, $email);
+    flash('ok', 'Instalação concluída. Este é o painel da equipe; cadastre os colegas em Equipe.');
+    redirect('painel');
+});
+
 $router->post('/painel/entrar', function () {
     $email = mb_strtolower(trim((string) input('email')));
     $bucket = 'panel:' . client_ip();

@@ -14,7 +14,8 @@ $db = sys_get_temp_dir() . '/fatuche-teste-' . getmypid() . '.sqlite';
 putenv('FATUCHE_DB=' . $db);
 require $root . '/app/bootstrap.php';
 
-insert('users', ['name' => 'Advogada Teste', 'email' => 'adv@teste.local', 'roles' => implode(',', array_keys(ROLES)), 'pass_hash' => password_hash('senha-de-teste-1', PASSWORD_DEFAULT), 'active' => 1, 'created_at' => now_str()]);
+$codeFile = config('storage_dir') . '/codigo-instalacao.txt';
+@unlink($codeFile);
 
 $port = 18000 + random_int(0, 900);
 $cmd = sprintf('FATUCHE_DB=%s php -S 127.0.0.1:%d -t %s %s > /dev/null 2>&1 & echo $!', escapeshellarg($db), $port, escapeshellarg($root . '/public'), escapeshellarg($root . '/public/index.php'));
@@ -116,6 +117,24 @@ function act(Browser $b, int $id, array $data, array $files = []): void
     $b->get('/painel/caso/' . $id);
     $b->post('/painel/caso/' . $id, $data, true, $files);
 }
+
+echo "\n0. Instalação pelo navegador (sem terminal)\n";
+$team = new Browser($base);
+$team->get('/painel/entrar');
+ok(str_contains($team->html, 'painel/instalar'), 'tela de login aponta para a instalação quando não há usuários');
+$team->get('/painel/instalar');
+ok($team->status === 200 && is_file($codeFile), 'instalador cria o arquivo de código em storage/');
+$installCode = trim((string) file_get_contents($codeFile));
+$team->post('/painel/instalar', ['code' => 'ERRADO1234', 'name' => 'Advogada Teste', 'email' => 'adv@teste.local', 'password' => 'senha-de-teste-1', 'password2' => 'senha-de-teste-1']);
+ok((int) scalar('SELECT COUNT(*) FROM users') === 0, 'código errado não cria usuário');
+$team->get('/painel/instalar');
+$team->post('/painel/instalar', ['code' => strtolower($installCode), 'name' => 'Advogada Teste', 'email' => 'adv@teste.local', 'password' => 'senha-de-teste-1', 'password2' => 'senha-de-teste-1']);
+ok((int) scalar('SELECT COUNT(*) FROM users') === 1 && str_contains($team->html, 'casos ativos'), 'código certo cria o primeiro acesso e entra no painel');
+ok(!is_file($codeFile), 'arquivo de código apagado após a instalação');
+$late = new Browser($base);
+$late->get('/painel/instalar');
+$late->post('/painel/instalar', ['code' => $installCode, 'name' => 'Intruso', 'email' => 'x@x.local', 'password' => 'outra-senha-123', 'password2' => 'outra-senha-123']);
+ok((int) scalar('SELECT COUNT(*) FROM users') === 1, 'instalador fica desativado depois do primeiro acesso');
 
 echo "\n1. Site: triagem conversacional\n";
 $client = new Browser($base);

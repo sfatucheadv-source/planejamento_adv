@@ -2,7 +2,7 @@
   <div class="login-card">
     <div class="login-brand"><?php partial('mark', ['size' => 36]) ?><span>Sidney Fatuche Advocacia<small>Painel da equipe</small></span></div>
     <?php if (!$has_users): ?>
-      <p class="hint">Nenhum usuário cadastrado ainda. No servidor, rode <code>php scripts/criar-usuario.php</code> para criar o primeiro acesso.</p>
+      <p class="hint">Nenhum usuário cadastrado ainda. <a href="<?= e(url('painel/instalar')) ?>">Concluir a instalação e criar o primeiro acesso</a>.</p>
     <?php endif ?>
     <form method="post" action="<?= e(url('painel/entrar')) ?>">
       <?= csrf_field() ?>

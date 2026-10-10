@@ -317,3 +317,5 @@ details.more summary { cursor: pointer; color: var(--teal); font-weight: 600; fo
   .kpis { grid-template-columns: repeat(2, 1fr); }
   .stage-bars a, .stage-bars li:not(:has(a)) { grid-template-columns: 140px 1fr 24px; }
 }
+.login-wide { width: min(520px, 94vw); }
+.login-card .ok-line, .login-card .warn-line { margin-bottom: 12px; }
