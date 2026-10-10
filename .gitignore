@@ -1,0 +1,9 @@
+# Dados de execução (nunca versionar)
+storage/*.sqlite
+storage/*.sqlite-*
+storage/uploads/*
+!storage/uploads/.gitkeep
+storage/sessions/*
+!storage/sessions/.gitkeep
+app/config.local.php
+.DS_Store

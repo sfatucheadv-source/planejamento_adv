@@ -1,0 +1,13 @@
+# Hospedagem em que a pasta do projeto inteira é a raiz do site (ex.: public_html).
+# Tudo é servido a partir de public/; pastas internas ficam inacessíveis.
+Options -Indexes
+DirectoryIndex index.php
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(app|storage|scripts|tests)(/|$) - [F,L]
+  RewriteCond %{REQUEST_URI} !^/\.well-known/
+  RewriteRule (^|/)\. - [F,L]
+  RewriteCond %{REQUEST_URI} !^/public/
+  RewriteRule ^(.*)$ public/$1 [L]
+</IfModule>
