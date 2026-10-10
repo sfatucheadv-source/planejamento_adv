@@ -106,7 +106,7 @@ $router->post('/painel/entrar', function () {
         header('Location: ' . $to, true, 303);
         exit;
     }
-    redirect('painel');
+    redirect('painel/fila');
 });
 
 $router->get('/painel/sair', function () {
@@ -264,8 +264,183 @@ $router->post('/painel/caso/{id}', function (string $id) {
     require_user();
     $c = find_case((int) $id);
     $tab = handle_case_action($c, (string) input('op'));
+    $volta = (string) input('volta');
+    if (preg_match('#^executar/' . (int) $c['id'] . '(\?[\w=&-]*)?$#', $volta)) {
+        redirect('painel/' . $volta);
+    }
     redirect('painel/caso/' . $c['id'] . '?aba=' . $tab . (input('anchor') ? '#' . preg_replace('/\W/', '', (string) input('anchor')) : ''));
 });
+
+/* ---------- Modo guiado: fila e execução passo a passo ---------- */
+
+$router->get('/painel/fila', function () {
+    $u = require_user();
+    [$todo, $waiting] = guide_queue($u);
+    view('panel/fila', ['meta_title' => 'Minha fila · Painel', 'u' => $u, 'todo' => $todo, 'waiting' => $waiting], 'panel');
+});
+
+$router->get('/painel/executar/{id}', function (string $id) {
+    $u = require_user();
+    $c = find_case((int) $id);
+    $steps = $c['status'] === 'ativo' ? guide_state($c, $u) : [];
+    $ready = $c['status'] === 'ativo' && guide_ready($steps);
+    $mineOpen = array_filter($steps, fn($s) => $s['available'] && $s['mine'] && !$s['waiting'] && empty($s['optional']));
+    $want = (string) input('passo');
+    $current = null;
+    if ($want === '_avancar' && $c['status'] === 'ativo') {
+        $current = '_avancar';
+    } elseif ($want !== '' && isset($steps[$want]) && (!$steps[$want]['done'] || !input('apos'))) {
+        $current = $want;
+    } elseif ($mineOpen) {
+        $current = array_key_first($mineOpen);
+    } elseif ($ready && stage($c['stage'])['next'] && guide_is_mine($c, [guide_lead_role($c['stage'])], $u)) {
+        $current = '_avancar';
+    } elseif (input('apos')) {
+        // A parte desta pessoa terminou: volta para a fila.
+        $who = array_filter($steps, fn($s) => $s['available'] && !$s['done'] && empty($s['optional']));
+        $next = $who ? reset($who) : null;
+        flash('ok', 'Pronto. Sua parte em ' . $c['client_name'] . ' terminou' . ($next ? '; agora é com ' . guide_role_person($c, $next['roles'][0]) . ' (' . mb_strtolower($next['title']) . ').' : '.'));
+        redirect('painel/fila');
+    } else {
+        $open = array_filter($steps, fn($s) => !$s['done']);
+        $current = $open ? array_key_first($open) : ($c['status'] === 'ativo' && stage($c['stage'])['next'] ? '_avancar' : null);
+    }
+    $GLOBALS['GUIA_VOLTA'] = 'executar/' . $c['id'] . '?passo=' . ($current ?? '') . '&apos=1';
+    view('panel/executar', [
+        'meta_title' => $c['client_name'] . ' · executar',
+        'c' => $c,
+        'u' => $u,
+        'steps' => $steps,
+        'current' => $current,
+        'ready' => $ready,
+        'users' => users_list(),
+        'tasks' => all("SELECT * FROM tasks WHERE case_id = ? AND status = 'aberta' ORDER BY due_at IS NULL, due_at", [$c['id']]),
+        'deadlines' => all("SELECT * FROM deadlines WHERE case_id = ? AND status = 'aberto' ORDER BY due_at", [$c['id']]),
+    ], 'panel');
+});
+
+$router->post('/painel/executar/{id}', function (string $id) {
+    $u = require_user();
+    $c = find_case((int) $id);
+    $op = (string) input('op');
+    if ($op === 'avancar') {
+        $to = (string) input('to');
+        if (move_stage($c, $to, trim((string) input('reason')))) {
+            $fresh = find_case((int) $c['id']);
+            guide_set_next_action($fresh);
+            $fresh = find_case((int) $c['id']);
+            $mine = array_filter(guide_state($fresh, $u), fn($s) => $s['available'] && $s['mine'] && !$s['waiting'] && empty($s['optional']));
+            if ($mine) {
+                flash('ok', 'Caso avançou para ' . stage_label($to) . '. Continue: ' . mb_strtolower(reset($mine)['title']) . '.');
+                redirect('painel/executar/' . $c['id']);
+            }
+            $first = array_filter(guide_state($fresh, null), fn($s) => $s['available']);
+            $who = $first ? guide_role_person($fresh, reset($first)['roles'][0]) : null;
+            flash('ok', 'Pronto. ' . $c['client_name'] . ' seguiu para a etapa ' . stage_label($to) . ($who ? ', com ' . $who : '') . '. Sua parte terminou.');
+            redirect('painel/fila');
+        }
+        redirect('painel/executar/' . $c['id'] . '?passo=_avancar');
+    }
+    if ($op === 'escolha') {
+        $stepKey = (string) input('passo');
+        guide_choice($c, $stepKey, (string) input('escolha'), trim((string) input('note')));
+        redirect('painel/executar/' . $c['id'] . '?passo=' . rawurlencode($stepKey) . '&apos=1');
+    }
+    redirect('painel/executar/' . $c['id']);
+});
+
+/** Botões de conclusão de um passo: marca o checklist e aplica o efeito. */
+function guide_choice(array $c, string $stepKey, string $choiceKey, string $note): void
+{
+    $id = (int) $c['id'];
+    $steps = guide_state($c);
+    $st = $steps[$stepKey] ?? null;
+    $choice = null;
+    foreach ($st['choices'] ?? [] as $ch) {
+        if ($ch['key'] === $choiceKey) {
+            $choice = $ch;
+        }
+    }
+    if (!$st || !$choice) {
+        flash('error', 'Ação não encontrada.');
+        return;
+    }
+    if (!$st['can']) {
+        flash('error', 'Este passo é de: ' . implode(' ou ', array_map(fn($r) => ROLES[$r], $st['roles'])) . '.');
+        return;
+    }
+    if ($st['blocked_by']) {
+        flash('error', 'Antes, conclua: ' . implode('; ', array_map(fn($k) => $steps[$k]['title'], $st['blocked_by'])) . '.');
+        return;
+    }
+    if (!empty($choice['note']) && $note === '') {
+        flash('error', $choice['note']);
+        return;
+    }
+    foreach ($choice['checks'] ?? [] as [$stage, $item]) {
+        set_check($id, $stage, $item, true, $note ?: null);
+    }
+    $u = current_user();
+    switch ($choice['effect'] ?? '') {
+        case 'urgente':
+            touch_case($id, ['urgent' => 1]);
+            if (!scalar("SELECT 1 FROM tasks WHERE case_id = ? AND kind = 'avaliacao_urgencia' AND status = 'aberta'", [$id])) {
+                add_task($id, 'Avaliar urgência imediatamente (meta: 2 horas úteis)', $c['advogado_id'] ? (int) $c['advogado_id'] : null, add_business_hours(now(), 2), 'equipe', 'avaliacao_urgencia');
+            }
+            add_event($id, 'urgencia', 'Urgência encaminhada ao advogado', $note ?: null);
+            break;
+        case 'sem_urgencia':
+            add_event($id, 'urgencia', 'Sem notificação, prazo ou apreensão informados pelo cliente', $note ?: null);
+            break;
+        case 'pedir_suficiencia':
+            add_task($id, 'Avaliar se os documentos bastam para a análise', $c['advogado_id'] ? (int) $c['advogado_id'] : null, add_business_days(now(), 1), 'equipe', 'suficiencia');
+            add_event($id, 'documentos', 'Dossiê conferido pela equipe', $note ?: null);
+            break;
+        case 'suficiencia':
+            touch_case($id, ['docs_sufficient_at' => now_str()]);
+            close_tasks_of_kind($id, 'suficiencia', 'Documentos suficientes');
+            add_event($id, 'documentos', 'Documentos suficientes para a análise', 'A análise do contrato começa agora. Meta: até 2 dias úteis.', true);
+            break;
+        case 'falta_prova':
+            set_check($id, 'documentos', 'dossie_conferido', false);
+            close_tasks_of_kind($id, 'suficiencia', 'Falta prova essencial');
+            add_task($id, 'Obter prova essencial: ' . mb_strimwidth($note, 0, 140, '…'), $c['gestor_id'] ? (int) $c['gestor_id'] : null, add_business_days(now(), 2), 'cliente', 'obter_prova');
+            add_event($id, 'documentos', 'Advogado indicou prova essencial ainda faltante', $note);
+            break;
+        case 'calculo_pronto':
+            $a = case_data($c, 'audit', []);
+            $a['ready_at'] = now_str();
+            $a['ready_by'] = $u['id'];
+            set_case_data($id, 'audit', $a);
+            add_task($id, 'Validar cálculo e parecer', $c['advogado_id'] ? (int) $c['advogado_id'] : null, add_business_days(now(), 1), 'equipe', 'validar_calculo');
+            add_event($id, 'analise', 'Cálculo pronto para validação do advogado', $note ?: null);
+            break;
+        default:
+            add_event($id, 'passo', 'Passo concluído: ' . $st['title'], $note ?: null);
+    }
+    audit('passo', $id, $c['stage'] . '/' . $stepKey . '/' . $choiceKey);
+}
+
+/** Depois de mudar de etapa, o cartão do caso aponta para o primeiro passo da nova etapa. */
+function guide_set_next_action(array $c): void
+{
+    $steps = array_filter(guide_state($c, null), fn($s) => $s['available']);
+    if (!$steps) {
+        return;
+    }
+    $s = reset($steps);
+    $role = $s['roles'][0];
+    $owner = match ($role) {
+        'gestor' => $c['gestor_id'],
+        'advogado' => $c['advogado_id'],
+        default => users_with_role($role)[0]['id'] ?? null,
+    };
+    touch_case((int) $c['id'], [
+        'next_action' => $s['title'],
+        'next_action_owner_id' => $owner,
+        'next_action_due' => add_business_days(now(), 1)->format('Y-m-d H:i:s'),
+    ]);
+}
 
 /* ---------- Tarefas ---------- */
 
@@ -541,7 +716,9 @@ function handle_case_action(array $c, string $op): string
             add_event($id, 'orientacao', 'Orientação do advogado sobre pagamentos e notificações', $text, true);
             insert('messages', ['case_id' => $id, 'template' => 'orientacao', 'channel' => 'area do cliente', 'body' => $text, 'facts_checked' => 1, 'sent_by' => $u['id'], 'sent_at' => now_str()]);
             set_check($id, 'urgencia', 'orientacao_escrita', true);
-            set_check($id, 'urgencia', 'orientacao', true);
+            if (in_array($c['stage'], ['preparacao_judicial', 'processo'], true)) {
+                set_check($id, 'preparacao_judicial', 'orientacao', true);
+            }
             return 'atendimento';
 
         /* --- Documentos (etapa 3) --- */
@@ -658,6 +835,7 @@ function handle_case_action(array $c, string $op): string
                 }
                 $audit['validated_at'] = now_str();
                 $audit['validated_by'] = $u['id'];
+                close_tasks_of_kind($id, 'validar_calculo', 'Cálculo validado');
                 set_check($id, 'auditoria', 'memoria', true);
                 if (trim($audit['summary_client'] ?? '') !== '') {
                     set_check($id, 'auditoria', 'sintese', true);
@@ -925,6 +1103,10 @@ function handle_case_action(array $c, string $op): string
                 $r = DECISION_RESULTS[$j['decision_result']];
                 add_event($id, 'judicial', 'Decisão: ' . $r['label'], 'Próxima ação: ' . $r['next']);
                 add_task($id, 'Explicar a decisão ao cliente e registrar a escolha: ' . $r['client'], $c['advogado_id'] ? (int) $c['advogado_id'] : null, add_business_days(now(), 1), 'equipe', 'comunicar_decisao');
+            }
+            if (($j['appeal'] ?? '') !== '' && trim($j['appeal_reason'] ?? '') !== '') {
+                set_check($id, 'decisao_recursos', 'recurso', true);
+                set_check($id, 'decisao_recursos', 'recomendacao', true);
             }
             if (($j['hearing_at'] ?? '') !== '' && ($j['hearing_at'] ?? '') !== ($prev['hearing_at'] ?? '')) {
                 add_event($id, 'judicial', 'Audiência marcada para ' . fmt_datetime($j['hearing_at']), 'Formato: ' . ($j['hearing_format'] ?: 'a confirmar') . '. Vamos te preparar com antecedência.', true);

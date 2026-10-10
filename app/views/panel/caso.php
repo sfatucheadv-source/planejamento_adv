@@ -42,6 +42,7 @@ $curIdx = array_search($c['stage'], $stageKeys, true);
     <p class="objective"><strong>Objetivo:</strong> <?= e($c['objective'] ?: '— registrar na aba Acolhimento —') ?><?php if ($c['objective_measure']): ?> <small>· comprovação: <?= e($c['objective_measure']) ?></small><?php endif ?></p>
   </div>
   <div class="ch-side">
+    <?php if ($c['status'] === 'ativo'): ?><p><a class="b b-primary b-block" href="<?= e(url('painel/executar/' . $c['id'])) ?>">Executar passo a passo</a></p><?php endif ?>
     <p><span class="lbl">Etapa</span><strong><?= $s['n'] ?>. <?= e($s['label']) ?></strong><small>há <?= e(str_replace('há ', '', relative($c['stage_since']))) ?> · cliente vê “<?= e(CLIENT_PHASES[$s['phase']]['label']) ?>”</small></p>
     <p><span class="lbl">Gestor · Advogado · Substituto</span><?= e(first_name(user_name($c['gestor_id'] ? (int) $c['gestor_id'] : null))) ?> · <?= e(first_name(user_name($c['advogado_id'] ? (int) $c['advogado_id'] : null))) ?> · <?= e(first_name(user_name($c['substituto_id'] ? (int) $c['substituto_id'] : null))) ?></p>
   </div>

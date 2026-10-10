@@ -181,7 +181,7 @@ echo "\n3. Painel: acolhimento e urgência (etapas 1 e 2)\n";
 $team = new Browser($base);
 $team->get('/painel/entrar');
 $team->post('/painel/entrar', ['email' => 'adv@teste.local', 'password' => 'senha-de-teste-1']);
-ok(str_contains($team->html, 'casos ativos'), 'equipe entra no painel');
+ok(str_contains($team->html, 'A fazer agora'), 'equipe entra no painel pela fila de trabalho');
 act($team, $id, ['op' => 'etapa', 'to' => 'urgencia', 'reason' => '']);
 ok(case_row()['stage'] === 'acolhimento', 'avanço bloqueado sem primeiro contato, objetivo e condições');
 act($team, $id, ['op' => 'primeiro_contato', 'channel' => 'WhatsApp']);
@@ -276,7 +276,49 @@ ok((int) scalar('SELECT ease FROM feedback WHERE case_id = ?', [$id]) === 5, 'av
 $team->get('/painel/indicadores');
 ok($team->status === 200 && str_contains($team->html, 'Tempo até resposta humana'), 'indicadores calculados');
 
-echo "\n8. Segurança básica\n";
+echo "\n8. Modo guiado: fila e passo a passo\n";
+$gid = insert('users', ['name' => 'Gestora Guiada', 'email' => 'gestora@teste.local', 'phone' => null, 'roles' => 'gestor', 'pass_hash' => password_hash('senha-gestora-1', PASSWORD_DEFAULT), 'active' => 1, 'created_at' => now_str()]);
+$advId = (int) scalar("SELECT id FROM users WHERE email = 'adv@teste.local'");
+$g = create_case_from_triage([
+    'notice' => 'nenhum', 'notice_date' => '', 'bank' => 'Banco Guiado', 'contract_status' => 'ativo', 'installment_value' => 1200.0,
+    'overdue' => 'nao', 'overdue_count' => '', 'has_contract' => 'sim', 'city' => 'Curitiba', 'uf' => 'PR', 'priority' => 'reduzir_parcela',
+    'priority_text' => '', 'description' => '', 'budget_installment' => 900.0, 'other_lawyer' => 'nao', 'contact_pref' => 'whatsapp',
+    'contact_time' => '', 'accessibility' => '', 'name' => 'Cliente Guiado', 'phone' => '(41) 97777-6666', 'email' => '', 'origin' => 'teste',
+    'summary' => 'Quer reduzir a parcela.', 'summary_confirmed' => false,
+], 'whatsapp');
+$gcid = (int) $g['id'];
+q('UPDATE cases SET gestor_id = ?, advogado_id = ? WHERE id = ?', [$gid, $advId, $gcid]);
+$ges = new Browser($base);
+$ges->get('/painel/entrar');
+$ges->post('/painel/entrar', ['email' => 'gestora@teste.local', 'password' => 'senha-gestora-1']);
+ok(str_contains($ges->html, 'Cliente Guiado') && str_contains($ges->html, 'Fazer o primeiro contato'), 'fila da gestora mostra o caso e o próximo passo');
+$ges->get('/painel/executar/' . $gcid);
+ok(str_contains($ges->html, 'O que fazer') && str_contains($ges->html, 'O que dizer ao cliente'), 'passo abre com instruções e mensagem pronta');
+$volta = fn(string $k) => 'executar/' . $gcid . '?passo=' . $k . '&apos=1';
+$ges->post('/painel/caso/' . $gcid, ['op' => 'primeiro_contato', 'channel' => 'WhatsApp', 'volta' => $volta('contato')]);
+ok(str_contains($ges->html, 'Conferir o que o cliente contou'), 'ao salvar, o fluxo avança sozinho para o próximo passo');
+$ges->post('/painel/executar/' . $gcid, ['op' => 'escolha', 'passo' => 'entender', 'escolha' => 'ok']);
+ok(str_contains($ges->html, 'Registrar o objetivo'), 'botão de conclusão marca o passo e segue');
+$ges->post('/painel/caso/' . $gcid, ['op' => 'objetivo', 'objective' => 'Parcela de até R$ 900', 'objective_measure' => 'Boleto novo', 'summary_confirmed' => '1', 'volta' => $volta('objetivo')]);
+$ges->post('/painel/caso/' . $gcid, ['op' => 'conflito', 'conflict' => 'sem_conflito', 'note' => '', 'volta' => $volta('conflito')]);
+$ges->post('/painel/executar/' . $gcid, ['op' => 'escolha', 'passo' => 'urgencia', 'escolha' => 'sem']);
+$ges->post('/painel/executar/' . $gcid, ['op' => 'escolha', 'passo' => 'proximo', 'escolha' => 'ok']);
+ok(str_contains($ges->html, 'Passar o caso adiante') && str_contains($ges->html, 'sugerido'), 'etapa concluída leva à tela de passar adiante, com sugestão');
+$ges->post('/painel/executar/' . $gcid, ['op' => 'avancar', 'to' => 'documentos', 'reason' => '']);
+ok(find_case($gcid)['stage'] === 'documentos' && str_contains($ges->html, 'Enviar a lista de documentos'), 'caso avança e a gestora continua na nova etapa');
+$ges->post('/painel/executar/' . $gcid, ['op' => 'escolha', 'passo' => 'suficiencia', 'escolha' => 'ok']);
+ok(str_contains($ges->html, 'Este passo é de') || !find_case($gcid)['docs_sufficient_at'], 'gestora não executa passo do advogado');
+$ges->post('/painel/executar/' . $gcid, ['op' => 'escolha', 'passo' => 'pedir', 'escolha' => 'ok']);
+$ges->post('/painel/executar/' . $gcid, ['op' => 'escolha', 'passo' => 'conferir', 'escolha' => 'ok']);
+ok(str_contains($ges->html, 'A fazer agora') && str_contains($ges->html, 'Sua parte'), 'quando a parte dela termina, volta para a fila');
+$team->get('/painel/fila');
+ok(str_contains($team->html, 'Cliente Guiado') && str_contains($team->html, 'Avaliar se os documentos bastam'), 'caso aparece na fila do advogado');
+$team->post('/painel/executar/' . $gcid, ['op' => 'escolha', 'passo' => 'suficiencia', 'escolha' => 'ok']);
+ok((bool) find_case($gcid)['docs_sufficient_at'], 'advogado conclui o passo dele');
+$ges->get('/painel/fila');
+ok(str_contains($ges->html, 'Passar o caso para a próxima etapa'), 'gestora recebe o caso de volta para avançar a etapa');
+
+echo "\n9. Segurança básica\n";
 $anon = new Browser($base);
 $anon->get('/painel');
 ok(str_contains($anon->location . $anon->html, 'Entrar'), 'painel exige login');

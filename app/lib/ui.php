@@ -6,6 +6,10 @@ function case_form(array $c, string $op, array $hidden = [], string $class = '',
 {
     $h = '<form method="post" action="' . e(url('painel/caso/' . $c['id'])) . '" class="' . e($class) . '"' . ($multipart ? ' enctype="multipart/form-data"' : '') . '>';
     $h .= csrf_field() . '<input type="hidden" name="op" value="' . e($op) . '">';
+    // No modo guiado, toda ação volta para o passo em execução.
+    if (!empty($GLOBALS['GUIA_VOLTA']) && !isset($hidden['volta'])) {
+        $hidden['volta'] = $GLOBALS['GUIA_VOLTA'];
+    }
     foreach ($hidden as $k => $v) {
         $h .= '<input type="hidden" name="' . e($k) . '" value="' . e((string) $v) . '">';
     }

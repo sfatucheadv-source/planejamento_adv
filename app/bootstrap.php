@@ -22,5 +22,6 @@ require APP_DIR . '/lib/router.php';
 require APP_DIR . '/workflow.php';
 require APP_DIR . '/messages.php';
 require APP_DIR . '/lib/cases.php';
+require APP_DIR . '/guide.php';
 require APP_DIR . '/lib/content.php';
 require APP_DIR . '/lib/ui.php';

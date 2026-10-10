@@ -36,6 +36,14 @@ Tecnologia: **PHP 8.1+ e SQLite**, sem dependências externas. Funciona na hospe
 | 21 · Mensagens | Modelos preenchidos com os dados do caso, conferência de fatos obrigatória, abertura no WhatsApp do cliente e publicação na área do cliente |
 | 22 · Indicadores | Página *Indicadores* com todos os indicadores da tabela |
 
+### Modo guiado (fila de trabalho)
+
+Quem entra no painel cai em **Minha fila** (`/painel/fila`). Ali aparecem só os casos em que a pessoa tem algo a fazer agora, conforme as funções dela e a atribuição do caso (gestor e advogado seguem quem está no caso; cálculos, negociação e financeiro, quem tiver a função). Casos que dependem do cliente, do banco ou da Justiça ficam em “Aguardando” e voltam sozinhos quando a resposta é registrada.
+
+Ao clicar, abre **Executar** (`/painel/executar/{id}`): a etapa vira uma sequência de passos com *o que fazer*, *o que dizer ao cliente* (mensagem pronta para o WhatsApp) e os campos daquele passo. Ao salvar, o fluxo segue para o próximo passo. No fim da etapa, a tela **Passar o caso adiante** sugere a próxima etapa e mostra o que ainda impede o avanço. Quando a parte da pessoa termina, ela volta para a fila e o caso aparece na fila de quem continua. O supervisor pode executar qualquer passo para cobrir ausências.
+
+Os passos estão em `app/guide.php`; a ficha completa por abas continua disponível em *Ficha completa*.
+
 As metas internas aparecem no site como metas, nunca como garantia, e podem ser ocultadas em `app/config.php` (`show_service_goals`).
 
 ---

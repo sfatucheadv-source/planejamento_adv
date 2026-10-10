@@ -3,8 +3,10 @@ $u = current_user();
 $path = request_path();
 $flashes = take_flashes();
 $openTasks = $u ? (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'aberta' AND (owner_id = ? OR owner_id IS NULL) AND due_at <= ?", [$u['id'], now()->format('Y-m-d 23:59:59')]) : 0;
+$queueCount = $u ? count(guide_queue($u)[0]) : 0;
 $nav = [
-    'painel' => ['Hoje', 'M3 12h4l3 8 4-16 3 8h4'],
+    'painel/fila' => ['Minha fila', 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01'],
+    'painel' => ['Visão geral', 'M3 12h4l3 8 4-16 3 8h4'],
     'painel/casos' => ['Casos', 'M4 6h16M4 12h16M4 18h10'],
     'painel/tarefas' => ['Tarefas', 'M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11'],
     'painel/casos/novo' => ['Novo atendimento', 'M12 5v14M5 12h14'],
@@ -29,12 +31,12 @@ $nav = [
 <body>
 <div class="app">
   <aside class="side" data-side>
-    <a class="side-brand" href="<?= e(url('painel')) ?>"><?php partial('mark', ['size' => 28, 'light' => true]) ?><span>Fatuche<small>Painel da equipe</small></span></a>
+    <a class="side-brand" href="<?= e(url('painel/fila')) ?>"><?php partial('mark', ['size' => 28, 'light' => true]) ?><span>Fatuche<small>Painel da equipe</small></span></a>
     <nav class="side-nav">
       <?php foreach ($nav as $href => [$label, $icon]):
-        $active = $href === 'painel' ? $path === '/painel' : str_starts_with($path, '/' . $href) && !($href === 'painel/casos' && str_starts_with($path, '/painel/casos/novo'));
+        $active = $href === 'painel' ? $path === '/painel' : ($href === 'painel/fila' && str_starts_with($path, '/painel/executar')) || str_starts_with($path, '/' . $href) && !($href === 'painel/casos' && str_starts_with($path, '/painel/casos/novo'));
       ?>
-        <a class="<?= $active ? 'is-active' : '' ?>" href="<?= e(url($href)) ?>"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="<?= $icon ?>" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><?= e($label) ?><?php if ($href === 'painel/tarefas' && $openTasks): ?><span class="pill"><?= $openTasks ?></span><?php endif ?></a>
+        <a class="<?= $active ? 'is-active' : '' ?>" href="<?= e(url($href)) ?>"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="<?= $icon ?>" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><?= e($label) ?><?php if ($href === 'painel/fila' && $queueCount): ?><span class="pill"><?= $queueCount ?></span><?php endif ?><?php if ($href === 'painel/tarefas' && $openTasks): ?><span class="pill"><?= $openTasks ?></span><?php endif ?></a>
       <?php endforeach ?>
     </nav>
     <div class="side-foot">
