@@ -5,9 +5,16 @@
     <?php if (!$https): ?>
       <p class="warn-line">O endereço não está em HTTPS. Ative o SSL do domínio no hPanel (Segurança → SSL) e abra esta página com <strong>https://</strong> antes de criar a senha.</p>
     <?php endif ?>
+    <?php if (!$storage_external): ?>
+      <p class="warn-line">Os dados ainda estão dentro da pasta do site. Para que nenhuma atualização pelo Git possa apagá-los, crie no Gerenciador de Arquivos uma pasta chamada <code>fatuche-storage</code> <strong>ao lado</strong> de <code>public_html</code> (não dentro dela) e recarregue esta página.</p>
+    <?php endif ?>
     <ol class="small-ol">
       <li>No hPanel, abra <strong>Arquivos → Gerenciador de Arquivos</strong>.</li>
-      <li>Entre na pasta onde o site foi instalado (normalmente <code>public_html</code>) e depois em <code>storage</code>.</li>
+      <?php if ($storage_external): ?>
+        <li>Entre na pasta <code>fatuche-storage</code> (ao lado de <code>public_html</code>).</li>
+      <?php else: ?>
+        <li>Entre na pasta onde o site foi instalado (normalmente <code>public_html</code>) e depois em <code>storage</code>.</li>
+      <?php endif ?>
       <li>Abra o arquivo <code>codigo-instalacao.txt</code> e copie o código de 10 letras e números.</li>
     </ol>
     <?php if (!$code_ready): ?>

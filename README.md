@@ -60,21 +60,21 @@ php tests/fluxo_completo.php
 Sem terminal, só pelo hPanel. O repositório é público, então não precisa de chave de acesso.
 
 1. **PHP:** em *Avançado → Configuração do PHP*, escolha **PHP 8.1 ou mais recente**. As extensões `pdo_sqlite`, `mbstring` e `fileinfo` costumam vir ativas; se faltar alguma, o próprio site avisa qual ativar.
-2. **Código:** em *Avançado → Git*, crie um repositório com:
-   - Repositório: `https://github.com/sfatucheadv-source/planejamento_adv.git`
-   - Branch: `claude/epic-ride-hbdg7z`
-   - Diretório: deixe vazio para instalar em `public_html` (a pasta precisa estar vazia; mova ou apague o site antigo antes).
+2. **Pasta dos dados (antes de instalar):** no *Gerenciador de Arquivos*, crie uma pasta chamada `fatuche-storage` **ao lado** de `public_html` (no mesmo nível, não dentro dele). O site detecta essa pasta sozinho e guarda nela o banco, as sessões e os documentos enviados. Assim nenhuma atualização pelo Git encosta nos dados. Sem essa pasta, o site usa `storage/` dentro do projeto, e a página de instalação avisa.
+3. **Código:** em *Avançado → Git*:
+   - Se aparecer **Conectar com GitHub**: entre na conta dona de `sfatucheadv-source/planejamento_adv`, autorize o app da Hostinger e escolha o repositório, a branch `claude/epic-ride-hbdg7z` e a pasta `public_html`. Clique em **Implantar**. Cada atualização no GitHub passa a ser publicada automaticamente.
+   - Se aparecer o formulário antigo: Repositório `https://github.com/sfatucheadv-source/planejamento_adv.git`, Branch `claude/epic-ride-hbdg7z`, Diretório vazio (= `public_html`). Clique em **Implantar**; para atualizar, clique de novo (ou cadastre a URL de *Implantação automática* em GitHub → Settings → Webhooks).
 
-   Clique em **Implantar**. Para atualizar no futuro, basta clicar em *Implantar* de novo (ou ativar a implantação automática).
-   O `.htaccess` da raiz serve o site a partir de `public/` e bloqueia `app/`, `storage/`, `scripts/` e `tests/`.
+   Em ambos os casos `public_html` precisa estar vazia na primeira implantação: mova ou apague o site antigo antes (isso tira do ar o que estiver hoje no domínio).
+   O `.htaccess` da raiz serve o site a partir de `public/`, bloqueia `app/`, `storage/`, `scripts/` e `tests/`, deixa passar `/.well-known/` (validação do SSL) e não interfere em subdomínios que tenham pasta dentro de `public_html`.
    *Alternativa sem Git:* baixe o ZIP do GitHub (*Code → Download ZIP*), envie pelo *Gerenciador de Arquivos* para `public_html` e extraia, deixando os arquivos direto em `public_html` (não dentro de uma subpasta).
-3. **SSL:** em *Segurança → SSL*, ative o certificado do domínio.
-4. **Primeiro acesso:** abra `https://seu-dominio/painel/instalar`. A página pede um código que fica no arquivo `storage/codigo-instalacao.txt` (abra pelo *Gerenciador de Arquivos*). Informe o código, seu e-mail e uma senha. O arquivo é apagado e a página de instalação se desativa sozinha.
+4. **SSL:** em *Segurança → SSL*, ative o certificado do domínio.
+5. **Primeiro acesso:** abra `https://seu-dominio/painel/instalar`. A página pede um código que fica no arquivo `codigo-instalacao.txt`, dentro de `fatuche-storage` (abra pelo *Gerenciador de Arquivos*). Informe o código, seu e-mail e uma senha. O arquivo é apagado e a página de instalação se desativa sozinha.
    *Com terminal (SSH):* `php scripts/criar-usuario.php "Sidney Fatuche" sidney@fatuche.adv.br` também cria o acesso.
-5. **Equipe:** no painel, em *Equipe*, cadastre os colegas e as funções de cada um.
-6. **Backup:** guarde periodicamente a pasta `storage/` (banco `fatuche.sqlite` e documentos em `storage/uploads/`). Ela não vai para o Git e não é apagada pelas atualizações.
+6. **Equipe:** no painel, em *Equipe*, cadastre os colegas e as funções de cada um.
+7. **Backup:** baixe periodicamente a pasta `fatuche-storage` (banco `fatuche.sqlite` e documentos em `uploads/`). Ela não vai para o Git.
 
-Ajustes sem editar o código: copie `app/config.local.example.php` para `app/config.local.php`.
+Ajustes sem editar o código: copie `app/config.local.example.php` para `app/config.local.php` (esse arquivo não vai para o Git; guarde uma cópia).
 
 ---
 

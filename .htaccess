@@ -1,13 +1,19 @@
 # Hospedagem em que a pasta do projeto inteira é a raiz do site (ex.: public_html).
 # Tudo é servido a partir de public/; pastas internas ficam inacessíveis.
 Options -Indexes
-DirectoryIndex index.php
+DirectoryIndex index.php index.html
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteRule ^(app|storage|scripts|tests)(/|$) - [F,L]
   RewriteCond %{REQUEST_URI} !^/\.well-known/
   RewriteRule (^|/)\. - [F,L]
+  # Validação do SSL (Let's Encrypt) e outros arquivos de verificação: servidos como estão.
+  RewriteRule ^\.well-known/ - [L]
+  # Subdomínios cujas pastas ficam aqui dentro (padrão da Hostinger: public_html/<subdominio>)
+  # não fazem parte deste site: passam direto.
+  RewriteCond %{REQUEST_URI}::$1 !^.*?(.*)::\1$
+  RewriteRule ^(.*)$ - [L]
   RewriteCond %{REQUEST_URI} !^/public/
   RewriteRule ^(.*)$ public/$1 [L]
 </IfModule>

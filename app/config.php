@@ -29,7 +29,12 @@ return [
     // Metas internas (workflow, seção 4). Exibidas no site como metas, nunca como garantia.
     'show_service_goals' => true,
 
-    'storage_dir'   => dirname(__DIR__) . '/storage',
+    // Dados (banco, sessões, documentos). Se existir a pasta "fatuche-storage" AO LADO da pasta
+    // do site (na Hostinger: ao lado de public_html), ela é usada: assim nenhuma atualização
+    // pelo Git encosta nos dados. Sem ela, usa storage/ dentro do projeto.
+    'storage_dir'   => is_dir(dirname(__DIR__, 2) . '/fatuche-storage')
+        ? dirname(__DIR__, 2) . '/fatuche-storage'
+        : dirname(__DIR__) . '/storage',
     'upload_max_mb' => 15,
 
     // Número de dias corridos sem atualização ao cliente antes de gerar alerta (workflow: 15).

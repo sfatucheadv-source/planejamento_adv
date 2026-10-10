@@ -34,6 +34,7 @@ $router->get('/painel/instalar', function () {
         'meta_title' => 'Instalação',
         'code_ready' => is_file($file),
         'https' => $https,
+        'storage_external' => !str_starts_with(realpath((string) config('storage_dir')) ?: '', ROOT_DIR . DIRECTORY_SEPARATOR),
     ], 'panel_bare');
 });
 
