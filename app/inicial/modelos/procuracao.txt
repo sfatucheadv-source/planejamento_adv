@@ -14,4 +14,6 @@ Pelo presente instrumento particular de mandato por mim abaixo assinado:
 
 @assinatura Outorgante: {{cliente.nome_completo}} | CPF/MF: {{cliente.cpf}}
 
+@se proposta.tem_exito
 @observacao **HONORÁRIOS - OBSERVAÇÃO:** Assinatura desta Procuração implica a expressa revogação de qualquer outra procuração a outros advogados, bem como na concordância {{flex:do/da}} outorgante com o pagamento de honorários contratuais no valor de {{proposta.percentual_exito}}, em favor do outorgado, a serem calculados sobre o proveito bruto decorrente da atividade advocatícia, judicial ou extrajudicial prestada, devendo serem destacados o respectivo valores a título de honorários dos Termos de Autocomposição, Precatório Requisitório, Requisições de Pequenos Valores oportunamente ou ainda em execuções.
+@fimse

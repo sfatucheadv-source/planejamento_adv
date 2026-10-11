@@ -48,6 +48,12 @@ Procuração, declaração de hipossuficiência, contrato de honorários, propos
 - Padrões do escritório que valem quando a ficha está em branco (poderes e finalidade da procuração, percentual de honorários, foro, prazo de repasse) ficam em *Variáveis dos documentos* e podem citar outras variáveis.
 - Teste: `php tests/documentos.php [pasta]` (preenchimento, .docx, paginação no navegador e conversão no LibreOffice; grava os arquivos e imagens de cada folha na pasta).
 
+### Propostas (condições negociadas)
+
+Menu *Propostas* (logo abaixo de *Modelos de documentos*): escolha o atendimento e registre honorários fixos (valor fechado), honorários por atividade, êxito em percentual com a base de cálculo, valores cobrados à parte (taxas de serviço, emolumentos, custas, perícia, impostos), repasse de deslocamento (por comprovante ou por km) e de despesas, formas de pagamento (PIX, boleto, cartões, transferência, depósito, link, dinheiro, cheque), pagamento à vista ou parcelado — próprio, com juros simples de 1% a.m. por mês até cada vencimento e INPC na data do pagamento, ou no cartão, com a taxa da operadora por conta do cliente. Código em `app/inicial/propostas.php`.
+
+A proposta prevalece sobre os campos de honorários, êxito, pagamento e despesas da ficha. Cada escolha liga ou desliga cláusulas: os modelos usam `@se chave` / `@senao` / `@fimse`, e a numeração (`### Cláusula # — … {#chave}`, `**Parágrafo #.**`, `{{clausula:chave}}`) é refeita a cada geração, com “Parágrafo único” quando sobra um só. Teste: `php tests/propostas.php`.
+
 ### Assistente com IA (OpenRouter ou Google Gemini)
 
 Opcional. Em **Configurações › Inteligência artificial**: ligue o uso de IA e escolha o **fornecedor**:
@@ -126,6 +132,7 @@ php tests/atendimento_inicial.php   # atendimento inicial (seção 16 do plano d
 php tests/assistente_ia.php         # assistente com IA (simulador local do OpenRouter e do Gemini)
 php tests/variaveis.php             # variáveis dos documentos e campos do contrato
 php tests/documentos.php            # documentos no timbrado (.docx e HTML paginado)
+php tests/propostas.php             # propostas, parcelamento e cláusulas condicionais
 ```
 
 ## Publicar na Hostinger

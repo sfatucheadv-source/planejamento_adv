@@ -77,7 +77,7 @@ function builtin_var_labels(): array
         'gratuidade.renda' => 'Atividade e renda',
         'escritorio.nome' => 'Sociedade', 'escritorio.oab' => 'Registro da sociedade', 'escritorio.cnpj' => 'CNPJ', 'escritorio.advogado' => 'Advogado',
         'escritorio.advogado_oab' => 'OAB do advogado',
-    ] + array_map(fn($d) => $d['label'], OFFICE_VARS);
+    ] + array_map(fn($d) => $d['label'], OFFICE_VARS) + PROPOSAL_VAR_LABELS;
 }
 
 function kit_vars(int $caseId): array
@@ -160,6 +160,12 @@ function kit_vars(int $caseId): array
         'escritorio.advogado' => office('lawyer') ?: null,
         'escritorio.advogado_oab' => office('lawyer_oab') ?: null,
     ];
+    // A proposta registrada (módulo Propostas) prevalece sobre os textos da ficha.
+    foreach (proposal_vars($caseId) as $k => $v) {
+        if ($v !== null || isset(PROPOSAL_VAR_LABELS[$k])) {
+            $vars[$k] = $v;
+        }
+    }
     // O padrão do escritório pode citar outras variáveis (ex.: a finalidade
     // da procuração cita o banco e o número do contrato): preenche uma vez.
     foreach (CASE_VAR_DEFAULTS as $var => $def) {
@@ -201,6 +207,10 @@ function render_template(string $body, array $vars): array
     // Concordância de gênero: {{flex:inscrito/inscrita}}. Sem o gênero na ficha,
     // sai a forma dupla "inscrito(a)".
     $body = preg_replace_callback('/\{\{\s*flex:([^}\/]*)\/([^}]*)\}\}/u', fn($m) => flex_word(trim($m[1]), trim($m[2]), $vars['cliente.genero'] ?? null), $body);
+    // Cláusulas condicionais e numeração automática (antes dos dados: o texto do cliente nunca vira comando)
+    [$body, $condMissing] = template_conditions($body, $vars, $labels);
+    $body = template_numbering($body);
+    $missing = $condMissing;
     $out = preg_replace_callback('/\{\{\s*([a-z0-9_.]+)\s*(?:\|([^}]*))?\}\}/u', function ($m) use ($vars, $labels, &$missing) {
         $key = $m[1];
         if (!array_key_exists($key, $labels)) {
@@ -231,6 +241,85 @@ function render_template(string $body, array $vars): array
 }
 
 /** Marcadores [[...]] que sobraram no texto (inclusive em edição manual). */
+/**
+ * Blocos condicionais: linhas "@se chave" … "@senao" … "@fimse" (aninháveis).
+ * O bloco entra quando a variável tem valor (não vazio e diferente de "0").
+ */
+function template_conditions(string $body, array $vars, array $labels): array
+{
+    $out = [];
+    $stack = [];
+    $missing = [];
+    foreach (explode("\n", $body) as $line) {
+        $t = trim($line);
+        if (preg_match('/^@se\s+(nao\s+)?([a-z0-9_.]+)$/u', $t, $m)) {
+            if (!array_key_exists($m[2], $labels)) {
+                $missing[] = 'variável não aprovada: ' . $m[2];
+            }
+            $v = $vars[$m[2]] ?? null;
+            $on = $v !== null && trim((string) $v) !== '' && (string) $v !== '0';
+            $stack[] = $m[1] !== '' ? !$on : $on;
+            continue;
+        }
+        if ($t === '@senao' && $stack) {
+            $stack[] = !array_pop($stack);
+            continue;
+        }
+        if ($t === '@fimse' && $stack) {
+            array_pop($stack);
+            continue;
+        }
+        if (!in_array(false, $stack, true)) {
+            $out[] = $line;
+        }
+    }
+    if ($stack) {
+        $missing[] = 'modelo: “@se” sem “@fimse”';
+    }
+    return [preg_replace("/\n{3,}/", "\n\n", implode("\n", $out)), $missing];
+}
+
+/**
+ * Numeração automática: "### Cláusula # — título {#chave}" vira "Cláusula
+ * primeira — título"; "**Parágrafo #.**" é contado dentro de cada cláusula
+ * (um só vira "Parágrafo único"); "{{clausula:chave}}" vira "Cláusula Quarta".
+ * Assim, excluir uma cláusula ou um parágrafo não deixa a numeração saltar.
+ */
+function template_numbering(string $body): string
+{
+    $lines = explode("\n", $body);
+    $refs = [];
+    $n = 0;
+    $clauseOf = [];
+    $current = -1;
+    foreach ($lines as $i => $line) {
+        if (preg_match('/^###\s+Cláusula\s+#\s+(.*?)(?:\s*\{#([a-z0-9_]+)\})?\s*$/u', $line, $m)) {
+            $n++;
+            $current = $i;
+            if (!empty($m[2])) {
+                $refs[$m[2]] = $n;
+            }
+            $lines[$i] = '### Cláusula ' . ordinal_feminino($n) . ' ' . $m[1];
+        } elseif (preg_match('/^#{1,3}\s/u', $line)) {
+            $current = -1;
+        }
+        if (str_contains($line, '**Parágrafo #.**')) {
+            $clauseOf[$i] = $current;
+        }
+    }
+    $count = array_count_values(array_map('strval', $clauseOf));
+    $seen = [];
+    foreach ($clauseOf as $i => $c) {
+        $seen[$c] = ($seen[$c] ?? 0) + 1;
+        $word = ($count[(string) $c] ?? 0) === 1 ? 'único' : ordinal_masculino($seen[$c]);
+        $lines[$i] = str_replace('**Parágrafo #.**', '**Parágrafo ' . $word . '.**', $lines[$i]);
+    }
+    $out = implode("\n", $lines);
+    return preg_replace_callback('/\{\{\s*clausula:([a-z0-9_]+)\s*\}\}/u', fn($m) => isset($refs[$m[1]])
+        ? 'Cláusula ' . implode(' ', array_map(fn($w) => mb_strtoupper(mb_substr($w, 0, 1)) . mb_substr($w, 1), explode(' ', ordinal_feminino($refs[$m[1]]))))
+        : '[[FALTA: cláusula ' . $m[1] . ']]', $out);
+}
+
 function flex_word(string $masc, string $fem, ?string $genero): string
 {
     if ($genero === 'feminino') {
@@ -349,6 +438,8 @@ function kit_fresh(int $caseId, string $kind): array
     if (str_contains($t['body'], '{{flex:')) {
         $used[] = 'cliente.genero';
     }
+    preg_match_all('/^\s*@se\s+(?:nao\s+)?([a-z0-9_.]+)\s*$/mu', $t['body'], $cm);
+    $used = array_merge($used, $cm[1]);
     $snap = array_intersect_key($vars, array_flip($used));
     ksort($snap);
     return [$content, $missing, $snap, sha1(json_encode($snap) . '|' . $t['version']), (int) $t['version']];

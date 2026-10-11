@@ -22,7 +22,9 @@ Financiamento: {{contrato.banco}}, contrato nº {{contrato.numero|não informad
 
 {{proposta.honorarios}}
 
+@se proposta.sem_cadastro
 {{proposta.base_exito|}}
+@fimse
 
 ## 5. Forma de pagamento
 
@@ -31,6 +33,14 @@ Financiamento: {{contrato.banco}}, contrato nº {{contrato.numero|não informad
 ## 6. Despesas
 
 {{proposta.despesas|Não há despesas previstas além dos honorários.}}
+
+@se proposta.repassa_deslocamento
+Despesas de deslocamento fora da comarca da sede do escritório serão reembolsadas {{proposta.deslocamento_criterio}}.
+@fimse
+
+@se proposta.nao_repassa_deslocamento
+Os custos de deslocamento estão incluídos nos honorários.
+@fimse
 
 ## 7. Riscos que você precisa conhecer
 

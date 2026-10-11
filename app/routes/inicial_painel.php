@@ -618,6 +618,41 @@ $router->post('/painel/modelos-documentos', function () {
     redirect('painel/modelos-documentos');
 });
 
+/* ---------- Propostas (condições negociadas por atendimento) ---------- */
+
+$router->get('/painel/propostas', function () {
+    $u = require_user();
+    $rows = all("SELECT p.*, c.protocol, c.client_name, c.initial_status FROM proposals p JOIN cases c ON c.id = p.case_id
+                 WHERE c.workflow_version = 'simple_v1' AND c.operator_id = ? ORDER BY p.updated_at DESC", [$u['id']]);
+    $cases = all("SELECT id, protocol, client_name FROM cases WHERE workflow_version = 'simple_v1' AND execution_started_at IS NULL AND operator_id = ?
+                  AND initial_status <> 'completed' AND id NOT IN (SELECT case_id FROM proposals) ORDER BY id DESC", [$u['id']]);
+    view('panel/propostas', ['meta_title' => 'Propostas · Painel', 'rows' => $rows, 'cases' => $cases], 'panel');
+});
+
+$router->post('/painel/propostas', function () {
+    $c = require_case_operator((int) input('case_id'));
+    redirect('painel/propostas/' . $c['id']);
+});
+
+$router->get('/painel/propostas/{id}', function (string $id) {
+    $c = require_case_operator((int) $id);
+    $pr = proposal_get((int) $c['id']);
+    view('panel/proposta', ['meta_title' => 'Proposta · ' . $c['protocol'], 'c' => $c, 'pr' => $pr, 'd' => $pr['data'] ?? proposal_defaults(), 'errors' => []], 'panel');
+});
+
+$router->post('/painel/propostas/{id}', function (string $id) {
+    $u = require_user();
+    $c = require_case_operator((int) $id);
+    [$d, $errors] = proposal_from_input($_POST);
+    if ($errors) {
+        view('panel/proposta', ['meta_title' => 'Proposta · ' . $c['protocol'], 'c' => $c, 'pr' => proposal_get((int) $c['id']), 'd' => $d, 'errors' => $errors], 'panel');
+        return;
+    }
+    proposal_save((int) $c['id'], $d, (int) $u['id']);
+    flash('ok', 'Proposta salva. O contrato, a procuração e a proposta passam a usar estas condições: gere uma nova versão no kit do atendimento.');
+    redirect('painel/propostas/' . $c['id'] . '#resumo');
+});
+
 /* ---------- Variáveis dos documentos ---------- */
 
 $router->get('/painel/variaveis', function () {

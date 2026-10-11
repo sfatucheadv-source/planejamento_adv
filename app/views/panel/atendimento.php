@@ -328,6 +328,8 @@ if ($P && $N) {
     <div class="row2"><div><?= $input('conflito', false) ?></div><div><?= $input('legitimidade', false) ?></div></div>
     <?= $input('impedimento_motivo', false) ?>
     <h3>Proposta</h3>
+    <?php $prop = proposal_get($id); ?>
+    <p class="hint prop-ficha"><?php if ($prop): $pt = proposal_totals($prop['data']); ?>Proposta registrada em <a href="<?= e(url('painel/propostas/' . $id)) ?>">Propostas</a>: honorários <?= e(brl($pt['total'])) ?><?= $prop['data']['exito']['ativo'] ? ' + êxito de ' . e(percent_extenso($prop['data']['exito']['percentual'])) : '' ?>. Ela substitui, nos documentos, os campos de honorários, base de êxito, pagamento e despesas abaixo.<?php else: ?>Sem proposta registrada: os documentos usam os campos abaixo. <a href="<?= e(url('painel/propostas/' . $id)) ?>">Cadastrar a proposta</a> (honorários, êxito, valores à parte, repasses e parcelamento).<?php endif ?></p>
     <?php foreach (['proposta_escopo', 'proposta_honorarios', 'proposta_base_exito', 'proposta_pagamento', 'proposta_despesas', 'proposta_riscos', 'proposta_exclusoes'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
     <div class="row2"><div><?= $input('proposta_validade', false) ?></div><div><?= $input('proposta_prazo_repasse', false) ?></div></div>
     <?php if (!isset($fields['proposta_prazo_repasse']) && setting('default_prazo_repasse')): ?><p class="hint">Em branco, o contrato usa o padrão do escritório: “<?= e(setting('default_prazo_repasse')) ?>”.</p><?php endif ?>

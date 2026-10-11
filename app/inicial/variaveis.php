@@ -215,6 +215,9 @@ function builtin_var_origin(string $key): string
     if (isset(OFFICE_VARS[$key])) {
         return 'escritorio';
     }
+    if (isset(PROPOSAL_VAR_LABELS[$key]) || in_array($key, ['proposta.honorarios', 'proposta.pagamento', 'proposta.despesas', 'proposta.base_exito', 'proposta.percentual_exito', 'proposta.validade'], true)) {
+        return 'proposta';
+    }
     if (isset(CASE_VAR_DEFAULTS[$key])) {
         return 'ficha_padrao';
     }
@@ -234,6 +237,7 @@ const VAR_ORIGINS = [
     'escritorio'   => 'Dados do escritório (esta página)',
     'configuracao' => 'Arquivo de configuração do site',
     'personalizada'=> 'Personalizada',
+    'proposta'     => 'Propostas (sem proposta registrada: ficha do atendimento)',
 ];
 
 /** Todas as variáveis, agrupadas pelo prefixo: [grupo => [chave => [label, origem, opcional]]]. */

@@ -526,6 +526,19 @@ SQL;
     // timbrado). Os dados vêm de PHP: migrate_document_models().
     $migrations[5] = 'SELECT 1;';
 
+    // Versão 6 — propostas: condições negociadas por atendimento (honorários,
+    // êxito, valores à parte, repasses, pagamento e parcelamento).
+    $migrations[6] = <<<SQL
+CREATE TABLE proposals (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL UNIQUE REFERENCES cases(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by INTEGER REFERENCES users(id)
+);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();
@@ -535,6 +548,9 @@ SQL;
             }
             if ($v === 5) {
                 migrate_document_models($pdo);
+            }
+            if ($v === 6) {
+                migrate_document_models_v6($pdo);
             }
             $pdo->exec('PRAGMA user_version = ' . $v);
             $pdo->commit();
@@ -609,5 +625,26 @@ function migrate_document_models(PDO $pdo): void
     $ins = $pdo->prepare("INSERT INTO settings (key, value, updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at WHERE settings.value IS NULL OR settings.value = ''");
     foreach ($defaults as $k => $v) {
         $ins->execute([$k, $v, $now]);
+    }
+}
+
+/**
+ * Migração 6: contrato, procuração e proposta passam a ter cláusulas
+ * condicionais ligadas ao módulo Propostas. Só troca o modelo que ainda está
+ * no texto da migração 5 (o que Sidney editou fica como está).
+ */
+function migrate_document_models_v6(PDO $pdo): void
+{
+    $now = (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d H:i:s');
+    $previous = ['honorarios' => '5c9d8082b6a048577a069b0399abe9067dedaf69', 'procuracao' => '0fffa2cff89d1f23b887d1662b444fa4b6fec0ff', 'proposta' => 'c36e6d4540b8859473a66b954b6ea19e17bc1e7e'];
+    foreach ($previous as $key => $hash) {
+        $st = $pdo->prepare('SELECT body FROM doc_templates WHERE key = ?');
+        $st->execute([$key]);
+        $cur = $st->fetchColumn();
+        if ($cur === false || sha1((string) $cur) !== $hash) {
+            continue;
+        }
+        $body = rtrim((string) file_get_contents(APP_DIR . '/inicial/modelos/' . $key . '.txt')) . "\n";
+        $pdo->prepare('UPDATE doc_templates SET body = ?, version = version + 1, approved_at = NULL, approved_by = NULL, updated_at = ? WHERE key = ?')->execute([$body, $now, $key]);
     }
 }

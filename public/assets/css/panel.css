@@ -525,3 +525,29 @@ details.more summary { cursor: pointer; color: var(--teal); font-weight: 600; fo
 .var-tbl td:first-child{width:1%;white-space:nowrap}
 #catalogo code{word-break:break-all}
 @media (max-width:640px){.var-tbl thead{display:none}.var-tbl,.var-tbl tbody,.var-tbl tr,.var-tbl td{display:block;width:auto}.var-tbl tr{padding:.5rem 0;border-bottom:1px solid var(--line-2)}.var-tbl td{border:0;padding:.1rem 0}.var-tbl td:first-child{width:auto;white-space:normal}.var-code{white-space:normal;word-break:break-all}}
+
+/* Propostas */
+.prop-rows { display: grid; gap: 4px; margin-bottom: 8px; }
+.prop-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 0 12px; }
+.prop-row3 { grid-template-columns: 200px minmax(0, 1fr) 140px; }
+.prop-formas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 2px 12px; }
+.prop-formas legend { grid-column: 1 / -1; }
+.prop-form h3 { margin: 16px 0 4px; }
+.prop-form h3 .chk { font: inherit; }
+/* Mostra só o que vale para a escolha feita (sem JavaScript) */
+.prop-form:not(:has([name=fixos_ativo]:checked)) .prop-if-fixos,
+.prop-form:not(:has([name=exito_ativo]:checked)) .prop-if-exito,
+.prop-form:not(:has([name=deslocamento][value=sim]:checked)) .prop-if-desloc,
+.prop-form:not(:has([name=condicao][value=avista]:checked)) .prop-if-avista,
+.prop-form:not(:has([name=condicao][value=parcelado]:checked)) .prop-if-parcelado,
+.prop-form:not(:has([name=modalidade][value=proprio]:checked)) .prop-if-proprio,
+.prop-form:not(:has([name=modalidade][value=cartao]:checked)) .prop-if-cartao { display: none; }
+.prop-if-desloc { margin: 6px 0 0 24px; }
+.prop-efeitos { list-style: none; padding: 0; margin: 0; font-size: 14px; }
+.prop-efeitos li { padding: 3px 0; }
+.prop-efeitos li.on { color: var(--ok, #1f7a4d); }
+.prop-efeitos li.off { color: var(--muted, #7a7f8a); text-decoration: line-through; }
+@media (max-width: 640px) {
+  .prop-row, .prop-row3 { grid-template-columns: minmax(0, 1fr); border-bottom: 1px solid var(--line-2); padding-bottom: 6px; }
+}
+#resumo td { white-space: nowrap; }

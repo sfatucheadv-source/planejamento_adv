@@ -10,7 +10,7 @@ têm entre si justo e contratado o presente instrumento, regido pelas cláusulas
 
 ## I. Do objeto e da extensão dos serviços
 
-### Cláusula primeira — do objeto
+### Cláusula # — do objeto
 
 A CONTRATADA obriga-se a prestar serviços advocatícios para análise e defesa dos interesses do CONTRATANTE em relação ao financiamento abaixo identificado, mediante avaliação de viabilidade e adoção das medidas extrajudiciais e judiciais expressamente contratadas.
 
@@ -30,27 +30,27 @@ Veículo: {{veiculo.marca}} {{veiculo.modelo}}, ano {{veiculo.ano}}, placa {{vei
 Situação atual: {{contrato.situacao}}
 Processos ou notificações existentes: {{contrato.processos_notificacoes}}
 
-**Parágrafo primeiro.** A atuação poderá compreender o questionamento de juros, tarifas, seguros e outros encargos, desde que identificados fundamentos jurídicos e elementos suficientes para sua discussão.
+**Parágrafo #.** A atuação poderá compreender o questionamento de juros, tarifas, seguros e outros encargos, desde que identificados fundamentos jurídicos e elementos suficientes para sua discussão.
 
-**Parágrafo segundo.** Conforme a análise do caso e o escopo contratado, poderão ser buscados o recálculo das obrigações, a revisão de cláusulas, a restituição ou compensação de valores e a redução do saldo devedor, sem garantia de obtenção desses resultados.
+**Parágrafo #.** Conforme a análise do caso e o escopo contratado, poderão ser buscados o recálculo das obrigações, a revisão de cláusulas, a restituição ou compensação de valores e a redução do saldo devedor, sem garantia de obtenção desses resultados.
 
-**Parágrafo terceiro.** A contratação não pressupõe a existência de abusividade. As questões efetivamente discutidas serão definidas a partir dos documentos, da situação do financiamento e da avaliação técnica da CONTRATADA.
+**Parágrafo #.** A contratação não pressupõe a existência de abusividade. As questões efetivamente discutidas serão definidas a partir dos documentos, da situação do financiamento e da avaliação técnica da CONTRATADA.
 
-**Parágrafo quarto.** Quando o titular do financiamento for pessoa diferente do CONTRATANTE, a atuação dependerá da verificação da legitimidade e da obtenção das autorizações e procurações necessárias. A indicação do titular neste instrumento não o torna automaticamente cliente ou parte contratante.
+**Parágrafo #.** Quando o titular do financiamento for pessoa diferente do CONTRATANTE, a atuação dependerá da verificação da legitimidade e da obtenção das autorizações e procurações necessárias. A indicação do titular neste instrumento não o torna automaticamente cliente ou parte contratante.
 
-### Cláusula segunda — da análise de viabilidade
+### Cláusula # — da análise de viabilidade
 
 A CONTRATADA realizará a análise do contrato, dos comprovantes de pagamento, dos demonstrativos da dívida e dos demais documentos pertinentes disponibilizados pelo CONTRATANTE.
 
-**Parágrafo primeiro.** Quando cabível, serão examinadas as taxas contratadas e as referências do Banco Central relativas à modalidade e ao período correspondentes, distinguindo-se juros remuneratórios e custo efetivo total.
+**Parágrafo #.** Quando cabível, serão examinadas as taxas contratadas e as referências do Banco Central relativas à modalidade e ao período correspondentes, distinguindo-se juros remuneratórios e custo efetivo total.
 
-**Parágrafo segundo.** Os documentos utilizados, o método, os resultados, as limitações e a conclusão da análise serão registrados no Anexo I, quando a avaliação estiver concluída.
+**Parágrafo #.** Os documentos utilizados, o método, os resultados, as limitações e a conclusão da análise serão registrados no Anexo I, quando a avaliação estiver concluída.
 
-**Parágrafo terceiro.** A comparação com referências de mercado constitui elemento de análise e não representa, isoladamente, comprovação de abusividade.
+**Parágrafo #.** A comparação com referências de mercado constitui elemento de análise e não representa, isoladamente, comprovação de abusividade.
 
-**Parágrafo quarto.** Caso não sejam identificados fundamentos suficientes para a medida pretendida, a CONTRATADA comunicará sua conclusão. Serão devidos os honorários relativos à análise efetivamente realizada, com devolução de eventual antecipação para etapas não executadas.
+**Parágrafo #.** Caso não sejam identificados fundamentos suficientes para a medida pretendida, a CONTRATADA comunicará sua conclusão. Serão devidos os honorários relativos à análise efetivamente realizada, com devolução de eventual antecipação para etapas não executadas.
 
-### Cláusula terceira — dos serviços incluídos e das exclusões
+### Cláusula # — dos serviços incluídos e das exclusões
 
 A presente contratação compreende os seguintes serviços e etapas:
 
@@ -60,226 +60,256 @@ Ficam expressamente excluídos:
 
 {{proposta.exclusoes}}
 
-**Parágrafo primeiro.** O escopo deverá identificar a abrangência da atuação extrajudicial, do processo em primeiro grau, dos pedidos urgentes, dos recursos e da liquidação ou cumprimento de sentença, conforme o que tiver sido contratado.
+**Parágrafo #.** O escopo deverá identificar a abrangência da atuação extrajudicial, do processo em primeiro grau, dos pedidos urgentes, dos recursos e da liquidação ou cumprimento de sentença, conforme o que tiver sido contratado.
 
-**Parágrafo segundo.** Qualquer ação, fase ou serviço não abrangido, embora relacionado ao financiamento, ficará sujeito à celebração de novo contrato ou aditivo.
+**Parágrafo #.** Qualquer ação, fase ou serviço não abrangido, embora relacionado ao financiamento, ficará sujeito à celebração de novo contrato ou aditivo.
 
-**Parágrafo terceiro.** Identificada a necessidade de providência adicional, a CONTRATADA informará sua finalidade, eventual prazo e condições de contratação, em tempo compatível com a urgência conhecida.
+**Parágrafo #.** Identificada a necessidade de providência adicional, a CONTRATADA informará sua finalidade, eventual prazo e condições de contratação, em tempo compatível com a urgência conhecida.
 
 ## II. Dos honorários e das despesas
 
-### Cláusula quarta — da remuneração contratada
+### Cláusula # — da remuneração contratada {#remuneracao}
 
 O CONTRATANTE pagará à CONTRATADA os honorários nas seguintes condições, incluindo os valores fixos, sua distribuição por etapas e eventual percentual de êxito:
 
 {{proposta.honorarios}}
 
-**Parágrafo primeiro.** Os honorários fixos remuneram os serviços contratados e independem do resultado, observada a apuração proporcional em caso de encerramento antecipado.
+@se proposta.tem_fixos
+**Parágrafo #.** Os honorários fixos remuneram os serviços contratados e independem do resultado, observada a apuração proporcional em caso de encerramento antecipado.
+@fimse
 
-**Parágrafo segundo.** A distribuição dos honorários por etapas servirá de referência para a apuração do trabalho realizado. Na ausência de discriminação suficiente, a proporcionalidade será apurada considerando os serviços efetivamente prestados.
+@se proposta.tem_atividades
+**Parágrafo #.** A distribuição dos honorários por etapas servirá de referência para a apuração do trabalho realizado. Na ausência de discriminação suficiente, a proporcionalidade será apurada considerando os serviços efetivamente prestados.
+@fimse
 
-### Cláusula quinta — do pagamento
+### Cláusula # — do pagamento {#pagamento}
 
 Os pagamentos observarão a forma, os vencimentos, o parcelamento e os demais critérios abaixo:
 
 {{proposta.pagamento}}
 
-**Parágrafo primeiro.** Os pagamentos serão realizados em favor da CONTRATADA, pelos meios oficialmente indicados.
+**Parágrafo #.** Os pagamentos serão realizados em favor da CONTRATADA, pelos meios oficialmente indicados.
 
-**Parágrafo segundo.** Quando utilizado PIX, a chave informada é o {{escritorio.pix_tipo}}: **{{escritorio.pix_chave}}**, de titularidade de **{{escritorio.nome}}**. Antes de concluir a transferência, o CONTRATANTE deverá conferir o beneficiário e a correspondência com a CONTRATADA.
+@se proposta.parcelamento_proprio
+**Parágrafo #.** O parcelamento concedido diretamente pela CONTRATADA sofrerá a incidência de juros simples de 1% (um por cento) ao mês e de atualização monetária pelo INPC/IBGE, calculados da data da contratação até a data de cada pagamento.
+@fimse
 
-**Parágrafo terceiro.** Qualquer alteração dos dados de pagamento será comunicada por canal oficial do escritório.
+@se proposta.parcelamento_cartao
+**Parágrafo #.** No pagamento parcelado em cartão de crédito, a taxa de parcelamento e os encargos cobrados pela operadora ou pela instituição emissora do cartão serão suportados pelo CONTRATANTE e acrescidos ao valor das parcelas, de modo que a CONTRATADA receba o valor integral dos honorários.
+@fimse
 
-### Cláusula sexta — dos honorários de êxito
+@se proposta.pix
+**Parágrafo #.** Quando utilizado PIX, a chave informada é o {{escritorio.pix_tipo}}: **{{escritorio.pix_chave}}**, de titularidade de **{{escritorio.nome}}**. Antes de concluir a transferência, o CONTRATANTE deverá conferir o beneficiário e a correspondência com a CONTRATADA.
+@fimse
 
-Quando expressamente previstos na Cláusula Quarta, os honorários de êxito incidirão sobre o benefício econômico efetivamente obtido em decorrência dos serviços contratados, conforme os seguintes critérios:
+**Parágrafo #.** Qualquer alteração dos dados de pagamento será comunicada por canal oficial do escritório.
+
+@se proposta.tem_exito
+### Cláusula # — dos honorários de êxito {#exito}
+
+Quando expressamente previstos na {{clausula:remuneracao}}, os honorários de êxito incidirão sobre o benefício econômico efetivamente obtido em decorrência dos serviços contratados, conforme os seguintes critérios:
 
 {{proposta.base_exito}}
 
-**Parágrafo primeiro.** A base poderá compreender restituições, compensações, redução definitiva da dívida e economia definitiva nas obrigações vincendas, na extensão expressamente pactuada.
+**Parágrafo #.** A base poderá compreender restituições, compensações, redução definitiva da dívida e economia definitiva nas obrigações vincendas, na extensão expressamente pactuada.
 
-**Parágrafo segundo.** A apuração será apresentada em memória de cálculo, com identificação dos documentos, da data-base e dos critérios utilizados. A comparação considerará as diferenças de prazo e condições de pagamento.
+**Parágrafo #.** A apuração será apresentada em memória de cálculo, com identificação dos documentos, da data-base e dos critérios utilizados. A comparação considerará as diferenças de prazo e condições de pagamento.
 
-**Parágrafo terceiro.** Não haverá dupla contagem. Valores restituídos ou compensados que já integrem a redução da dívida não serão novamente adicionados à base.
+**Parágrafo #.** Não haverá dupla contagem. Valores restituídos ou compensados que já integrem a redução da dívida não serão novamente adicionados à base.
 
-**Parágrafo quarto.** Não integrarão a base o valor integral do veículo, o valor da causa, a mera manutenção provisória da posse, depósitos devolvidos ao CONTRATANTE ou economias apenas estimadas.
+**Parágrafo #.** Não integrarão a base o valor integral do veículo, o valor da causa, a mera manutenção provisória da posse, depósitos devolvidos ao CONTRATANTE ou economias apenas estimadas.
 
-**Parágrafo quinto.** A redução da parcela mediante prorrogação do financiamento não caracterizará, por si só, benefício econômico.
+**Parágrafo #.** A redução da parcela mediante prorrogação do financiamento não caracterizará, por si só, benefício econômico.
 
-### Cláusula sétima — da exigibilidade do êxito
+### Cláusula # — da exigibilidade do êxito {#exigibilidade}
 
 Os honorários de êxito serão exigíveis sobre restituições à medida que os recursos forem disponibilizados ao CONTRATANTE. Sobre compensação, redução da dívida ou economia futura, dependerão de reconhecimento definitivo e quantificação por decisão judicial ou acordo vinculante.
 
-**Parágrafo primeiro.** Quando o resultado não envolver ingresso de dinheiro, o pagamento observará as condições previstas na Cláusula Quinta para essa hipótese.
+**Parágrafo #.** Quando o resultado não envolver ingresso de dinheiro, o pagamento observará as condições previstas na {{clausula:pagamento}} para essa hipótese.
 
-**Parágrafo segundo.** O CONTRATANTE declara compreender que a redução definitiva de sua obrigação poderá gerar honorários de êxito mesmo sem recebimento de dinheiro.
+**Parágrafo #.** O CONTRATANTE declara compreender que a redução definitiva de sua obrigação poderá gerar honorários de êxito mesmo sem recebimento de dinheiro.
 
-**Parágrafo terceiro.** Liminar provisória, cálculo unilateral ou proposta não aceita não tornarão exigíveis honorários de êxito.
+**Parágrafo #.** Liminar provisória, cálculo unilateral ou proposta não aceita não tornarão exigíveis honorários de êxito.
+@fimse
 
-### Cláusula oitava — dos honorários sucumbenciais
+### Cláusula # — dos honorários sucumbenciais {#sucumbencia}
 
 Os honorários sucumbenciais fixados em favor do patrono, pagos pela parte adversária, pertencerão à CONTRATADA, observada a participação dos profissionais que atuarem na causa.
 
-**Parágrafo primeiro.** São distintos dos honorários contratuais, respeitados os limites éticos aplicáveis à remuneração por êxito.
+**Parágrafo #.** São distintos dos honorários contratuais, respeitados os limites éticos aplicáveis à remuneração por êxito.
 
-**Parágrafo segundo.** O CONTRATANTE declara ter sido informado de que resultado desfavorável, inclusive parcial, poderá gerar obrigação de pagar honorários ao advogado da parte adversária, além de custas e outras despesas processuais.
+**Parágrafo #.** O CONTRATANTE declara ter sido informado de que resultado desfavorável, inclusive parcial, poderá gerar obrigação de pagar honorários ao advogado da parte adversária, além de custas e outras despesas processuais.
 
-### Cláusula nona — das despesas e dos serviços especializados
+### Cláusula # — das despesas e dos serviços especializados {#despesas}
 
 A responsabilidade por custas, emolumentos, perícias, cálculos especializados, assistentes técnicos, diligências e demais despesas observará as condições seguintes:
 
 {{proposta.despesas}}
 
-**Parágrafo primeiro.** Contratações particulares de profissionais especializados não incluídas nas condições acima dependerão de orçamento e aprovação do CONTRATANTE.
+**Parágrafo #.** Contratações particulares de profissionais especializados não incluídas nas condições acima dependerão de orçamento e aprovação do CONTRATANTE.
 
-**Parágrafo segundo.** Despesas necessárias serão informadas com indicação de finalidade, valor e prazo, quando disponíveis, para pagamento direto ou antecipação.
+**Parágrafo #.** Despesas necessárias serão informadas com indicação de finalidade, valor e prazo, quando disponíveis, para pagamento direto ou antecipação.
 
-**Parágrafo terceiro.** Despesas antecipadas pela CONTRATADA serão reembolsadas mediante comprovação. Gastos ordinários de manutenção do escritório não serão cobrados separadamente sem previsão expressa.
+@se proposta.repassa_despesas
+**Parágrafo #.** Despesas antecipadas pela CONTRATADA serão reembolsadas mediante comprovação. Gastos ordinários de manutenção do escritório não serão cobrados separadamente sem previsão expressa.
+@fimse
 
-**Parágrafo quarto.** Eventual pedido de gratuidade dependerá de informações verdadeiras e documentação adequada. Sua concessão não é garantida e não afasta os honorários particulares contratados.
+@se proposta.nao_repassa_despesas
+**Parágrafo #.** Não serão repassadas ao CONTRATANTE despesas ordinárias da CONTRATADA, como cópias, digitalizações, correspondências e manutenção do escritório, ressalvados os valores cobrados à parte indicados nesta cláusula.
+@fimse
+
+@se proposta.repassa_deslocamento
+**Parágrafo #.** As despesas de deslocamento da CONTRATADA para diligências, audiências e demais atos fora da comarca de sua sede serão reembolsadas pelo CONTRATANTE {{proposta.deslocamento_criterio}}.
+@fimse
+
+@se proposta.nao_repassa_deslocamento
+**Parágrafo #.** Os custos de deslocamento da CONTRATADA estão incluídos nos honorários e não serão repassados ao CONTRATANTE.
+@fimse
+
+**Parágrafo #.** Eventual pedido de gratuidade dependerá de informações verdadeiras e documentação adequada. Sua concessão não é garantida e não afasta os honorários particulares contratados.
 
 ## III. Da atuação profissional e dos riscos
 
-### Cláusula décima — da obrigação de meio
+### Cláusula # — da obrigação de meio
 
 Os serviços advocatícios constituem obrigação de meio, cabendo à CONTRATADA empregar diligentemente seus conhecimentos, meios e técnicas na defesa dos interesses contratados.
 
-**Parágrafo primeiro.** Não há garantia de redução de juros ou parcelas, restituição de valores, concessão de liminar, manutenção da posse do veículo ou prazo determinado para encerramento.
+**Parágrafo #.** Não há garantia de redução de juros ou parcelas, restituição de valores, concessão de liminar, manutenção da posse do veículo ou prazo determinado para encerramento.
 
-**Parágrafo segundo.** A ausência de resultado favorável não caracteriza, por si só, falha profissional. Esta disposição não exclui responsabilidade por conduta dolosa ou culposa.
+**Parágrafo #.** A ausência de resultado favorável não caracteriza, por si só, falha profissional. Esta disposição não exclui responsabilidade por conduta dolosa ou culposa.
 
-### Cláusula décima primeira — dos pagamentos e da mora
+### Cláusula # — dos pagamentos e da mora
 
 O CONTRATANTE declara ter sido esclarecido de que a contratação da CONTRATADA e o ajuizamento da ação revisional não suspendem automaticamente as parcelas, não afastam a mora e não impedem, por si só, negativação, cobrança ou busca e apreensão.
 
-**Parágrafo primeiro.** A interrupção, redução ou alteração unilateral dos pagamentos pode gerar encargos e medidas de recuperação do crédito e do veículo.
+**Parágrafo #.** A interrupção, redução ou alteração unilateral dos pagamentos pode gerar encargos e medidas de recuperação do crédito e do veículo.
 
-**Parágrafo segundo.** Eventual pagamento reduzido ou depósito judicial dependerá de orientação específica sobre condições e riscos. O depósito de quantia inferior à exigida pelo credor não assegura, isoladamente, a regularidade do financiamento.
+**Parágrafo #.** Eventual pagamento reduzido ou depósito judicial dependerá de orientação específica sobre condições e riscos. O depósito de quantia inferior à exigida pelo credor não assegura, isoladamente, a regularidade do financiamento.
 
-**Parágrafo terceiro.** Pedidos de suspensão de negativação ou apreensão dependem de fundamento adequado e decisão judicial, que poderá ser indeferida, modificada ou revogada.
+**Parágrafo #.** Pedidos de suspensão de negativação ou apreensão dependem de fundamento adequado e decisão judicial, que poderá ser indeferida, modificada ou revogada.
 
-**Parágrafo quarto.** Foram identificados os seguintes riscos específicos do atendimento, além dos já descritos neste instrumento:
+**Parágrafo #.** Foram identificados os seguintes riscos específicos do atendimento, além dos já descritos neste instrumento:
 
 {{proposta.riscos}}
 
-### Cláusula décima segunda — da busca e apreensão
+### Cláusula # — da busca e apreensão
 
 O CONTRATANTE deverá comunicar imediatamente notificações, cobranças judiciais, citação, ordem de apreensão ou apreensão já realizada.
 
-**Parágrafo primeiro.** A defesa em ação autônoma de busca e apreensão ou execução somente estará incluída se expressamente prevista no escopo contratado.
+**Parágrafo #.** A defesa em ação autônoma de busca e apreensão ou execução somente estará incluída se expressamente prevista no escopo contratado.
 
-**Parágrafo segundo.** Ao tomar conhecimento de situação urgente, a CONTRATADA esclarecerá as medidas possíveis, os prazos relevantes e a necessidade de contratação adicional, quando houver.
+**Parágrafo #.** Ao tomar conhecimento de situação urgente, a CONTRATADA esclarecerá as medidas possíveis, os prazos relevantes e a necessidade de contratação adicional, quando houver.
 
 ## IV. Dos deveres das partes e dos acordos
 
-### Cláusula décima terceira — das obrigações e da comunicação
+### Cláusula # — das obrigações e da comunicação
 
 O CONTRATANTE deverá fornecer documentos e informações verdadeiras, atender às solicitações em tempo hábil e manter seus contatos atualizados.
 
-**Parágrafo primeiro.** Deverá comunicar pagamentos, renegociações, quitação, venda ou entrega do veículo, propostas do credor e outros fatos que alterem a situação do financiamento.
+**Parágrafo #.** Deverá comunicar pagamentos, renegociações, quitação, venda ou entrega do veículo, propostas do credor e outros fatos que alterem a situação do financiamento.
 
-**Parágrafo segundo.** A CONTRATADA manterá o CONTRATANTE informado sobre propostas, providências, decisões e acontecimentos relevantes, indicando os prazos que exijam sua participação.
+**Parágrafo #.** A CONTRATADA manterá o CONTRATANTE informado sobre propostas, providências, decisões e acontecimentos relevantes, indicando os prazos que exijam sua participação.
 
-**Parágrafo terceiro.** As comunicações ao CONTRATANTE utilizarão os contatos informados na qualificação, cabendo-lhe comunicar alterações.
+**Parágrafo #.** As comunicações ao CONTRATANTE utilizarão os contatos informados na qualificação, cabendo-lhe comunicar alterações.
 
-**Parágrafo quarto.** Eventual repercussão da entrega tardia ou da omissão de informações será avaliada conforme o prejuízo concreto causado, sem afastar os deveres profissionais da CONTRATADA.
+**Parágrafo #.** Eventual repercussão da entrega tardia ou da omissão de informações será avaliada conforme o prejuízo concreto causado, sem afastar os deveres profissionais da CONTRATADA.
 
 @dados
 Canal oficial do escritório: {{escritorio.telefone}} e {{escritorio.email}}
 Prazo usual de resposta: {{escritorio.prazo_resposta}} dias úteis
 Procedimento para situações urgentes: {{escritorio.orientacao_urgencias}}
 
-### Cláusula décima quarta — dos acordos e da procuração
+### Cláusula # — dos acordos e da procuração
 
 A CONTRATADA apresentará as propostas relevantes ao CONTRATANTE, esclarecendo seus efeitos sobre dívida, parcelas, veículo, processo e honorários.
 
-**Parágrafo primeiro.** A aceitação de acordo dependerá de manifestação expressa do CONTRATANTE e dos poderes específicos exigíveis.
+**Parágrafo #.** A aceitação de acordo dependerá de manifestação expressa do CONTRATANTE e dos poderes específicos exigíveis.
 
-**Parágrafo segundo.** Os poderes a serem formalizados no instrumento próprio de procuração são:
+**Parágrafo #.** Os poderes a serem formalizados no instrumento próprio de procuração são:
 
 {{procuracao.poderes}}
 
-**Parágrafo terceiro.** A descrição dos poderes neste contrato não substitui a procuração nem amplia os poderes nela efetivamente outorgados.
+**Parágrafo #.** A descrição dos poderes neste contrato não substitui a procuração nem amplia os poderes nela efetivamente outorgados.
 
-**Parágrafo quarto.** O CONTRATANTE comunicará propostas e acordos realizados diretamente com a instituição financeira. A solução por acordo observará os honorários ajustados, apurando-se o êxito sobre o benefício efetivo relacionado ao objeto contratado.
+**Parágrafo #.** O CONTRATANTE comunicará propostas e acordos realizados diretamente com a instituição financeira. A solução por acordo observará os honorários ajustados, apurando-se o êxito sobre o benefício efetivo relacionado ao objeto contratado.
 
 ## V. Do recebimento de valores e da prestação de contas
 
-### Cláusula décima quinta — da dedução dos honorários
+### Cláusula # — da dedução dos honorários
 
 A CONTRATADA fica autorizada a deduzir honorários vencidos e despesas comprovadas e exigíveis relacionados a esta contratação, sobre valores recebidos em nome do CONTRATANTE, mediante os poderes necessários e prestação de contas.
 
-**Parágrafo primeiro.** O demonstrativo discriminará o valor recebido, as deduções e o saldo pertencente ao CONTRATANTE.
+**Parágrafo #.** O demonstrativo discriminará o valor recebido, as deduções e o saldo pertencente ao CONTRATANTE.
 
-**Parágrafo segundo.** O saldo será transferido em até {{proposta.prazo_repasse}} após a disponibilidade dos recursos.
+**Parágrafo #.** O saldo será transferido em até {{proposta.prazo_repasse}} após a disponibilidade dos recursos.
 
-**Parágrafo terceiro.** Esta autorização não abrange retenção de valores alheios ao objeto contratado.
+**Parágrafo #.** Esta autorização não abrange retenção de valores alheios ao objeto contratado.
 
 ## VI. Da inadimplência e do encerramento
 
-### Cláusula décima sexta — do atraso no pagamento
+### Cláusula # — do atraso no pagamento
 
 Havendo atraso nos honorários, incidirão sobre a parcela vencida juros de mora de **1% ao mês**, calculados proporcionalmente aos dias de atraso, e multa de **2%**.
 
-**Parágrafo único.** A inadimplência poderá ensejar cobrança e encerramento da relação, observadas a comunicação ao CONTRATANTE e as regras de continuidade da representação. Não autoriza abandono imediato da causa.
+**Parágrafo #.** A inadimplência poderá ensejar cobrança e encerramento da relação, observadas a comunicação ao CONTRATANTE e as regras de continuidade da representação. Não autoriza abandono imediato da causa.
 
-### Cláusula décima sétima — da vigência e da rescisão
+### Cláusula # — da vigência e da rescisão
 
 O contrato terá vigência até a conclusão dos serviços incluídos no escopo, podendo ser encerrado antecipadamente por acordo, revogação do mandato ou renúncia.
 
-**Parágrafo primeiro.** No encerramento antecipado, serão devidos honorários proporcionais ao trabalho efetivamente realizado, tomando-se como referência a remuneração ajustada e o grau de execução das etapas.
+**Parágrafo #.** No encerramento antecipado, serão devidos honorários proporcionais ao trabalho efetivamente realizado, tomando-se como referência a remuneração ajustada e o grau de execução das etapas.
 
-**Parágrafo segundo.** Serão descontados os pagamentos efetuados, com devolução de eventual saldo antecipado relativo a serviços não prestados, após a prestação de contas.
+**Parágrafo #.** Serão descontados os pagamentos efetuados, com devolução de eventual saldo antecipado relativo a serviços não prestados, após a prestação de contas.
 
-**Parágrafo terceiro.** A revogação não acarretará multa pelo simples exercício do direito de substituir o advogado.
+**Parágrafo #.** A revogação não acarretará multa pelo simples exercício do direito de substituir o advogado.
 
-**Parágrafo quarto.** Eventual direito a honorários sobre resultado posterior observará a contribuição profissional, a proporcionalidade e a efetiva ocorrência do êxito, sem cobrança antecipada de benefício hipotético.
+**Parágrafo #.** Eventual direito a honorários sobre resultado posterior observará a contribuição profissional, a proporcionalidade e a efetiva ocorrência do êxito, sem cobrança antecipada de benefício hipotético.
 
-**Parágrafo quinto.** Na renúncia, a CONTRATADA continuará a representação durante os dez dias seguintes à notificação, salvo substituição anterior, observadas as disposições legais aplicáveis.
+**Parágrafo #.** Na renúncia, a CONTRATADA continuará a representação durante os dez dias seguintes à notificação, salvo substituição anterior, observadas as disposições legais aplicáveis.
 
-### Cláusula décima oitava — dos impedimentos e da continuidade
+### Cláusula # — dos impedimentos e da continuidade
 
 Em caso de falecimento, incapacidade ou impedimento do advogado responsável, serão adotadas as providências possíveis para comunicar a situação, disponibilizar os documentos e permitir a regularização da representação, respeitada a escolha do CONTRATANTE.
 
-**Parágrafo primeiro.** Serão preservados os direitos aos honorários proporcionais ao trabalho realizado.
+**Parágrafo #.** Serão preservados os direitos aos honorários proporcionais ao trabalho realizado.
 
-**Parágrafo segundo.** A CONTRATADA poderá atuar por equipe e substabelecimento, preservados o sigilo e a supervisão adequada. O substabelecimento sem reserva dependerá de prévio e inequívoco conhecimento do CONTRATANTE.
+**Parágrafo #.** A CONTRATADA poderá atuar por equipe e substabelecimento, preservados o sigilo e a supervisão adequada. O substabelecimento sem reserva dependerá de prévio e inequívoco conhecimento do CONTRATANTE.
 
 ## VII. Do sigilo e dos eventos excepcionais
 
-### Cláusula décima nona — do sigilo e dos dados
+### Cláusula # — do sigilo e dos dados
 
 Os documentos e dados serão utilizados para execução dos serviços, exercício de direitos e cumprimento de obrigações legais e profissionais.
 
-**Parágrafo primeiro.** O compartilhamento será limitado ao necessário com órgãos públicos, instituição financeira, profissionais envolvidos e prestadores de apoio, observados o sigilo e as medidas de segurança pertinentes.
+**Parágrafo #.** O compartilhamento será limitado ao necessário com órgãos públicos, instituição financeira, profissionais envolvidos e prestadores de apoio, observados o sigilo e as medidas de segurança pertinentes.
 
-**Parágrafo segundo.** A contratação não autoriza divulgação de informações identificáveis do CONTRATANTE para publicidade.
+**Parágrafo #.** A contratação não autoriza divulgação de informações identificáveis do CONTRATANTE para publicidade.
 
-### Cláusula vigésima — do caso fortuito e da força maior
+### Cláusula # — do caso fortuito e da força maior
 
 As partes não responderão pelo inadimplemento diretamente decorrente de caso fortuito ou força maior, nos termos do art. 393 do Código Civil, observadas as circunstâncias concretas e as responsabilidades legalmente atribuídas.
 
-**Parágrafo único.** A parte afetada comunicará o evento assim que possível e adotará medidas razoáveis para reduzir seus efeitos e preservar os interesses envolvidos.
+**Parágrafo #.** A parte afetada comunicará o evento assim que possível e adotará medidas razoáveis para reduzir seus efeitos e preservar os interesses envolvidos.
 
 ## VIII. Da formalização e do foro
 
-### Cláusula vigésima primeira — da formalização e dos documentos integrantes
+### Cláusula # — da formalização e dos documentos integrantes
 
 O presente contrato escrito de honorários constitui título executivo nos termos do art. 24 da Lei n.º 8.906/1994, observados os requisitos de exigibilidade de cada obrigação.
 
-**Parágrafo primeiro.** Alterações de escopo, remuneração e pagamento serão formalizadas por escrito.
+**Parágrafo #.** Alterações de escopo, remuneração e pagamento serão formalizadas por escrito.
 
-**Parágrafo segundo.** O instrumento poderá ser assinado física ou eletronicamente, com identificação das partes e preservação de sua integridade.
+**Parágrafo #.** O instrumento poderá ser assinado física ou eletronicamente, com identificação das partes e preservação de sua integridade.
 
-**Parágrafo terceiro.** A validade da proposta comercial que antecede este contrato é:
+**Parágrafo #.** A validade da proposta comercial que antecede este contrato é:
 
 {{proposta.validade}}
 
 Esse prazo refere-se à aceitação da proposta e não limita a vigência dos serviços após a celebração do contrato.
 
-**Parágrafo quarto.** O Anexo I registra a avaliação técnica disponível na data indicada. Sua conclusão não constitui promessa de resultado e poderá ser revista diante de novos documentos ou fatos.
+**Parágrafo #.** O Anexo I registra a avaliação técnica disponível na data indicada. Sua conclusão não constitui promessa de resultado e poderá ser revista diante de novos documentos ou fatos.
 
-### Cláusula vigésima segunda — do foro
+### Cláusula # — do foro
 
 Fica eleito o foro da **{{documento.foro}}**, para dirimir controvérsias referentes a este contrato, respeitadas as disposições legais aplicáveis.
 
