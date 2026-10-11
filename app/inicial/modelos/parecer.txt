@@ -1,0 +1,46 @@
+# Parecer de cálculos
+
+@referencia Atendimento {{atendimento.protocolo}} · {{kit.versao}} · data-base {{analise.data_base}}
+
+## 1. Financiamento analisado
+
+{{contrato.banco}}, contrato nº {{contrato.numero|não informado}}, de {{contrato.data}}.
+
+## 2. Dados usados
+
+@dados
+Valor financiado: {{contrato.capital}}
+Prazo: {{contrato.prazo}} parcelas
+Parcela: {{contrato.parcela}}
+Taxa contratada: {{contrato.taxa_mensal}}
+CET: {{contrato.cet|não informado no contrato analisado}}
+Parcelas pagas: {{contrato.parcelas_pagas|não informado}}
+Saldo considerado: {{contrato.saldo|não considerado nesta análise}}
+Documentos usados: {{analise.documentos}}
+
+## 3. Referência de mercado
+
+{{analise.bacen}}
+
+## 4. Método
+
+{{analise.metodo}}
+
+## 5. Resultados
+
+{{analise.resultados}}
+
+## 6. Limitações
+
+{{analise.limitacoes|Sem limitações além das indicadas no método.}}
+
+## 7. Conclusão
+
+**{{analise.conclusao}}.** {{analise.conclusao_texto}}
+
+@dados
+Revisão prevista: {{analise.revisao_data|quando houver fato novo}}
+
+@direita {{data.cidade}}, {{data.hoje}}.
+
+@assinatura {{escritorio.advogado}} | {{escritorio.advogado_oab}} | {{escritorio.nome}}

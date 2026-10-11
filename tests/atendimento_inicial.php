@@ -326,7 +326,7 @@ ok(scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$pv['id']])
 $cli->get('/cliente?area=reuniao');
 ok(str_contains($cli->html, 'Proposta de atendimento') && str_contains($cli->html, 'ainda não foi confirmada'), 'T13: cliente vê a proposta e que a reunião ainda não foi confirmada');
 $cli->get('/cliente/documento-kit/' . $pv['id']);
-ok($cli->status === 200 && str_contains($cli->html, 'Negociação extrajudicial') && str_contains($cli->html, 'versão ' . $pv['version']), 'S13: documento em texto selecionável, com versão identificada');
+ok($cli->status === 200 && str_contains($cli->html, 'Negociação extrajudicial') && str_contains($cli->html, '· v' . $pv['version'] . '</title>') && str_contains($cli->html, 'paginar.js') && str_contains($cli->html, 'Baixar .docx'), 'S13: documento em texto selecionável, no timbrado, com versão identificada');
 
 echo "\nP3. Reunião pelos quatro canais (T14, T15, T16, T17, T18)\n";
 $when = now()->modify('+2 days')->setTime(15, 0)->format('Y-m-d\TH:i');
@@ -375,6 +375,8 @@ op($sid, $id, ['op' => 'finalizar', 'execution_stage' => 'negociacao']);
 ok(c($id)['initial_status'] === 'awaiting_decision' && str_contains(flash_error($sid), 'Kit'), 'finalizar exige kit pronto');
 op($sid, $id, ['op' => 'aprovar_preparacao', 'f' => []]);
 ok(!c($id)['review_flag'], 'revisão resolvida ao validar de novo');
+set_setting('office_address', null); // simula o endereço ainda não preenchido
+set_setting('default_percentual_exito', '25% (vinte e cinco por cento)');
 op($sid, $id, ['op' => 'kit_gerar', 'kind' => 'procuracao']);
 $prv = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'procuracao' ORDER BY version DESC", [$id]);
 ok(str_contains(implode(' ', json_decode($prv['missing'], true)), 'Endereço do escritório'), 'variável ausente fica sinalizada na minuta');

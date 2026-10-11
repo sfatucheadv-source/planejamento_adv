@@ -7,18 +7,26 @@ declare(strict_types=1);
  * Variável ausente fica sinalizada e impede a publicação daquele documento.
  */
 
-/** Modelos iniciais. Sidney revisa e aprova cada um antes da primeira publicação. */
+/**
+ * Modelos iniciais, em app/inicial/modelos/*.txt (marcação descrita em
+ * diagramacao.php). Procuração, declaração e contrato seguem os modelos do
+ * escritório; Sidney revisa e aprova cada um antes da primeira publicação.
+ */
+const TEMPLATE_TITLES = [
+    'proposta' => 'Proposta de atendimento',
+    'honorarios' => 'Contrato de honorários',
+    'procuracao' => 'Procuração',
+    'hipossuficiencia' => 'Declaração de hipossuficiência',
+    'parecer' => 'Parecer de cálculos',
+];
+
 function default_templates(): array
 {
-    $assinatura = "\n\n{{escritorio.advogado}} · {{escritorio.advogado_oab}}\n{{escritorio.nome}} · {{escritorio.oab}}";
-    $qualif = '{{cliente.nome_completo}}, {{cliente.nacionalidade}}, {{cliente.estado_civil}}, {{cliente.profissao}}, inscrito(a) no CPF sob o nº {{cliente.cpf}}, residente em {{cliente.endereco}}';
-    return [
-        'proposta' => ['Proposta de atendimento', "PROPOSTA DE ATENDIMENTO\nAtendimento {{atendimento.protocolo}} · {{data.hoje}}\n\nCliente: {{cliente.nome_completo}}\nFinanciamento: {{contrato.banco}}, contrato nº {{contrato.numero|não informado}}\n\n1. O que a análise mostrou\n{{analise.conclusao}}. {{analise.conclusao_texto}}\n\n2. O que propomos fazer\n{{proposta.escopo}}\n\n3. O que não está incluído\n{{proposta.exclusoes|Nada além do escopo descrito no item 2.}}\n\n4. Honorários\n{{proposta.honorarios}}\n{{proposta.base_exito|}}\n\n5. Forma de pagamento\n{{proposta.pagamento}}\n\n6. Despesas\n{{proposta.despesas|Não há despesas previstas além dos honorários.}}\n\n7. Riscos que você precisa conhecer\n{{proposta.riscos}}\n\nValidade desta proposta: {{proposta.validade|combinada na conversa}}." . $assinatura],
-        'honorarios' => ['Contrato de honorários', "CONTRATO DE PRESTAÇÃO DE SERVIÇOS ADVOCATÍCIOS\n\nCONTRATANTE: $qualif.\n\nCONTRATADA: {{escritorio.nome}}, {{escritorio.oab}}, CNPJ {{escritorio.cnpj}}, com sede em {{escritorio.endereco}}, representada por {{escritorio.advogado}}, {{escritorio.advogado_oab}}.\n\nOBJETO: {{proposta.escopo}}\n\nNÃO INCLUÍDO: {{proposta.exclusoes|serviços não descritos no objeto.}}\n\nHONORÁRIOS: {{proposta.honorarios}} {{proposta.base_exito|}}\n\nPAGAMENTO: {{proposta.pagamento}}\n\nDESPESAS: {{proposta.despesas|não há despesas previstas além dos honorários.}}\n\n[[COMPLETAR: cláusulas gerais do escritório (desistência, prestação de contas, foro)]]\n\n{{data.cidade}}, {{data.hoje}}.\n\n_______________________________\n{{cliente.nome_completo}}\n\n_______________________________\n{{escritorio.advogado}} · {{escritorio.nome}}"],
-        'procuracao' => ['Procuração', "PROCURAÇÃO\n\nOUTORGANTE: $qualif.\n\nOUTORGADO: {{escritorio.advogado}}, {{escritorio.advogado_oab}}, integrante de {{escritorio.nome}}, {{escritorio.oab}}, com endereço profissional em {{escritorio.endereco}}.\n\nPODERES: {{procuracao.poderes}}\n\n{{data.cidade}}, {{data.hoje}}.\n\n_______________________________\n{{cliente.nome_completo}}"],
-        'hipossuficiencia' => ['Declaração de hipossuficiência', "DECLARAÇÃO\n\nEu, $qualif, [[COMPLETAR: texto da declaração aprovado por Sidney]]\n\nAtividade e renda informadas: {{gratuidade.renda}}\n\n{{data.cidade}}, {{data.hoje}}.\n\n_______________________________\n{{cliente.nome_completo}}"],
-        'parecer' => ['Parecer de cálculos', "PARECER DE CÁLCULOS\nAtendimento {{atendimento.protocolo}} · versão {{kit.versao}} · data-base {{analise.data_base}}\n\n1. Financiamento analisado\n{{contrato.banco}}, contrato nº {{contrato.numero|não informado}}, de {{contrato.data}}.\n\n2. Dados usados\nValor financiado: {{contrato.capital}}\nPrazo: {{contrato.prazo}} parcelas\nParcela: {{contrato.parcela}}\nTaxa contratada: {{contrato.taxa_mensal}}\nCET: {{contrato.cet|não informado no contrato analisado}}\nParcelas pagas: {{contrato.parcelas_pagas|não informado}}\nSaldo considerado: {{contrato.saldo|não considerado nesta análise}}\nDocumentos usados: {{analise.documentos}}\n\n3. Referência de mercado\n{{analise.bacen}}\n\n4. Método\n{{analise.metodo}}\n\n5. Resultados\n{{analise.resultados}}\n\n6. Limitações\n{{analise.limitacoes|Sem limitações além das indicadas no método.}}\n\n7. Conclusão\n{{analise.conclusao}}. {{analise.conclusao_texto}}\n\nRevisão prevista: {{analise.revisao_data|quando houver fato novo}}." . $assinatura],
-    ];
+    $out = [];
+    foreach (TEMPLATE_TITLES as $key => $title) {
+        $out[$key] = [$title, rtrim((string) file_get_contents(__DIR__ . '/modelos/' . $key . '.txt')) . "\n"];
+    }
+    return $out;
 }
 
 function seed_templates(): void
@@ -64,7 +72,9 @@ function builtin_var_labels(): array
         'proposta.prazo_repasse' => 'Prazo para repassar ao cliente o saldo recebido',
         'documento.foro' => 'Foro do contrato (comarca e UF)',
         'testemunha1.nome' => 'Testemunha 1 · nome', 'testemunha1.cpf' => 'Testemunha 1 · CPF', 'testemunha2.nome' => 'Testemunha 2 · nome', 'testemunha2.cpf' => 'Testemunha 2 · CPF',
-        'procuracao.poderes' => 'Poderes da procuração', 'gratuidade.renda' => 'Atividade e renda',
+        'procuracao.poderes' => 'Poderes da procuração', 'procuracao.finalidade' => 'Finalidade da procuração',
+        'proposta.percentual_exito' => 'Honorários contratuais (percentual, por extenso)', 'cliente.genero' => 'Gênero do cliente (concordância)',
+        'gratuidade.renda' => 'Atividade e renda',
         'escritorio.nome' => 'Sociedade', 'escritorio.oab' => 'Registro da sociedade', 'escritorio.cnpj' => 'CNPJ', 'escritorio.advogado' => 'Advogado',
         'escritorio.advogado_oab' => 'OAB do advogado',
     ] + array_map(fn($d) => $d['label'], OFFICE_VARS);
@@ -84,14 +94,16 @@ function kit_vars(int $caseId): array
     $renda = trim(implode(' · ', array_filter([$d('renda_atividade'), $d('renda_valor') ? 'renda aproximada de ' . $d('renda_valor') : null])));
     $titular = fv($caseId, 'relacao_contrato') === 'titular' || !fv($caseId, 'relacao_contrato') ? $d('nome_completo') : $d('titular_nome');
     $withDefault = fn(string $var) => $d(CASE_VAR_DEFAULTS[$var]['field']) ?? setting(CASE_VAR_DEFAULTS[$var]['setting']);
-    return custom_var_values($caseId) + array_map(fn($k) => office_var($k), array_combine(array_keys(OFFICE_VARS), array_keys(OFFICE_VARS))) + [
+    $office = array_filter(array_map(fn($k) => office_var($k), array_combine(array_keys(OFFICE_VARS), array_keys(OFFICE_VARS))), fn($v) => $v !== null);
+    $vars = custom_var_values($caseId) + $office + [
         'atendimento.protocolo' => $c['protocol'],
         'data.hoje' => fmt_date(now()->format('Y-m-d'), true),
         'data.cidade' => office('city') ?: null,
         'cliente.nome_completo' => $d('nome_completo'),
         'cliente.cpf' => $d('cpf'),
         'cliente.nacionalidade' => $d('nacionalidade'),
-        'cliente.estado_civil' => $d('estado_civil') ? mb_strtolower($d('estado_civil')) : null,
+        'cliente.estado_civil' => $d('estado_civil') ? gendered_marital($d('estado_civil'), fv($caseId, 'genero')) : null,
+        'cliente.genero' => fv($caseId, 'genero'),
         'cliente.profissao' => $d('profissao'),
         'cliente.identificacao' => $d('identificacao'),
         'cliente.endereco' => full_address($caseId),
@@ -133,12 +145,14 @@ function kit_vars(int $caseId): array
         'proposta.exclusoes' => $d('proposta_exclusoes'),
         'proposta.validade' => $d('proposta_validade'),
         'proposta.prazo_repasse' => $withDefault('proposta.prazo_repasse'),
+        'proposta.percentual_exito' => $withDefault('proposta.percentual_exito'),
+        'procuracao.finalidade' => $withDefault('procuracao.finalidade'),
         'documento.foro' => $withDefault('documento.foro'),
         'testemunha1.nome' => $d('testemunha1_nome'),
         'testemunha1.cpf' => $d('testemunha1_cpf'),
         'testemunha2.nome' => $d('testemunha2_nome'),
         'testemunha2.cpf' => $d('testemunha2_cpf'),
-        'procuracao.poderes' => $d('procuracao_poderes'),
+        'procuracao.poderes' => $withDefault('procuracao.poderes'),
         'gratuidade.renda' => $renda ?: null,
         'escritorio.nome' => office('society') ?: null,
         'escritorio.oab' => office('society_oab') ?: null,
@@ -146,6 +160,14 @@ function kit_vars(int $caseId): array
         'escritorio.advogado' => office('lawyer') ?: null,
         'escritorio.advogado_oab' => office('lawyer_oab') ?: null,
     ];
+    // O padrão do escritório pode citar outras variáveis (ex.: a finalidade
+    // da procuração cita o banco e o número do contrato): preenche uma vez.
+    foreach (CASE_VAR_DEFAULTS as $var => $def) {
+        if ($d($def['field']) === null && is_string($vars[$var] ?? null) && str_contains($vars[$var], '{{')) {
+            $vars[$var] = render_template($vars[$var], array_diff_key($vars, CASE_VAR_DEFAULTS))[0];
+        }
+    }
+    return $vars;
 }
 
 /**
@@ -176,6 +198,9 @@ function render_template(string $body, array $vars): array
 {
     $labels = template_var_labels();
     $missing = [];
+    // Concordância de gênero: {{flex:inscrito/inscrita}}. Sem o gênero na ficha,
+    // sai a forma dupla "inscrito(a)".
+    $body = preg_replace_callback('/\{\{\s*flex:([^}\/]*)\/([^}]*)\}\}/u', fn($m) => flex_word(trim($m[1]), trim($m[2]), $vars['cliente.genero'] ?? null), $body);
     $out = preg_replace_callback('/\{\{\s*([a-z0-9_.]+)\s*(?:\|([^}]*))?\}\}/u', function ($m) use ($vars, $labels, &$missing) {
         $key = $m[1];
         if (!array_key_exists($key, $labels)) {
@@ -190,13 +215,47 @@ function render_template(string $body, array $vars): array
             $missing[] = $labels[$key];
             return '[[FALTA: ' . $labels[$key] . ']]';
         }
-        return (string) $v;
+        // marca de negrito ou versalete sem par no dado desmontaria o resto do parágrafo
+        $v = (string) $v;
+        foreach (['**', '^^'] as $mk) {
+            if (substr_count($v, $mk) % 2) {
+                $v = str_replace($mk, '', $v);
+            }
+        }
+        return $v;
     }, $body);
+    // "S.A." no fim de um dado seguido do ponto do modelo: um ponto só
+    $out = preg_replace('/(?<!\.)\.\.(?!\.)/u', '.', (string) $out);
     $out = preg_replace("/\n{3,}/", "\n\n", (string) $out);
     return [$out, array_values(array_unique(array_merge($missing, content_markers($out, $missing))))];
 }
 
 /** Marcadores [[...]] que sobraram no texto (inclusive em edição manual). */
+function flex_word(string $masc, string $fem, ?string $genero): string
+{
+    if ($genero === 'feminino') {
+        return $fem;
+    }
+    if ($genero === 'masculino') {
+        return $masc;
+    }
+    if ($masc !== '' && mb_substr($fem, 0, -1) === mb_substr($masc, 0, -1) && mb_substr($masc, -1) === 'o' && mb_substr($fem, -1) === 'a') {
+        return $masc . '(a)';
+    }
+    return $masc . '(a)' === $fem ? $fem : $masc . '/' . $fem;
+}
+
+/** Estado civil concordando com o gênero: "Solteiro(a)" → solteira. */
+function gendered_marital(string $label, ?string $genero): string
+{
+    $label = mb_strtolower($label);
+    return match ($genero) {
+        'feminino' => preg_replace('/o\(a\)/u', 'a', $label),
+        'masculino' => preg_replace('/\(a\)/u', '', $label),
+        default => $label,
+    };
+}
+
 function content_markers(string $content, array $known = []): array
 {
     preg_match_all('/\[\[(?:FALTA|COMPLETAR|A COMPLETAR):?\s*([^\]]*)\]\]/u', $content, $m);
@@ -287,6 +346,9 @@ function kit_fresh(int $caseId, string $kind): array
     // não aparece no documento não o marca como desatualizado.
     preg_match_all('/\{\{\s*([a-z0-9_.]+)/u', $t['body'], $m);
     $used = array_diff(array_unique($m[1]), ['data.hoje', 'kit.versao']);
+    if (str_contains($t['body'], '{{flex:')) {
+        $used[] = 'cliente.genero';
+    }
     $snap = array_intersect_key($vars, array_flip($used));
     ksort($snap);
     return [$content, $missing, $snap, sha1(json_encode($snap) . '|' . $t['version']), (int) $t['version']];

@@ -1,0 +1,1190 @@
+/* ============================================================================
+   FATUCHE — Sistema tipográfico para peças processuais
+   Formato: A4 · impressão e leitura em tela · paginação por JS
+   ========================================================================= */
+
+:root {
+  /* ---- Geometria da folha ------------------------------------------ */
+  --folha-larg: 210mm;
+  --folha-alt: 297mm;
+
+  --mg-topo: 32mm;
+  --mg-base: 28mm;
+  --mg-esq: 30mm;
+  --mg-dir: 30mm;
+
+  /* ---- Timbrado (posições medidas no PDF original) ------------------ */
+  --logo-x: 136.34mm;
+  --logo-y: 4.46mm;
+  --logo-larg: 51.98mm;
+  --logo-alt: 17.08mm;
+
+  --rodape-x: 26.44mm;
+  --rodape-y: 279.92mm;
+  --rodape-larg: 155.20mm;
+  --rodape-alt: 11.88mm;
+
+  /* ---- Paleta institucional (extraída do timbrado) ------------------ */
+  --tinta: #222831;          /* grafite institucional */
+  --tinta-forte: #171B21;
+  --acento: #1800AD;         /* azul-violeta da marca */
+  --acento-suave: #6E63C9;
+  --secundaria: #6E747E;     /* metadados, fontes de citação */
+  --tenue: #A7ACB4;          /* numeração marginal */
+  --regua: #D6D9DE;          /* filetes neutros */
+  --regua-forte: #B7BCC4;
+
+  /* ---- Escala tipográfica ------------------------------------------- */
+  --corpo-tam: 12pt;
+
+  /* Entrelinha. Atenção à unidade: no CSS o valor multiplica o corpo da fonte;
+     no Word, o "múltiplo" multiplica a entrelinha natural da fonte, que na Lora
+     mede 1,25 (medido no Chromium: line-height:normal = 1.25em).
+     Logo: CSS 1,50 = múltiplo 1,20 no Word. A recomendação de ~1,25 múltiplo
+     equivaleria a CSS 1,56. Ficamos um passo abaixo dela — arejado sem afrouxar.
+     Nunca baixar para 1,25 no CSS: isso é entrelinha SIMPLES, texto embolado. */
+  --corpo-entrelinha: 1.5;
+
+  /* PADRÃO DA CASA (definido pelo escritório em 23/09/2026): recuo de
+     primeira linha de 12,5 mm nos parágrafos de texto simples, mantido o
+     espaço de 5,1 mm entre parágrafos (≈ 14,5 pt; no Word, "depois: 14,5 pt").
+     O bloco de qualificação das partes continua sem recuo (seção 3).
+     Perfis alternativos (tradicional, moderno, misto) na seção 3. */
+  --recuo-par: 12.5mm;
+  --par-espaco: 5.1mm;
+
+  /* Nenhuma família monoespaçada em lugar nenhum: a Courier New e parentes
+     consomem até 40 % mais folha e têm traço fino demais para corpo de texto. */
+  --serif: "Lora", "Charter", "Bitstream Charter", Georgia, "Sitka Text", "Times New Roman", serif;
+  --sans: "Poppins", "Segoe UI", Aptos, Inter, Arial, sans-serif;
+
+  /* Entreletramento do versalete: ZERO, e não é escolha estética.
+     A Lora e a Poppins não trazem versalete desenhado, então o navegador o
+     sintetiza desenhando as maiúsculas em corpo menor. Qualquer entreletramento
+     acima de 0 faz o extrator de PDF ler o vão a cada maiúscula como espaço de
+     palavra ("E xcelentíssimo S enhor D outor"). Medido no Chromium:
+       small-caps + 0      → "Excelentíssimo Senhor Doutor"   (íntegro)
+       small-caps + 0,03em → "E xcelentíssimo S enhor D outor" (quebrado)
+     Para CAIXA ALTA de verdade o teto continua sendo 0,06 em; para versalete,
+     zero. Não suba este valor. */
+  --versalete-track: 0;
+}
+
+/* ============================================================================
+   1. RESET E BASE
+   ========================================================================= */
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: #EDEEF0;
+  font-family: var(--serif);
+  font-size: var(--corpo-tam);
+  line-height: var(--corpo-entrelinha);
+  color: var(--tinta);
+  font-kerning: normal;
+  font-variant-ligatures: common-ligatures contextual;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Fonte oculta: guarda o fluxo original antes da paginação.
+   Mantida no DOM para leitura por máquinas quando o JS não roda. */
+#fonte { display: none; }
+body.sem-js #fonte { display: block; }
+
+/* ============================================================================
+   2. FOLHA (página física A4)
+   ========================================================================= */
+
+#papel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8mm;
+  padding: 8mm 0;
+}
+
+.folha {
+  position: relative;
+  width: var(--folha-larg);
+  height: var(--folha-alt);
+  background: #FFFFFF;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(34, 40, 49, .10), 0 10px 30px rgba(34, 40, 49, .10);
+}
+
+.folha__cabecalho,
+.folha__rodape {
+  position: absolute;
+  pointer-events: none;
+}
+
+.folha__cabecalho {
+  left: var(--logo-x);
+  top: var(--logo-y);
+  width: var(--logo-larg);
+  height: var(--logo-alt);
+}
+
+.folha__rodape {
+  left: var(--rodape-x);
+  top: var(--rodape-y);
+  width: var(--rodape-larg);
+  height: var(--rodape-alt);
+}
+
+.folha__cabecalho svg,
+.folha__rodape svg { display: block; width: 100%; height: 100%; }
+
+/* Área útil de texto */
+.folha__corpo {
+  position: absolute;
+  left: var(--mg-esq);
+  right: var(--mg-dir);
+  top: var(--mg-topo);
+  bottom: var(--mg-base);
+}
+
+/* Fólio — numeração discreta, no pé da mancha, alinhada à direita */
+.folha__folio {
+  position: absolute;
+  right: var(--mg-dir);
+  top: calc(100% - var(--mg-base) + 3mm);
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  font-weight: 400;
+  letter-spacing: .10em;
+  color: var(--tenue);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+.folha:first-child .folha__folio { display: none; }
+
+/* Marca d'água opcional (ex.: CÓPIA, MINUTA) — nunca sai na versão final */
+.folha__marca {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-family: var(--sans);
+  font-size: 64pt;
+  font-weight: 700;
+  letter-spacing: .18em;
+  color: rgba(34, 40, 49, .05);
+  transform: rotate(-32deg);
+  pointer-events: none;
+}
+
+/* ============================================================================
+   3. BLOCOS DE TEXTO
+   ========================================================================= */
+
+p {
+  margin: 0 0 var(--par-espaco) 0;
+  text-align: justify;
+  text-justify: inter-word;
+  text-indent: var(--recuo-par);
+  hyphens: manual;
+  -webkit-hyphens: manual;
+  orphans: 2;
+  widows: 2;
+  text-wrap: pretty;
+}
+
+/* --- Perfis de parágrafo ---------------------------------------------
+   O padrão (sem classe) é o do escritório: recuo 12,5 mm, 5,1 mm entre parágrafos.
+   Os três abaixo continuam disponíveis pelo campo `perfil_paragrafo` do meta,
+   para quando a peça pedir outro tom. Recuo OU espaçamento, nunca os dois —
+   é por isso que são perfis fechados e não variáveis soltas. */
+body.par-tradicional { --recuo-par: 7mm;  --par-espaco: 0mm; }   /* tom de foro */
+body.par-moderno     { --recuo-par: 0mm;  --par-espaco: 2.1mm; } /* 2,1 mm = 6 pt */
+body.par-misto       { --recuo-par: 5mm;  --par-espaco: 2.1mm; }
+
+/* --- Perfil de fonte sem serifa (opcional) ---------------------------
+   Só use a pedido: estas famílias NÃO vão embutidas no arquivo, então o
+   documento passa a depender do que estiver instalado na máquina que abrir. */
+body.fonte-sans { --serif: "Segoe UI", Aptos, "Source Sans 3", "Source Sans Pro", system-ui, sans-serif; }
+
+/* Continuação de parágrafo quebrado entre páginas: nunca reindenta */
+p.-cont, blockquote.-cont > p:first-child { text-indent: 0; }
+
+/* Qualificação das partes (bloco de abertura): recuo desativado — é a
+   única exceção ao recuo-desde-a-primeira-palavra pedido pelo escritório. */
+.qualificacao, .titulo-peca + p { text-indent: 0; }
+
+strong, b { font-weight: 700; }
+em, i { font-style: italic; }
+a { color: inherit; text-decoration: none; }
+
+/* Sublinhado nunca chega ao papel: corta as descendentes, que é justamente
+   o que o olho usa para reconhecer a palavra. Se veio sublinhado da origem,
+   vira negrito — o destaque se mantém, o ruído some. */
+u, ins, .sublinhado { text-decoration: none; font-weight: 700; }
+
+/* Nada de monoespaçado escapando de uma colagem do Word ou de um <pre>. */
+pre, code, kbd, samp, tt {
+  font-family: var(--serif);
+  font-size: inherit;
+  white-space: normal;
+  background: none;
+}
+
+/* ---- Ênfase controlada ----------------------------------------------
+   Destaque no corpo do texto é NEGRITO, e só. Mais de um recurso de grifo
+   não produz mais destaque: quem destaca tudo não destaca nada.
+   O itálico fica reservado a estrangeirismo, latinismo e título de obra. */
+.enfase { font-weight: 700; }                        /* ênfase padrão */
+.enfase-forte { font-weight: 700; }                  /* mantido por compatibilidade */
+.termo-tecnico, .latim, .estrangeirismo { font-style: italic; font-weight: inherit; }
+.obra { font-style: italic; }                        /* título de livro, revista, obra */
+.versalete {                                         /* maiúscula elegante no corpo */
+  font-variant-caps: small-caps;
+  letter-spacing: var(--versalete-track);
+}
+.parte {                                             /* nomes das partes */
+  font-variant-caps: small-caps;
+  letter-spacing: var(--versalete-track);
+  font-weight: 600;
+}
+.dispositivo {                                       /* art. 319, CPC */
+  font-variant-numeric: tabular-nums lining-nums;
+  white-space: nowrap;
+}
+
+/* ---- Numeração marginal de parágrafos (opcional) --------------------- */
+body.numerar .corpo { counter-reset: par; }
+body.numerar .corpo > p:not(.-cont):not(.sem-numero) { counter-increment: par; }
+body.numerar .corpo > p:not(.-cont):not(.sem-numero)::before {
+  content: counter(par);
+  position: absolute;
+  left: 0;
+  margin-left: -13mm;
+  width: 9mm;
+  text-align: right;
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  font-weight: 400;
+  line-height: calc(var(--corpo-tam) * var(--corpo-entrelinha));
+  color: var(--tenue);
+  font-variant-numeric: tabular-nums;
+  text-indent: 0;
+  hyphens: none;
+}
+body.numerar .corpo > p { position: relative; }
+
+/* ============================================================================
+   4. HIERARQUIA DE TÍTULOS
+   ========================================================================= */
+
+/* Endereçamento — abertura da peça */
+.enderecamento {
+  font-family: var(--sans);
+  font-size: 11.5pt;
+  font-weight: 500;
+  line-height: 1.55;
+  letter-spacing: var(--versalete-track);
+  font-variant-caps: small-caps;   /* versalete no lugar da caixa alta */
+  text-indent: 0;
+  text-align: left;
+  hyphens: none;
+  color: var(--tinta);
+  margin: 0 0 3mm 0;
+  max-width: 134mm;
+}
+.enderecamento .-vara { display: block; }
+.enderecamento .-comarca { display: block; font-weight: 400; color: var(--secundaria); letter-spacing: var(--versalete-track); }
+
+/* Espaço reservado ao despacho judicial */
+.reserva-despacho { height: 45mm; }
+
+/* Referência processual (autos nº ..., classe) */
+.referencia {
+  font-family: var(--sans);
+  font-size: 9pt;
+  font-weight: 400;
+  letter-spacing: var(--versalete-track);
+  font-variant-caps: small-caps;   /* versalete no lugar da caixa alta */
+  color: var(--secundaria);
+  text-indent: 0;
+  text-align: left;
+  hyphens: none;
+  margin: 0 0 8mm 0;
+}
+.referencia strong { color: var(--tinta); font-weight: 600; }
+
+/* Título da peça */
+.titulo-peca, h1 {
+  font-family: var(--sans);
+  font-size: 13pt;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: var(--versalete-track);
+  font-variant-caps: small-caps;   /* versalete no lugar da caixa alta */
+  text-align: center;
+  text-indent: 0;
+  hyphens: none;
+  color: var(--tinta);
+  margin: 0 0 4mm 0;
+}
+.titulo-peca .-sub {
+  display: block;
+  font-size: 9.5pt;
+  font-weight: 400;
+  letter-spacing: var(--versalete-track);
+  color: var(--secundaria);
+  margin-top: 2mm;
+}
+.titulo-peca::after {
+  content: "";
+  display: block;
+  width: 22mm;
+  height: .5pt;
+  background: var(--acento);
+  margin: 4mm auto 0;
+}
+
+/* Seções: I – DOS FATOS */
+h2, .secao {
+  font-family: var(--sans);
+  font-size: 11.5pt;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: var(--versalete-track);
+  font-variant-caps: small-caps;   /* versalete no lugar da caixa alta */
+  text-align: left;
+  text-indent: 0;
+  hyphens: none;
+  color: var(--tinta);
+  margin: 9mm 0 4mm 0;
+  padding-bottom: 1.6mm;
+  border-bottom: .4pt solid var(--regua);
+}
+h2 .-num, .secao .-num {
+  color: var(--acento);
+  font-weight: 700;
+  margin-right: .35em;
+}
+.folha__corpo > h2:first-child,
+.folha__corpo > .corpo > h2:first-child { margin-top: 0; }
+
+/* Subseções: I.1 – Da responsabilidade objetiva */
+h3, .subsecao {
+  font-family: var(--sans);
+  font-size: 10.5pt;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: .02em;
+  text-transform: none;
+  text-indent: 0;
+  hyphens: none;
+  color: var(--tinta);
+  margin: 6mm 0 2.5mm 0;
+}
+h3 .-num, .subsecao .-num { color: var(--acento); margin-right: .3em; }
+
+/* Quarto nível — raro, mas previsto */
+h4 {
+  font-family: var(--sans);
+  font-size: 9.5pt;
+  font-weight: 500;
+  font-style: normal;
+  letter-spacing: var(--versalete-track);
+  color: var(--secundaria);
+  font-variant-caps: small-caps;   /* versalete no lugar da caixa alta */
+  text-indent: 0;
+  margin: 5mm 0 2mm 0;
+}
+
+/* ============================================================================
+   5. CITAÇÕES
+   ========================================================================= */
+
+/* Itálico NÃO é marca de citação. As únicas marcas da citação em bloco são o
+   recuo e o corpo reduzido; as da citação curta, as aspas curvas. O itálico
+   dentro de uma citação só se justifica se estava no original. */
+.citacao, blockquote, .citacao-curta, .julgado, .sintese-julgado, .remissao {
+  font-style: normal;
+}
+
+/* --- Citação curta (até 3 linhas) fica no corpo, entre aspas curvas ---- */
+.citacao-curta { quotes: "\201C" "\201D" "\2018" "\2019"; }
+.citacao-curta::before { content: open-quote; }
+.citacao-curta::after { content: close-quote; }
+
+/* --- Citação longa (mais de 3 linhas): recuo 4 cm, corpo menor, s/ aspas
+       ABNT NBR 10520 + prática forense ---------------------------------- */
+blockquote, .citacao {
+  margin: 4.5mm 0 4.5mm 40mm;      /* recuo de 4 cm da margem esquerda */
+  padding: 0;
+  font-size: 10.5pt;
+  line-height: 1.30;
+  text-align: justify;
+  color: var(--tinta);
+}
+blockquote > p, .citacao > p {
+  text-indent: 0;
+  margin: 0 0 2mm 0;
+}
+blockquote > p:last-child, .citacao > p:last-child { margin-bottom: 0; }
+
+/* Variante com filete — dá volume visual sem gritar */
+.citacao.-filete {
+  margin-left: 34mm;
+  padding-left: 6mm;
+  border-left: .75pt solid var(--regua-forte);
+}
+
+/* --- Bloco de julgado (ementa/acórdão) -------------------------------- */
+.julgado {
+  margin: 6mm 0 6mm 22mm;
+  padding: 4mm 5mm 4mm 5.5mm;
+  border-left: 1.2pt solid var(--acento);
+  background: #FAFAFB;
+  font-size: 10pt;
+  line-height: 1.32;
+  text-align: justify;
+}
+.julgado__rotulo {
+  display: block;
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  font-weight: 600;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--acento);
+  margin-bottom: 2mm;
+  text-indent: 0;
+  text-align: left;          /* rótulo nunca justificado: abria vãos entre as palavras */
+  hyphens: none;
+}
+.julgado p { text-indent: 0; margin: 0 0 2mm 0; }
+.julgado p:last-of-type { margin-bottom: 0; }
+.julgado .ementa-cabeca {                 /* primeira linha da ementa, em caixa alta */
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
+/* --- Fonte da citação (referência do julgado) ------------------------- */
+.fonte, cite.fonte {
+  display: block;
+  font-family: var(--sans);
+  font-style: normal;
+  font-size: 8pt;
+  line-height: 1.4;
+  letter-spacing: .02em;
+  color: var(--secundaria);
+  text-align: right;
+  text-indent: 0;
+  hyphens: none;
+  margin-top: 2.5mm;
+}
+.fonte .-tribunal { font-weight: 600; color: var(--tinta); letter-spacing: .05em; }
+.julgado .fonte { text-align: left; border-top: .4pt solid var(--regua); padding-top: 2mm; }
+/* fonte + url + "grifo nosso" viajam juntos (ver aplicar.py) — o wrapper não
+   tem estilo próprio, só existe para a paginação tratá-los como um bloco. */
+.julgado__fecho { display: block; }
+
+/* --- Link do inteiro teor (discreto, logo abaixo da fonte) ------------ */
+.julgado__url {
+  display: block;
+  font-family: var(--sans);
+  font-size: 7pt;
+  line-height: 1.3;
+  letter-spacing: .01em;
+  color: var(--tenue);
+  text-align: left;
+  text-indent: 0;
+  hyphens: none;
+  margin: 1mm 0 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.julgado__url a { color: inherit; text-decoration: none; }
+.julgado__url a:hover { color: var(--secundaria); text-decoration: underline; }
+
+/* --- Nota de grifo ---------------------------------------------------- */
+.grifo-nota {
+  display: block;
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--secundaria);
+  text-align: right;
+  text-indent: 0;
+  margin-top: 1.5mm;
+  hyphens: none;
+}
+
+/* Destaque dentro da citação — acrescentado ou original, sempre em negrito.
+   Quem diz de quem é o grifo é a nota (.grifo-nota), não a forma da letra.
+   .italico-original serve só para reproduzir um itálico que estava no texto. */
+.citacao .grifo, .julgado .grifo, blockquote .grifo { font-weight: 700; }
+.citacao .grifo-original, .julgado .grifo-original { font-weight: 700; }
+.italico-original { font-style: italic; }
+
+/* ============================================================================
+   6. SUPRESSÃO DE TRECHOS (técnica de citação)
+   ========================================================================= */
+
+/* Supressão inline: [...] dentro do período */
+.supressao { white-space: nowrap; letter-spacing: .06em; }
+
+/* Supressão entre parágrafos: marcador centrado, arejado */
+.supressao-bloco {
+  text-align: center;
+  text-indent: 0;
+  margin: 2.5mm 0;
+  color: var(--secundaria);
+  letter-spacing: .35em;
+  font-size: 10pt;
+  hyphens: none;
+}
+.supressao-bloco::before { content: "[ … ]"; }
+
+/* Supressão comentada: informa ao leitor o que foi omitido, sem inflar a peça.
+   Ex.: <p class="supressao-nota">discussão sobre prescrição, itens 12 a 19</p> */
+.supressao-nota {
+  text-align: center;
+  text-indent: 0;
+  margin: 3mm 0;
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-style: normal;
+  letter-spacing: .05em;
+  color: var(--secundaria);
+  hyphens: none;
+}
+.supressao-nota::before { content: "[…  "; letter-spacing: .12em; }
+.supressao-nota::after  { content: "  …]"; letter-spacing: .12em; }
+
+/* Síntese do julgado: substitui a transcrição integral por um resumo assinado
+   pelo subscritor, com a fonte completa logo abaixo. */
+.sintese-julgado {
+  margin: 5mm 0 5mm 22mm;
+  padding-left: 5.5mm;
+  border-left: .75pt dotted var(--regua-forte);
+  font-size: 10.5pt;
+  line-height: 1.34;
+  text-align: justify;
+}
+.sintese-julgado p { text-indent: 0; margin: 0; }
+.sintese-julgado__rotulo {
+  display: block;
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  font-weight: 600;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--secundaria);
+  margin-bottom: 1.5mm;
+}
+
+/* ============================================================================
+   7. LISTAS, PEDIDOS E ROL DE DOCUMENTOS
+   ========================================================================= */
+
+ol, ul { margin: 3.5mm 0 3.5mm 0; padding-left: 12mm; }
+li { margin-bottom: 2mm; text-align: justify; hyphens: manual; }
+li:last-child { margin-bottom: 0; }
+li > p { text-indent: 0; }
+
+/* Pedidos — escala fixa de três níveis, definida em 24/09/2026:
+     nível 1  a) b) c)     — ol.pedidos       (marcador cor --acento)
+     nível 2  a.1) a.2)    — ol.pedidos-sub   (marcador cor --acento-suave, herda a letra do pai)
+     nível 3  i) ii) iii)  — ol.pedidos-sub2  (marcador cor --secundaria)
+   Cada nível usa fonte sans (nunca a serifada do corpo) para o marcador, e
+   o peso e o tamanho caem a cada nível, reforçando a hierarquia visual além
+   da cor. Nível 2 e 3 nascem de um <ol> aninhado dentro do <li> do nível
+   acima — não é preciso repetir a marcação do pai. */
+ol.pedidos {
+  list-style: none;
+  counter-reset: pedido;
+  padding-left: 0;
+  margin: 4mm 0;
+}
+ol.pedidos > li {
+  counter-increment: pedido;
+  position: relative;
+  padding-left: 12mm;
+  margin-bottom: 3.5mm;
+}
+ol.pedidos > li::before {
+  content: counter(pedido, lower-alpha) ")";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 9mm;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 10pt;
+  font-weight: 700;
+  color: var(--acento);
+}
+
+/* Nível 2 — a.1) a.2) — herda o contador "pedido" do <li> pai, sem reiniciá-lo */
+ol.pedidos-sub {
+  list-style: none;
+  counter-reset: subpedido;
+  padding-left: 0;
+  margin: 2.5mm 0 2.5mm 9mm;
+}
+ol.pedidos-sub > li {
+  counter-increment: subpedido;
+  position: relative;
+  padding-left: 14mm;
+  margin-bottom: 2.5mm;
+}
+ol.pedidos-sub > li::before {
+  content: counter(pedido, lower-alpha) "." counter(subpedido) ")";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 12mm;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 9.5pt;
+  font-weight: 600;
+  color: var(--acento-suave);
+}
+
+/* Nível 3 — i) ii) iii) — numeral romano minúsculo, sem prefixo do pai */
+ol.pedidos-sub2 {
+  list-style: none;
+  counter-reset: subsubpedido;
+  padding-left: 0;
+  margin: 2mm 0 2mm 9mm;
+}
+ol.pedidos-sub2 > li {
+  counter-increment: subsubpedido;
+  position: relative;
+  padding-left: 10mm;
+  margin-bottom: 2mm;
+}
+ol.pedidos-sub2 > li::before {
+  content: counter(subsubpedido, lower-roman) ")";
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 8mm;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 9pt;
+  font-weight: 600;
+  color: var(--secundaria);
+}
+
+/* Rol de documentos / quadro-resumo */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 5mm 0;
+  font-size: 10pt;
+  line-height: 1.35;
+  font-variant-numeric: tabular-nums;
+}
+thead th {
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--secundaria);
+  text-align: left;
+  padding: 0 3mm 2mm 0;
+  border-bottom: .75pt solid var(--tinta);
+}
+tbody td {
+  padding: 2.2mm 3mm 2.2mm 0;
+  border-bottom: .4pt solid var(--regua);
+  vertical-align: top;
+  text-align: left;
+}
+tbody tr:last-child td { border-bottom: .4pt solid var(--regua-forte); }
+td.-num, th.-num { text-align: right; white-space: nowrap; }
+
+/* ============================================================================
+   8. DESTAQUES ESTRUTURAIS
+   ========================================================================= */
+
+/* Parágrafo-chave: filete de marca à esquerda. Máximo 1 ou 2 por peça. */
+.paragrafo-chave {
+  position: relative;
+  padding-left: 6mm;
+  margin: 4mm 0;
+  text-indent: 0;
+}
+.paragrafo-chave::before {
+  content: "";
+  position: absolute;
+  left: 0; top: .8mm; bottom: .8mm;
+  width: 1.2pt;
+  background: var(--acento);
+}
+
+/* Quadro de tese / síntese do pedido */
+.quadro {
+  margin: 6mm 0;
+  padding: 5mm 6mm;
+  border: .5pt solid var(--regua-forte);
+  border-left: 2pt solid var(--acento);
+  background: #FCFCFD;
+}
+.quadro__titulo {
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-weight: 600;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+  color: var(--acento);
+  margin-bottom: 2.5mm;
+  text-indent: 0;
+}
+.quadro p { text-indent: 0; margin: 0 0 2.5mm 0; }
+.quadro p:last-child { margin-bottom: 0; }
+
+/* Separador editorial entre grandes movimentos da peça */
+.separador {
+  border: 0;
+  height: 0;
+  margin: 7mm auto;
+  width: 14mm;
+  border-top: .5pt solid var(--regua-forte);
+}
+/* Mantida só por compatibilidade: o ornamento virou o mesmo filete neutro.
+   Adorno sem função disputa atenção com o texto — e o texto perde. */
+.separador.-ornamento { width: 14mm; }
+
+/* ============================================================================
+   9. NOTAS DE RODAPÉ
+   ========================================================================= */
+
+.nota-ref {
+  font-family: var(--serif);
+  font-size: .62em;
+  vertical-align: super;
+  line-height: 0;
+  font-weight: 600;
+  color: var(--acento);
+  font-feature-settings: "sups";
+}
+
+.folha__notas {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding-top: 2.5mm;
+  border-top: .4pt solid var(--regua);
+}
+.nota {
+  display: block;
+  font-size: 8.5pt;
+  line-height: 1.30;
+  text-align: justify;
+  text-indent: 0;
+  color: var(--secundaria);
+  margin-bottom: 1.6mm;
+  padding-left: 4.5mm;
+  position: relative;
+  hyphens: manual;
+}
+.nota:last-child { margin-bottom: 0; }
+.nota__num {
+  position: absolute;
+  left: 0;
+  font-family: var(--serif);
+  font-weight: 600;
+  color: var(--acento);
+  font-size: 7.5pt;
+}
+
+/* ============================================================================
+   10. FECHO, DATA E ASSINATURA
+   ========================================================================= */
+
+.fecho {
+  margin-top: 9mm;
+  text-align: justify;
+  text-indent: var(--recuo-par);
+}
+
+.local-data {
+  margin-top: 8mm;
+  text-align: right;
+  text-indent: 0;
+  font-size: 11pt;
+  color: var(--tinta);
+  hyphens: none;
+}
+
+/* Bloco de assinatura sem fio superior — padrão de 24/09/2026, a pedido do
+   advogado. Nome em 13pt, OAB em 11pt (medida explícita, fora da escala
+   tipográfica-padrão do corpo). */
+.assinatura {
+  margin: 14mm auto 0;
+  width: 78mm;
+  text-align: center;
+  text-indent: 0;
+  hyphens: none;
+  padding-top: 2.5mm;
+}
+.assinatura__nome {
+  display: block;
+  font-family: var(--sans);
+  font-size: 13pt;
+  font-weight: 600;
+  letter-spacing: var(--versalete-track);
+  font-variant-caps: small-caps;   /* versalete no lugar da caixa alta */
+  color: var(--tinta);
+}
+.assinatura__oab {
+  display: block;
+  font-family: var(--sans);
+  font-size: 11pt;
+  font-weight: 400;
+  letter-spacing: var(--versalete-track);
+  font-variant-caps: small-caps;   /* versalete no lugar da caixa alta */
+  color: var(--secundaria);
+  margin-top: 1.2mm;
+}
+
+/* ============================================================================
+   11. IMPRESSÃO
+   ========================================================================= */
+
+@page {
+  size: A4;
+  margin: 0;
+}
+
+@media print {
+  html, body { background: #FFF; }
+  #papel { display: block; padding: 0; gap: 0; }
+  .folha {
+    box-shadow: none;
+    margin: 0;
+    break-after: page;
+    page-break-after: always;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .folha:last-child { break-after: auto; page-break-after: auto; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+
+/* Barra de ferramentas só existe em tela */
+@media print { .barra { display: none !important; } }
+
+.barra {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 99;
+  display: flex;
+  gap: 8px;
+  font-family: var(--sans);
+  font-size: 11px;
+}
+.barra button {
+  font: inherit;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  padding: 9px 14px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--tinta);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(34,40,49,.25);
+}
+.barra button.-acento { background: var(--acento); }
+.barra button:hover { opacity: .9; }
+
+
+/* ============================================================================
+   12. HIFENIZAÇÃO ADAPTATIVA
+   Se o navegador tem dicionário pt-BR, usa a hifenização nativa (camada de
+   texto do PDF fica limpa); senão, valem os hifens condicionais embutidos.
+   ========================================================================= */
+html.hifen-nativa p,
+html.hifen-nativa li,
+html.hifen-nativa .nota,
+html.hifen-nativa td { hyphens: auto; -webkit-hyphens: auto; }
+
+/* ============================================================================
+   13. BLOCOS TÉCNICOS
+   Fundamentação subordinada, ressalvas, totais de tabela e valor apurado —
+   elementos de memorial de cálculo, parecer e petição com demonstrativo.
+   ========================================================================= */
+
+/* Fundamento: o raciocínio de apoio, subordinado ao parágrafo principal */
+p.fundamento, .fundamento {
+  font-size: 10.5pt;
+  line-height: 1.36;
+  color: var(--secundaria);
+  text-indent: 0;
+  text-align: justify;
+  padding-left: 6mm;
+  margin: 2.5mm 0 3.5mm;
+}
+p.fundamento + p.fundamento { margin-top: -1mm; }
+
+/* Ressalva: condicionante, advertência, reserva de revisão */
+p.ressalva, .ressalva {
+  font-size: 10.5pt;
+  line-height: 1.36;
+  color: var(--secundaria);
+  text-indent: 0;
+  text-align: justify;
+  padding-left: 5mm;
+  border-left: .75pt solid var(--regua-forte);
+  margin: 4mm 0;
+}
+.ressalva strong, .ressalva .-rot {
+  font-family: var(--sans);
+  font-size: 8pt;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--tinta);
+  display: block;
+  margin-bottom: 1.2mm;
+}
+
+/* Legenda de tabela */
+caption {
+  caption-side: top;
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--secundaria);
+  text-align: left;
+  padding-bottom: 2mm;
+}
+
+/* Linha de total */
+tbody tr.total td {
+  font-weight: 700;
+  border-top: .75pt solid var(--tinta);
+  border-bottom: .75pt solid var(--tinta);
+  padding-top: 2.6mm;
+  padding-bottom: 2.6mm;
+}
+tbody tr.total td:first-child { font-family: var(--sans); font-weight: 600; }
+tbody td.-realce { background: #F7F7F9; font-weight: 600; }
+td.-centro, th.-centro { text-align: center; }
+td.-esq,  th.-esq  { text-align: left; }
+td.-dir,  th.-dir  { text-align: right; }
+td.-just, th.-just { text-align: justify; }
+
+/* Larguras de coluna definidas à mão (arrastando a borda na edição).
+   O layout fixo é o que faz o navegador obedecer ao <colgroup> — e é o mesmo
+   que o .docx recebe, para que a tabela chegue igual no Word. */
+table.-larguras { table-layout: fixed; }
+table.-larguras td, table.-larguras th { overflow-wrap: break-word; }
+
+/* Tabela de identificação (rótulo/valor), sem cabeçalho */
+table.identificacao { font-size: 10.5pt; }
+table.identificacao tbody tr:last-child td { border-bottom: .75pt solid var(--tinta); }
+table.identificacao td:first-child {
+  width: 52mm;
+  color: var(--secundaria);
+  font-weight: 500;
+  vertical-align: top;
+}
+table.identificacao td { white-space: normal; }
+
+/* Valor apurado em destaque, dentro de .quadro */
+.quadro .valor {
+  display: block;
+  font-family: var(--sans);
+  font-size: 20pt;
+  font-weight: 600;
+  letter-spacing: .01em;
+  text-align: center;
+  text-indent: 0;
+  color: var(--tinta);
+  font-variant-numeric: tabular-nums;
+  margin: 1mm 0 0;
+}
+.quadro .extenso {
+  display: block;
+  text-align: center;
+  text-indent: 0;
+  font-style: normal;
+  font-size: 10.5pt;
+  color: var(--secundaria);
+  margin: 1.5mm 0 0;
+}
+
+/* Segunda linha do bloco de assinatura quando não é OAB (CPF, cargo, matrícula) */
+.assinatura__qualificacao {
+  display: block;
+  font-family: var(--sans);
+  font-size: 8.5pt;
+  font-weight: 400;
+  letter-spacing: var(--versalete-track);
+  font-variant-caps: small-caps;   /* versalete no lugar da caixa alta */
+  color: var(--secundaria);
+  margin-top: 1.2mm;
+}
+
+/* ============================================================================
+   14. REMISSÃO À FONTE
+   Bloco curto que remete ao acórdão ou à obra em vez de transcrever. Não é
+   gerado automaticamente: é uma escolha de redação, marcada no plano.
+   ========================================================================= */
+
+/* Remissão: o que sobra de uma citação longa quando ela é condensada */
+.remissao {
+  text-indent: 0;
+  text-align: left;
+  font-size: 10.5pt;
+  line-height: 1.34;
+  color: var(--secundaria);
+  padding-left: 6mm;
+  border-left: .75pt solid var(--regua-forte);
+  margin: 3.5mm 0;
+  hyphens: none;
+}
+.remissao .-rot {
+  font-family: var(--sans);
+  font-size: 7.5pt;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--acento);
+  margin-right: .7em;
+}
+.remissao .-tribunal { font-weight: 600; color: var(--tinta); }
+
+/* ============================================================================
+   15. EDIÇÃO NA TELA
+   ========================================================================= */
+
+body.editando .folha { overflow: visible; }
+body.editando .folha__rodape,
+body.editando .folha__folio { opacity: .22; }
+body.editando .folha__fluxo {
+  outline: 1px dashed var(--acento);
+  outline-offset: 4mm;
+  min-height: 10mm;
+}
+body.editando .folha__fluxo:focus { outline-color: var(--acento); outline-width: 1.5px; }
+body.editando .barra .-editar { background: var(--acento); }
+
+.aviso {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  z-index: 99;
+  max-width: 340px;
+  font-family: var(--sans);
+  font-size: 11px;
+  line-height: 1.5;
+  color: #fff;
+  background: var(--tinta);
+  padding: 10px 13px;
+  border-radius: 3px;
+  box-shadow: 0 2px 10px rgba(34, 40, 49, .25);
+}
+.aviso b { color: #fff; font-weight: 600; }
+@media print { .aviso { display: none !important; } }
+
+.barra button.-ligado { background: var(--acento); }
+.barra button.-secundario { background: #fff; color: var(--tinta); box-shadow: 0 1px 3px rgba(34,40,49,.2), inset 0 0 0 1px var(--regua-forte); }
+
+
+/* ============================================================================
+   16. PAINEL DE EDIÇÃO
+   Só existe com a edição ligada e nunca sai na impressão.
+   ========================================================================= */
+
+@media print { .painel-edicao { display: none !important; } }
+
+.painel-edicao {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 120;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  padding: 8px 12px;
+  background: var(--tinta);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 11px;
+  box-shadow: 0 2px 14px rgba(34, 40, 49, .3);
+}
+.painel__grupo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding-right: 12px;
+  border-right: 1px solid rgba(255, 255, 255, .18);
+}
+.painel__grupo:last-child { border-right: 0; }
+.painel__rot {
+  font-size: 8.5px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, .55);
+  margin-right: 3px;
+}
+.painel__dica {
+  font-size: 9.5px;
+  color: rgba(255, 255, 255, .5);
+  font-style: italic;
+  margin-left: 4px;
+}
+.painel-edicao button {
+  font: inherit;
+  padding: 5px 9px;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.painel-edicao button:hover { background: rgba(255, 255, 255, .26); }
+.painel-edicao button.-ligado {
+  background: var(--acento);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .5);
+}
+.painel-edicao button.-ligado::before { content: "\2713\00a0"; }
+.painel-edicao button[disabled] {
+  opacity: .35;
+  cursor: default;
+  background: rgba(255, 255, 255, .08);
+}
+.painel-edicao button[disabled]:hover { background: rgba(255, 255, 255, .08); }
+body.editando { padding-top: 46px; }
+body.-arrastando { user-select: none; cursor: col-resize; }
+
+/* O bloco que acabou de ser marcado, para o olho reencontrar o lugar */
+.-tocado {
+  animation: piscar 1.4s ease-out;
+  border-radius: 2px;
+}
+@keyframes piscar {
+  from { background: rgba(24, 0, 173, .14); }
+  to   { background: transparent; }
+}
+
+/* Régua de coluna: a borda direita da célula ganha uma pista visível quando a
+   edição está ligada, para o advogado saber onde pegar. */
+body.editando table td:not(:last-child),
+body.editando table th:not(:last-child) {
+  border-right: 1px dashed rgba(24, 0, 173, .22);
+}

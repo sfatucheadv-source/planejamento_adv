@@ -1,0 +1,17 @@
+@compacto
+
+# Procuração
+
+Pelo presente instrumento particular de mandato por mim abaixo assinado:
+
+@qualificacao **OUTORGANTE:** ^^{{cliente.nome_completo}}^^, {{cliente.estado_civil}}, {{cliente.profissao}}, {{flex:inscrito/inscrita}} junto ao CPF/MF: {{cliente.cpf}}, residente e {{flex:domiciliado/domiciliada}} à {{cliente.endereco}}, respondendo pelo e-mail: {{cliente.email}} e telefone: {{cliente.telefone}}, que neste ato, outorgo direitos e poderes ao advogado ^^{{escritorio.advogado}}^^, nos termos da finalidade abaixo estabelecidas.
+
+@qualificacao **OUTORGADO:** ^^{{escritorio.advogado}}^^, advogado regularmente inscrito na {{escritorio.advogado_oab}}, com escritório profissional estabelecido à {{escritorio.endereco}} e respondendo pelo endereço eletrônico {{escritorio.email}}.
+
+**PODERES:** {{procuracao.poderes}} em especial para representar os interesses {{flex:do/da}} outorgante com a estrita **FINALIDADE:** {{procuracao.finalidade}}
+
+@direita {{data.cidade}}, {{data.hoje}}.
+
+@assinatura Outorgante: {{cliente.nome_completo}} | CPF/MF: {{cliente.cpf}}
+
+@observacao **HONORÁRIOS - OBSERVAÇÃO:** Assinatura desta Procuração implica a expressa revogação de qualquer outra procuração a outros advogados, bem como na concordância {{flex:do/da}} outorgante com o pagamento de honorários contratuais no valor de {{proposta.percentual_exito}}, em favor do outorgado, a serem calculados sobre o proveito bruto decorrente da atividade advocatícia, judicial ou extrajudicial prestada, devendo serem destacados o respectivo valores a título de honorários dos Termos de Autocomposição, Precatório Requisitório, Requisições de Pequenos Valores oportunamente ou ainda em execuções.

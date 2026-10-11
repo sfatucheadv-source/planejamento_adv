@@ -155,10 +155,13 @@ $router->get('/painel/atendimento/{id}/conversa/novas', function (string $id) {
 $router->get('/painel/atendimento/{id}/kit/{vid}', function (string $id, string $vid) {
     $c = require_case_operator((int) $id);
     $v = kit_version($c, (int) $vid) ?? not_found();
-    if (input('baixar') === '1') {
+    if ($v['status'] === 'nao_aplicavel') {
+        not_found();
+    }
+    if (input('baixar') !== '') {
         kit_download($c, $v);
     }
-    view('panel/kit_doc', ['c' => $c, 'v' => $v, 'meta_title' => KIT_ITEMS[$v['kind']]['label'] . ' v' . $v['version'], 'client' => false], 'print');
+    kit_page($c, $v, url('painel/atendimento/' . $c['id'] . '/kit/' . $v['id'], ['baixar' => 'docx']), false);
 });
 
 $router->post('/painel/atendimento/{id}', function (string $id) {
@@ -573,6 +576,16 @@ $router->get('/painel/modelos-documentos', function () {
     ], 'panel');
 });
 
+/** Prévia do modelo no timbrado, com as variáveis à mostra (destacadas). */
+$router->get('/painel/modelos-documentos/{key}/previa', function (string $key) {
+    require_user();
+    $t = doc_template($key) ?? not_found();
+    $body = preg_replace_callback('/\{\{\s*flex:([^}\/]*)\/([^}]*)\}\}/u', fn($m) => flex_word(trim($m[1]), trim($m[2]), null), $t['body']);
+    header('Cache-Control: private, no-store');
+    echo doc_page($t['title'] . ' · modelo v' . $t['version'], doc_blocks($body), ['Imprimir / PDF' => 'print'], 'MODELO');
+    exit;
+});
+
 $router->post('/painel/modelos-documentos', function () {
     $u = require_user();
     if (!is_operator($u) && !has_role('supervisor')) {
@@ -641,7 +654,7 @@ $router->post('/painel/variaveis', function () {
             set_setting($d['setting'], $v);
         }
         foreach (CASE_VAR_DEFAULTS as $k => $d) {
-            set_setting($d['setting'], trim(mb_substr((string) input($d['setting']), 0, 300)) ?: null);
+            set_setting($d['setting'], trim(str_replace("\r\n", "\n", mb_substr((string) ($_POST[$d['setting']] ?? ''), 0, $d['max'] ?? 300))) ?: null);
         }
         audit('variaveis_escritorio', null, null);
         flash($errs ? 'error' : 'ok', $errs ? 'Os demais dados foram salvos. ' . implode(' ', $errs) : 'Dados do escritório salvos. Documentos já gerados mostram o aviso de dados alterados.');

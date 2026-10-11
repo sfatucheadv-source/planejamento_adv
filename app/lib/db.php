@@ -522,12 +522,19 @@ CREATE TABLE template_vars (
 );
 SQL;
 
+    // Versão 5 — documentos no padrão do escritório (modelos com marcação e
+    // timbrado). Os dados vêm de PHP: migrate_document_models().
+    $migrations[5] = 'SELECT 1;';
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();
             $pdo->exec($sql);
             if ($v === 2) {
                 migrate_portal_accounts($pdo);
+            }
+            if ($v === 5) {
+                migrate_document_models($pdo);
             }
             $pdo->exec('PRAGMA user_version = ' . $v);
             $pdo->commit();
@@ -559,4 +566,48 @@ function audit(string $action, ?int $caseId = null, ?string $detail = null): voi
         'action'  => $action,
         'detail'  => $detail,
     ]);
+}
+
+/**
+ * Migração 5: procuração, declaração de hipossuficiência e contrato passam aos
+ * modelos do escritório (nova versão, que Sidney revisa e aprova). Proposta e
+ * parecer só mudam se ainda estiverem no texto inicial. Dados do escritório que
+ * constam dos modelos entram como padrão quando ainda não foram preenchidos.
+ */
+function migrate_document_models(PDO $pdo): void
+{
+    $now = (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d H:i:s');
+    $titles = ['proposta' => 'Proposta de atendimento', 'honorarios' => 'Contrato de honorários', 'procuracao' => 'Procuração',
+        'hipossuficiencia' => 'Declaração de hipossuficiência', 'parecer' => 'Parecer de cálculos'];
+    $oldDefaults = ['proposta' => '8f34469664e63b347cbca418619faad7512ff864', 'parecer' => '1438b7d40d2a59b79dd3713e041e71f2692fa539'];
+    foreach ($titles as $key => $title) {
+        $body = rtrim((string) file_get_contents(APP_DIR . '/inicial/modelos/' . $key . '.txt')) . "\n";
+        $st = $pdo->prepare('SELECT body FROM doc_templates WHERE key = ?');
+        $st->execute([$key]);
+        $cur = $st->fetchColumn();
+        if ($cur === false) {
+            continue; // instalação nova: seed_templates() cria com o texto novo
+        }
+        if (isset($oldDefaults[$key]) && sha1((string) $cur) !== $oldDefaults[$key]) {
+            continue; // Sidney já editou: o texto dele fica
+        }
+        if ($cur !== $body) {
+            $pdo->prepare('UPDATE doc_templates SET body = ?, title = ?, version = version + 1, approved_at = NULL, approved_by = NULL, updated_at = ? WHERE key = ?')
+                ->execute([$body, $title, $now, $key]);
+        }
+    }
+    $defaults = [
+        'office_email' => 'sidney@fatuche.adv.br',
+        'office_phone' => '(41) 99906-2936',
+        'office_address' => 'Rua Francisco de Paula Lobo Araújo, 372, Cidade Jardim, São José dos Pinhais/PR, CEP 83035-330',
+        'office_city' => 'Curitiba',
+        'office_pix_type' => 'email',
+        'office_pix_key' => 'sidney@fatuche.adv.br',
+        'default_procuracao_poderes' => 'Para representar os interesses {{flex:do/da}} outorgante em juízo ou fora dele, em qualquer Repartição Pública, Delegacia de Polícia, Unidade do Ministério Público, Foro, Instância ou Tribunal, com todos os poderes da cláusula “ad judicia et extra”, além dos **PODERES ESPECÍFICOS** do artigo 105 do Código de Processo Civil, para receber citação, confessar, reconhecer a procedência do pedido, transigir, desistir, renunciar ao direito sobre o qual se funda a ação, receber valores, dar quitação, firmar compromisso ou acordo, levantar ou receber RPV e ALVARÁS, pedir a justiça gratuita, assinar declaração de hipossuficiência econômica e ainda substabelecer, no todo ou em parte, em conformidade com a norma do art. 105 da Lei 13.105/2015',
+        'default_procuracao_finalidade' => 'tutela de seus interesses relativos ao contrato de financiamento de veículo n.º {{contrato.numero}}, celebrado com {{contrato.banco}}.',
+    ];
+    $ins = $pdo->prepare("INSERT INTO settings (key, value, updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at WHERE settings.value IS NULL OR settings.value = ''");
+    foreach ($defaults as $k => $v) {
+        $ins->execute([$k, $v, $now]);
+    }
 }

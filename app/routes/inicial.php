@@ -245,34 +245,33 @@ $router->get('/cliente/trocar/{id}', function (string $id) {
 $router->get('/cliente/documento-kit/{id}', function (string $id) {
     $c = require_portal();
     $v = one("SELECT * FROM case_artifact_versions WHERE id = ? AND case_id = ? AND status = 'publicado'", [(int) $id, $c['id']]) ?? forbidden();
-    if (input('baixar') === '1') {
+    if (input('baixar') !== '') {
         kit_download($c, $v);
     }
-    view('panel/kit_doc', ['c' => $c, 'v' => $v, 'meta_title' => KIT_ITEMS[$v['kind']]['label'], 'client' => true], 'print');
+    kit_page($c, $v, url('cliente/documento-kit/' . $v['id'], ['baixar' => 'docx']), true);
 });
 
+/** .docx do documento, no timbrado do escritório. */
 function kit_download(array $c, array $v): never
 {
-    $name = preg_replace('/[^a-z0-9]+/', '-', strtolower(iconv('UTF-8', 'ASCII//TRANSLIT', KIT_ITEMS[$v['kind']]['label']) ?: $v['kind'])) . '-' . $c['protocol'] . '-v' . $v['version'] . '.html';
-    header('Content-Type: text/html; charset=utf-8');
-    header('Content-Disposition: attachment; filename="' . $name . '"');
+    $label = KIT_ITEMS[$v['kind']]['label'];
+    $bin = doc_docx(doc_blocks((string) $v['content']), ['titulo' => $label, 'assunto' => 'Atendimento ' . $c['protocol'] . ' · versão ' . $v['version'], 'autor' => office('lawyer') ?: 'Sidney Fatuche']);
+    header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    header('Content-Disposition: attachment; filename="' . doc_filename($label, (string) $c['protocol'], (int) $v['version']) . '.docx"');
+    header('Content-Length: ' . strlen($bin));
     header('Cache-Control: private, no-store');
-    echo '<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>' . e(KIT_ITEMS[$v['kind']]['label']) . '</title>'
-        . '<style>body{font:12pt/1.5 Georgia,serif;max-width:17cm;margin:2cm auto}p{margin:0 0 .6em;white-space:pre-wrap}</style></head><body>'
-        . kit_html((string) $v['content']) . '<p style="color:#666;font-size:9pt">Versão ' . (int) $v['version'] . ' · ' . e($c['protocol']) . '</p></body></html>';
+    echo $bin;
     exit;
 }
 
-/** Conteúdo do kit como HTML seguro: texto escapado, parágrafos por linha em branco. */
-function kit_html(string $content): string
+/** Documento do kit diagramado: folhas A4 com o timbrado, prontas para imprimir ou salvar em PDF. */
+function kit_page(array $c, array $v, string $docxUrl, bool $client): never
 {
-    $out = '';
-    foreach (preg_split("/\n{2,}/", trim($content)) as $p) {
-        $p = e($p);
-        $p = preg_replace('/\[\[([^\]]*)\]\]/u', '<mark>[[$1]]</mark>', $p);
-        $out .= '<p>' . nl2br($p) . '</p>';
-    }
-    return $out;
+    $label = KIT_ITEMS[$v['kind']]['label'];
+    header('Cache-Control: private, no-store');
+    echo doc_page($label . ' · ' . $c['protocol'] . ' · v' . $v['version'], doc_blocks((string) $v['content']),
+        ['Baixar .docx' => $docxUrl, 'Imprimir / PDF' => 'print'], !$client && $v['status'] === 'minuta' ? 'MINUTA' : null);
+    exit;
 }
 
 /* ---------- Sem atendimento autorizado / novo atendimento (seção 13.2) ---------- */

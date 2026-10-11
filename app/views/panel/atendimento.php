@@ -331,7 +331,11 @@ if ($P && $N) {
     <?php foreach (['proposta_escopo', 'proposta_honorarios', 'proposta_base_exito', 'proposta_pagamento', 'proposta_despesas', 'proposta_riscos', 'proposta_exclusoes'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
     <div class="row2"><div><?= $input('proposta_validade', false) ?></div><div><?= $input('proposta_prazo_repasse', false) ?></div></div>
     <?php if (!isset($fields['proposta_prazo_repasse']) && setting('default_prazo_repasse')): ?><p class="hint">Em branco, o contrato usa o padrão do escritório: “<?= e(setting('default_prazo_repasse')) ?>”.</p><?php endif ?>
+    <?= $input('proposta_percentual_exito', false) ?>
+    <?= $input('procuracao_finalidade', false) ?>
     <?= $input('procuracao_poderes', false) ?>
+    <?php $defaultsUsed = array_filter(CASE_VAR_DEFAULTS, fn($d) => in_array($d['field'], ['proposta_percentual_exito', 'procuracao_finalidade', 'procuracao_poderes'], true) && !isset($fields[$d['field']])); ?>
+    <?php if ($defaultsUsed): ?><p class="hint">Em branco, os documentos usam o padrão do escritório (<a href="<?= e(url('painel/variaveis')) ?>#escritorio">Variáveis</a>): <?= e(implode(', ', array_map(fn($d) => mb_strtolower(field_def($d['field'])['label']) . (setting($d['setting']) ? '' : ' (sem padrão definido)'), $defaultsUsed))) ?>.</p><?php endif ?>
     <h3>Contrato de honorários e assinatura</h3>
     <?php $standing = financing_standing($id); ?>
     <div class="row2">
@@ -501,8 +505,8 @@ if ($P && $N) {
             <?= $form('kit_gerar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><button class="b b-xs" type="submit"><?= $v && $v['status'] !== 'nao_aplicavel' ? 'Gerar nova versão' : 'Gerar minuta' ?></button></form>
           <?php endif ?>
           <?php if ($v && $v['status'] !== 'nao_aplicavel'): ?>
-            <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/kit/' . $v['id'])) ?>" target="_blank" rel="noopener">Ver / imprimir</a>
-            <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/kit/' . $v['id'], ['baixar' => 1])) ?>">Baixar</a>
+            <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/kit/' . $v['id'])) ?>" target="_blank" rel="noopener">Ver no timbrado / PDF</a>
+            <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/kit/' . $v['id'], ['baixar' => 'docx'])) ?>">Baixar .docx</a>
           <?php endif ?>
           <?php if ($v && $v['status'] === 'minuta'): ?>
             <?= $form('kit_revisar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input type="hidden" name="vid" value="<?= (int) $v['id'] ?>"><button class="b b-xs b-primary" type="submit" <?= $miss ? 'disabled' : '' ?>>Marcar revisado</button></form>

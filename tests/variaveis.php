@@ -176,7 +176,7 @@ $office = ['op' => 'escritorio', 'escritorio_endereco' => 'Rua A, 10, Centro, Cu
 $sid->post('/painel/variaveis', $office);
 setting('__reset');
 ok(str_contains(flash_error($sid), 'chave CNPJ tem 14'), 'chave PIX incompatível com o tipo é recusada');
-ok(setting('office_phone') === '(41) 3333-4444' && setting('office_pix_key') === null, 'os demais dados são salvos; a chave errada não');
+ok(setting('office_phone') === '(41) 3333-4444' && setting('office_pix_key') === 'sidney@fatuche.adv.br', 'os demais dados são salvos; a chave errada não substitui a anterior');
 $office['escritorio_pix_chave'] = '12.345.678/0001-90';
 $sid->post('/painel/variaveis', $office);
 setting('__reset');

@@ -38,6 +38,16 @@ Em *Variáveis dos documentos* (`/painel/variaveis`, código em `app/inicial/var
 
 Campos novos da ficha: veículo (marca, modelo, ano, placa e Renavam com dígito verificador, lidos também pela IA no contrato e no CRLV), situação do financiamento (adimplente, inadimplente ou quitado; sem escolha de Sidney, vem do relato do cliente), processos e notificações, foro e duas testemunhas opcionais (use `{{testemunha1.nome|____}}` no modelo). Teste: `php tests/variaveis.php`.
 
+### Documentos no padrão do escritório (timbrado)
+
+Procuração, declaração de hipossuficiência, contrato de honorários, proposta e parecer saem no timbrado Fatuche, com a tipografia do formatador de peças (Lora no texto, Poppins nos títulos, A4, margens 32/28/30/30 mm, recuo de 12,5 mm e 5,1 mm entre parágrafos). Código em `app/inicial/diagramacao.php`; modelos em `app/inicial/modelos/*.txt`; timbrado, CSS e motor de paginação do formatador em `public/assets/formatador/`.
+
+- **Ver no timbrado / PDF**: folhas A4 paginadas no navegador, com o timbrado em todas as folhas; imprimir com margens “Nenhuma” e gráficos de fundo ligados.
+- **Baixar .docx**: gerado no servidor, com o logotipo e o rodapé nas coordenadas do papel, fólio e a mesma tipografia.
+- Os modelos usam uma marcação leve (`# título`, `## I. seção`, `### cláusula`, `@qualificacao`, `@dados`, `@assinatura`, `@quebra`, `@compacto`, `**negrito**`, `^^parte^^`) e `{{flex:inscrito/inscrita}}` para a concordância com o gênero do cliente. A ajuda está em *Modelos de documentos*, com prévia no timbrado.
+- Padrões do escritório que valem quando a ficha está em branco (poderes e finalidade da procuração, percentual de honorários, foro, prazo de repasse) ficam em *Variáveis dos documentos* e podem citar outras variáveis.
+- Teste: `php tests/documentos.php [pasta]` (preenchimento, .docx, paginação no navegador e conversão no LibreOffice; grava os arquivos e imagens de cada folha na pasta).
+
 ### Assistente com IA (OpenRouter ou Google Gemini)
 
 Opcional. Em **Configurações › Inteligência artificial**: ligue o uso de IA e escolha o **fornecedor**:
@@ -115,6 +125,7 @@ php tests/fluxo_completo.php        # execução e modo de equipe (14 etapas)
 php tests/atendimento_inicial.php   # atendimento inicial (seção 16 do plano de reforma)
 php tests/assistente_ia.php         # assistente com IA (simulador local do OpenRouter e do Gemini)
 php tests/variaveis.php             # variáveis dos documentos e campos do contrato
+php tests/documentos.php            # documentos no timbrado (.docx e HTML paginado)
 ```
 
 ## Publicar na Hostinger

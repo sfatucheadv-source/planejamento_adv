@@ -1,0 +1,44 @@
+# Proposta de atendimento
+
+@referencia Atendimento {{atendimento.protocolo}} · {{data.hoje}}
+
+@dados
+Cliente: {{cliente.nome_completo}}
+Financiamento: {{contrato.banco}}, contrato nº {{contrato.numero|não informado}}
+
+## 1. O que a análise mostrou
+
+**{{analise.conclusao}}.** {{analise.conclusao_texto}}
+
+## 2. O que propomos fazer
+
+{{proposta.escopo}}
+
+## 3. O que não está incluído
+
+{{proposta.exclusoes|Nada além do escopo descrito no item 2.}}
+
+## 4. Honorários
+
+{{proposta.honorarios}}
+
+{{proposta.base_exito|}}
+
+## 5. Forma de pagamento
+
+{{proposta.pagamento}}
+
+## 6. Despesas
+
+{{proposta.despesas|Não há despesas previstas além dos honorários.}}
+
+## 7. Riscos que você precisa conhecer
+
+{{proposta.riscos}}
+
+@dados
+Validade desta proposta: {{proposta.validade|combinada na conversa}}
+
+@direita {{data.cidade}}, {{data.hoje}}.
+
+@assinatura {{escritorio.advogado}} | {{escritorio.advogado_oab}} | {{escritorio.nome}}

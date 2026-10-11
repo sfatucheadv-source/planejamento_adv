@@ -22,6 +22,8 @@ const OFFICE_VARS = [
     'escritorio.prazo_resposta'       => ['setting' => 'office_response_days', 'label' => 'Prazo usual de resposta, em dias úteis', 'type' => 'text', 'max' => 60, 'ph' => 'ex.: 2 (dois)',
                                           'hint' => 'Escreva como deve aparecer no texto. Se o modelo já diz “dias úteis”, informe só o número.'],
     'escritorio.orientacao_urgencias' => ['setting' => 'office_urgent', 'label' => 'Canal e procedimento para situações urgentes', 'type' => 'textarea', 'max' => 1000],
+    'data.cidade'                     => ['setting' => 'office_city', 'label' => 'Cidade da data dos documentos', 'type' => 'text', 'max' => 80, 'ph' => 'ex.: Curitiba',
+                                          'hint' => 'Aparece em “Curitiba, 11 de outubro de 2026.”. Em branco, vale a cidade do arquivo de configuração.'],
     'escritorio.pix_tipo'             => ['setting' => 'office_pix_type', 'label' => 'Tipo da chave PIX', 'type' => 'choice', 'options' => PIX_TYPES],
     'escritorio.pix_chave'            => ['setting' => 'office_pix_key', 'label' => 'Chave PIX do escritório', 'type' => 'text', 'max' => 120,
                                           'hint' => 'Use uma chave de titularidade da sociedade: o beneficiário pode ser escrito com {{escritorio.nome}}.'],
@@ -34,6 +36,10 @@ const OFFICE_VARS = [
 const CASE_VAR_DEFAULTS = [
     'documento.foro'         => ['field' => 'foro', 'setting' => 'default_foro', 'ph' => 'ex.: Comarca de São Paulo/SP'],
     'proposta.prazo_repasse' => ['field' => 'proposta_prazo_repasse', 'setting' => 'default_prazo_repasse', 'ph' => 'ex.: 5 (cinco) dias úteis contados do recebimento'],
+    'proposta.percentual_exito' => ['field' => 'proposta_percentual_exito', 'setting' => 'default_percentual_exito', 'ph' => 'ex.: 25% (vinte e cinco por cento)'],
+    'procuracao.finalidade' => ['field' => 'procuracao_finalidade', 'setting' => 'default_procuracao_finalidade', 'textarea' => true, 'max' => 2000,
+                                'ph' => 'Pode citar variáveis, ex.: revisão do contrato n.º {{contrato.numero}} firmado com {{contrato.banco}}'],
+    'procuracao.poderes' => ['field' => 'procuracao_poderes', 'setting' => 'default_procuracao_poderes', 'textarea' => true, 'max' => 3000, 'ph' => ''],
 ];
 
 /** Variáveis que podem ficar sem valor, conforme a forma de assinatura. */

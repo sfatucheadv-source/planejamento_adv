@@ -23,6 +23,7 @@
           <pre class="at-tpl"><?= e($t['body']) ?></pre>
           <div class="inline-form">
             <a class="b" href="<?= e(url('painel/modelos-documentos', ['editar' => $t['key']])) ?>#m-<?= e($t['key']) ?>">Editar</a>
+            <a class="b" href="<?= e(url('painel/modelos-documentos/' . $t['key'] . '/previa')) ?>" target="_blank" rel="noopener">Ver no timbrado</a>
             <?php if (!$t['approved_at']): ?>
               <form method="post" action="<?= e(url('painel/modelos-documentos')) ?>"><?= csrf_field() ?><input type="hidden" name="key" value="<?= e($t['key']) ?>"><input type="hidden" name="op" value="aprovar"><button class="b b-primary" type="submit">Revisei: aprovar esta versão</button></form>
             <?php endif ?>
@@ -34,6 +35,22 @@
   <aside class="box">
     <h2>Como escrever</h2>
     <p class="small">Use <code>{{variável}}</code> para inserir um dado. Para um texto padrão quando o dado não existir, use <code>{{variável|texto padrão}}</code>. Sem padrão, o dado que faltar aparece marcado e bloqueia a publicação.</p>
+    <h3>Diagramação</h3>
+    <p class="small">O documento sai no timbrado do escritório, no padrão do formatador (Lora no texto, Poppins nos títulos, A4). Cada bloco é separado por uma linha em branco; o começo do bloco diz o que ele é:</p>
+    <ul class="small at-vars">
+      <li><code># Título | subtítulo</code></li>
+      <li><code>## I. Seção</code> e <code>### Cláusula primeira — …</code></li>
+      <li><code>#### Rótulo pequeno</code></li>
+      <li><code>@qualificacao</code> parágrafo sem recuo (qualificação)</li>
+      <li><code>@dados</code> linhas “Rótulo: valor”</li>
+      <li><code>@destaque</code>, <code>@observacao</code>, <code>@referencia</code></li>
+      <li><code>@direita</code> local e data · <code>@centro</code></li>
+      <li><code>@assinatura Nome | CPF | papel</code></li>
+      <li><code>@quebra</code> começa nova página</li>
+      <li><code>- item</code> lista</li>
+      <li><code>**negrito**</code> · <code>^^nome da parte^^</code> (versalete)</li>
+      <li><code>{{flex:inscrito/inscrita}}</code> concorda com o gênero do cliente</li>
+    </ul>
     <p class="small">Trechos que você ainda precisa escrever podem ficar como <code>[[COMPLETAR: descrição]]</code>; eles também bloqueiam a revisão.</p>
     <p class="small">Os modelos iniciais trazem só a estrutura. As cláusulas, os poderes e o texto da declaração são seus.</p>
     <p class="small"><a class="b b-xs" href="<?= e(url('painel/variaveis')) ?>">Editar e criar variáveis</a></p>

@@ -37,14 +37,18 @@ $usedIn = fn(string $k) => $used[$k] ? implode(', ', $used[$k]) : '—';
     <h3>Padrões usados quando a ficha do atendimento estiver em branco</h3>
     <div class="var-grid">
       <?php foreach (CASE_VAR_DEFAULTS as $k => $d): ?>
-        <div>
+        <div class="<?= !empty($d['textarea']) ? 'var-wide' : '' ?>">
           <label class="fld"><span><?= e(template_var_labels()[$k]) ?> <code class="var-code">{{<?= e($k) ?>}}</code></span>
-            <input name="<?= e($d['setting']) ?>" value="<?= e((string) setting($d['setting'], '')) ?>" maxlength="300" placeholder="<?= e($d['ph']) ?>" <?= $canEdit ? '' : 'disabled' ?>>
+            <?php if (!empty($d['textarea'])): ?>
+              <textarea name="<?= e($d['setting']) ?>" rows="<?= ($d['max'] ?? 300) > 2000 ? 6 : 3 ?>" maxlength="<?= (int) ($d['max'] ?? 300) ?>" placeholder="<?= e($d['ph']) ?>" <?= $canEdit ? '' : 'disabled' ?>><?= e((string) setting($d['setting'], '')) ?></textarea>
+            <?php else: ?>
+              <input name="<?= e($d['setting']) ?>" value="<?= e((string) setting($d['setting'], '')) ?>" maxlength="<?= (int) ($d['max'] ?? 300) ?>" placeholder="<?= e($d['ph']) ?>" <?= $canEdit ? '' : 'disabled' ?>>
+            <?php endif ?>
           </label>
         </div>
       <?php endforeach ?>
     </div>
-    <p class="hint">O foro é independente de <code>{{data.cidade}}</code>: a cidade do escritório e a comarca do contrato podem ser diferentes. Em cada atendimento, o foro e o prazo de repasse podem ser trocados na ficha (bloco 3).</p>
+    <p class="hint">O foro é independente de <code>{{data.cidade}}</code>: a cidade do escritório e a comarca do contrato podem ser diferentes. Em cada atendimento, todos eles podem ser trocados na ficha (bloco 3). Os padrões podem citar outras variáveis, como <code>{{contrato.numero}}</code>.</p>
     <p class="hint">Vêm do arquivo de configuração do site e não mudam aqui: <?= e(office('society')) ?> · <?= e(office('society_oab')) ?> · CNPJ <?= e(office('cnpj')) ?> · <?= e(office('lawyer')) ?> (<?= e(office('lawyer_oab')) ?>) · cidade <?= e(office('city')) ?>.</p>
     <?php if ($canEdit): ?><div class="inline-form"><button class="b b-primary" type="submit">Salvar dados do escritório</button></div><?php endif ?>
   </form>

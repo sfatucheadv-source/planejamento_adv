@@ -83,6 +83,7 @@ function base_field_defs(): array
         'nacionalidade'      => ['g' => 'qualificacao', 'label' => 'Nacionalidade', 'type' => 'text', 'max' => 60],
         'estado_civil'       => ['g' => 'qualificacao', 'label' => 'Estado civil', 'type' => 'choice', 'options' => ['solteiro' => 'Solteiro(a)', 'casado' => 'Casado(a)', 'uniao_estavel' => 'União estável', 'divorciado' => 'Divorciado(a)', 'viuvo' => 'Viúvo(a)', 'separado' => 'Separado(a)']],
         'profissao'          => ['g' => 'qualificacao', 'label' => 'Profissão', 'type' => 'text', 'max' => 80],
+        'genero'             => ['g' => 'qualificacao', 'label' => 'Gênero (concordância nos documentos)', 'type' => 'choice', 'options' => ['feminino' => 'Feminino', 'masculino' => 'Masculino']],
         'identificacao'      => ['g' => 'qualificacao', 'label' => 'Documento de identificação (tipo, número e órgão)', 'type' => 'text', 'max' => 80],
         // Endereço
         'cep'                => ['g' => 'endereco', 'label' => 'CEP', 'type' => 'cep'],
@@ -159,6 +160,8 @@ function base_field_defs(): array
         'proposta_exclusoes' => ['g' => 'proposta', 'label' => 'O que não está incluído', 'type' => 'textarea', 'max' => 1500, 'sidney' => true],
         'proposta_validade'  => ['g' => 'proposta', 'label' => 'Validade da proposta', 'type' => 'date', 'sidney' => true],
         'proposta_prazo_repasse' => ['g' => 'proposta', 'label' => 'Prazo para repassar ao cliente o saldo recebido', 'type' => 'text', 'max' => 300, 'sidney' => true],
+        'proposta_percentual_exito' => ['g' => 'proposta', 'label' => 'Honorários contratuais citados na procuração (percentual, por extenso)', 'type' => 'text', 'max' => 200, 'sidney' => true],
+        'procuracao_finalidade' => ['g' => 'proposta', 'label' => 'Finalidade da procuração', 'type' => 'textarea', 'max' => 2000, 'sidney' => true],
         'procuracao_poderes' => ['g' => 'proposta', 'label' => 'Poderes da procuração', 'type' => 'textarea', 'max' => 2000, 'sidney' => true],
         // Pontos jurídicos para a ficha da inicial (seção 10.3)
         'encargos_discutidos'=> ['g' => 'juridico', 'label' => 'Encargos discutidos', 'type' => 'textarea', 'max' => 2000, 'sidney' => true],
