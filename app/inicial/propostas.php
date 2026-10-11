@@ -37,18 +37,31 @@ const COST_TYPES = [
 
 const PROPOSAL_INTEREST = 0.01; // juros simples de 1% ao mês no parcelamento próprio
 
+/** Base de cálculo sugerida para o êxito (Sidney ajusta na proposta). */
+const PROPOSAL_EXITO_BASE = 'o benefício econômico efetivamente obtido: valores restituídos ou compensados e redução definitiva do saldo devedor';
+
+/** Trechos das cláusulas que a proposta escreve e que podem ser ajustados à mão. */
+const PROPOSAL_TEXTS = [
+    'honorarios' => 'Cláusula da remuneração',
+    'pagamento'  => 'Cláusula do pagamento',
+];
+
 function proposal_defaults(): array
 {
     return [
         'fixos' => ['ativo' => false, 'valor' => null, 'descricao' => ''],
         'atividades' => [],
-        'exito' => ['ativo' => false, 'percentual' => '', 'base' => ''],
+        'exito' => ['ativo' => false, 'percentual' => '', 'base' => PROPOSAL_EXITO_BASE],
         'custos' => [],
         'deslocamento' => ['repassa' => false, 'criterio' => 'comprovacao', 'valor_km' => null],
         'despesas' => ['repassa' => true],
         'pagamento' => ['formas' => ['pix'], 'condicao' => 'avista', 'vencimento' => null, 'entrada' => null, 'entrada_vencimento' => null,
             'parcelas' => 2, 'primeiro_vencimento' => null, 'modalidade' => 'proprio', 'cartao_parcelas' => 2, 'observacoes' => ''],
         'validade' => null,
+        // Texto ajustado à mão (null = texto automático, refeito a cada mudança)
+        'texto' => ['honorarios' => null, 'pagamento' => null],
+        // Texto automático da época do ajuste: avisa quando os valores mudaram depois
+        'texto_ref' => ['honorarios' => null, 'pagamento' => null],
     ];
 }
 
@@ -227,19 +240,22 @@ function proposal_schedule(array $d): array
 
 /* ---------- Gravação ---------- */
 
-/** Monta e confere a proposta a partir do formulário. Retorna [dados, erros]. */
+/**
+ * Monta e confere a proposta a partir do formulário. Retorna [dados, erros].
+ *
+ * Os textos das cláusulas (texto_honorarios, texto_pagamento) só viram ajuste
+ * manual quando diferem do texto que a tela mostrou (texto_*_base) ou quando
+ * já eram manuais: assim, mudar um valor sem tocar no texto refaz a cláusula.
+ */
 function proposal_from_input(array $in): array
 {
     $d = proposal_defaults();
     $err = [];
     $txt = fn($v, int $max = 500) => trim(mb_substr(str_replace("\r\n", "\n", (string) $v), 0, $max));
 
-    $d['fixos']['ativo'] = !empty($in['fixos_ativo']);
     $d['fixos']['valor'] = money_cents($in['fixos_valor'] ?? '');
+    $d['fixos']['ativo'] = (bool) $d['fixos']['valor'];
     $d['fixos']['descricao'] = $txt($in['fixos_descricao'] ?? '');
-    if ($d['fixos']['ativo'] && !$d['fixos']['valor']) {
-        $err[] = 'Informe o valor dos honorários fixos.';
-    }
     foreach ((array) ($in['atividade_descricao'] ?? []) as $i => $desc) {
         $desc = $txt($desc, 300);
         $val = money_cents($in['atividade_valor'][$i] ?? '');
@@ -254,14 +270,11 @@ function proposal_from_input(array $in): array
     }
     $d['exito']['ativo'] = !empty($in['exito_ativo']);
     $d['exito']['percentual'] = $txt($in['exito_percentual'] ?? '', 10);
-    $d['exito']['base'] = $txt($in['exito_base'] ?? '', 1000);
+    $d['exito']['base'] = $txt($in['exito_base'] ?? '', 1000) ?: PROPOSAL_EXITO_BASE;
     if ($d['exito']['ativo']) {
         $pc = parse_money(str_replace('%', '', $d['exito']['percentual']));
         if ($pc === null || $pc <= 0 || $pc > 100) {
             $err[] = 'Informe o percentual de êxito (por exemplo, 20).';
-        }
-        if ($d['exito']['base'] === '') {
-            $err[] = 'Descreva a base de cálculo dos honorários de êxito.';
         }
     }
     foreach ((array) ($in['custo_tipo'] ?? []) as $i => $tipo) {
@@ -286,37 +299,56 @@ function proposal_from_input(array $in): array
 
     $p = &$d['pagamento'];
     $p['formas'] = array_values(array_intersect(array_keys(PAYMENT_METHODS), (array) ($in['formas'] ?? [])));
+    $tipo = (string) ($in['pagamento_tipo'] ?? 'avista');
+    $p['condicao'] = in_array($tipo, ['proprio', 'cartao'], true) ? 'parcelado' : 'avista';
+    $p['modalidade'] = $tipo === 'cartao' ? 'cartao' : 'proprio';
+    if ($tipo === 'cartao' && !in_array('credito', $p['formas'], true)) {
+        $p['formas'][] = 'credito';
+    }
     if (!$p['formas']) {
         $err[] = 'Escolha ao menos uma forma de pagamento.';
     }
-    $p['condicao'] = ($in['condicao'] ?? '') === 'parcelado' ? 'parcelado' : 'avista';
     $p['vencimento'] = parse_br_date((string) ($in['vencimento'] ?? '')) ?: null;
     $p['entrada'] = money_cents($in['entrada'] ?? '');
     $p['entrada_vencimento'] = parse_br_date((string) ($in['entrada_vencimento'] ?? '')) ?: null;
-    $p['modalidade'] = ($in['modalidade'] ?? '') === 'cartao' ? 'cartao' : 'proprio';
-    $p['parcelas'] = max(1, min(60, (int) ($in['parcelas'] ?? 2)));
-    $p['cartao_parcelas'] = max(1, min(24, (int) ($in['cartao_parcelas'] ?? 2)));
+    $p['parcelas'] = $p['cartao_parcelas'] = max(1, min($tipo === 'cartao' ? 24 : 60, (int) ($in['parcelas'] ?? 2)));
     $p['primeiro_vencimento'] = parse_br_date((string) ($in['primeiro_vencimento'] ?? '')) ?: null;
     $p['observacoes'] = $txt($in['pagamento_observacoes'] ?? '', 1000);
-    if ($p['condicao'] === 'parcelado') {
-        if ($p['modalidade'] === 'cartao' && !in_array('credito', $p['formas'], true)) {
-            $err[] = 'Parcelamento no cartão exige “cartão de crédito” entre as formas de pagamento.';
-        }
-        if ($p['modalidade'] === 'proprio' && !$p['primeiro_vencimento']) {
-            $err[] = 'Informe o vencimento da primeira parcela.';
-        }
+    if ($tipo === 'proprio' && !$p['primeiro_vencimento']) {
+        $err[] = 'Informe o vencimento da primeira parcela.';
     }
     unset($p);
     $d['validade'] = parse_br_date((string) ($in['validade'] ?? '')) ?: null;
 
     $t = proposal_totals($d);
     if ($t['total'] === 0 && !$d['exito']['ativo']) {
-        $err[] = 'Informe ao menos um honorário: fixo, por atividade ou de êxito.';
+        $err[] = 'Informe ao menos um honorário: valor fixo, por atividade ou êxito.';
     }
     if ($d['pagamento']['condicao'] === 'parcelado' && $t['saldo'] <= 0) {
         $err[] = 'Não há saldo a parcelar: confira os honorários e a entrada.';
     }
+
+    $auto = proposal_auto_texts($d);
+    foreach (PROPOSAL_TEXTS as $k => $label) {
+        if (!array_key_exists('texto_' . $k, $in)) {
+            continue;
+        }
+        $posted = proposal_norm_text((string) $in['texto_' . $k]);
+        $base = proposal_norm_text((string) ($in['texto_' . $k . '_base'] ?? ''));
+        $manual = $posted !== $base || ($in['texto_' . $k . '_manual'] ?? '') === '1';
+        if ($manual && $posted !== '' && $posted !== proposal_norm_text($auto[$k])) {
+            $d['texto'][$k] = mb_substr($posted, 0, 8000);
+            $ref = proposal_norm_text((string) ($in['texto_' . $k . '_ref'] ?? ''));
+            $d['texto_ref'][$k] = mb_substr($ref !== '' ? $ref : ($base !== '' ? $base : $auto[$k]), 0, 8000);
+        }
+    }
     return [$d, $err];
+}
+
+function proposal_norm_text(string $s): string
+{
+    $s = preg_replace("/[ \t]+\n/", "\n", str_replace(["\r\n", "\r"], "\n", $s));
+    return trim(preg_replace("/\n{3,}/", "\n\n", $s));
 }
 
 function proposal_save(int $caseId, array $d, ?int $userId): void
@@ -342,10 +374,14 @@ function proposal_vars(int $caseId): array
         return ['proposta.sem_cadastro' => '1', 'proposta.tem_fixos' => '1', 'proposta.tem_atividades' => '1', 'proposta.tem_exito' => '1',
             'proposta.pix' => '1', 'proposta.repassa_despesas' => '1'];
     }
-    $d = $pr['data'];
+    return proposal_vars_data($pr['data']);
+}
+
+/** Textos automáticos das cláusulas de remuneração e de pagamento. */
+function proposal_auto_texts(array $d): array
+{
     $t = proposal_totals($d);
     $p = $d['pagamento'];
-    $flag = fn(bool $b) => $b ? '1' : null;
 
     $hon = [];
     if ($d['fixos']['ativo']) {
@@ -385,6 +421,19 @@ function proposal_vars(int $caseId): array
         $pag[] = $p['observacoes'];
     }
 
+    return ['honorarios' => implode("\n", $hon), 'pagamento' => implode("\n\n", $pag)];
+}
+
+/** Variáveis e condições a partir dos dados da proposta (salva ou ainda em edição). */
+function proposal_vars_data(array $d): array
+{
+    $t = proposal_totals($d);
+    $p = $d['pagamento'];
+    $flag = fn(bool $b) => $b ? '1' : null;
+    $auto = proposal_auto_texts($d);
+    $formas = array_map(fn($f) => PAYMENT_METHODS[$f], $p['formas']);
+    $lista = count($formas) > 1 ? implode(', ', array_slice($formas, 0, -1)) . ' ou ' . end($formas) : ($formas[0] ?? '');
+
     $custos = [];
     foreach ($d['custos'] as $c) {
         $custos[] = '- ' . COST_TYPES[$c['tipo']] . ($c['descricao'] !== '' ? ' — ' . rtrim($c['descricao'], '.') : '') . ': ' . ($c['valor'] ? 'estimativa de ' . brl($c['valor']) : 'valor a apurar') . '.';
@@ -397,8 +446,8 @@ function proposal_vars(int $caseId): array
         : 'mediante apresentação dos comprovantes';
 
     return [
-        'proposta.honorarios' => implode("\n", $hon),
-        'proposta.pagamento' => implode("\n\n", $pag),
+        'proposta.honorarios' => $d['texto']['honorarios'] ?? $auto['honorarios'],
+        'proposta.pagamento' => $d['texto']['pagamento'] ?? $auto['pagamento'],
         'proposta.despesas' => $desp,
         'proposta.base_exito' => $d['exito']['ativo'] ? $d['exito']['base'] : null,
         'proposta.percentual_exito' => $d['exito']['ativo'] ? percent_extenso($d['exito']['percentual']) : null,
@@ -470,6 +519,39 @@ function proposal_effects(array $d): array
         ['Reembolso do deslocamento', $d['deslocamento']['repassa']],
         ['Deslocamento incluído nos honorários', !$d['deslocamento']['repassa']],
     ];
+}
+
+/**
+ * Prévia das cláusulas de remuneração e de pagamento como sairão no contrato
+ * (modelo aprovado, numeração e condições aplicadas), com o ponto em que entra
+ * o texto ajustável. Retorna [chave => ['antes' => html, 'depois' => html]].
+ */
+function proposal_clause_preview(int $caseId, array $d): array
+{
+    $tpl = doc_template('honorarios');
+    if (!$tpl) {
+        return [];
+    }
+    $vars = kit_vars($caseId, $d);
+    $mark = [];
+    foreach (array_keys(PROPOSAL_TEXTS) as $k) {
+        $mark[$k] = '§§' . strtoupper($k) . '§§';
+        $vars['proposta.' . $k] = $mark[$k];
+    }
+    $vars['kit.versao'] = 'prévia';
+    [$content] = render_template($tpl['body'], $vars);
+    $out = [];
+    foreach (preg_split('/^(?=###\s)/mu', $content) as $chunk) {
+        $chunk = preg_split('/^(?=##\s)/mu', $chunk)[0];
+        foreach ($mark as $k => $m) {
+            if (!isset($out[$k]) && str_contains($chunk, $m)) {
+                [$antes, $depois] = explode($m, $chunk, 2);
+                $html = fn(string $x) => trim($x) === '' ? '' : doc_corpo_html(doc_blocks(trim($x)));
+                $out[$k] = ['antes' => $html($antes), 'depois' => $html($depois)];
+            }
+        }
+    }
+    return $out;
 }
 
 /** Valor em centavos para o campo do formulário ("1.234,56"). */

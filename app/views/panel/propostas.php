@@ -4,7 +4,7 @@
 <div class="page-head">
   <div>
     <h1>Propostas</h1>
-    <p class="sub">As condições negociadas com cada cliente: honorários, êxito, valores à parte, repasses, forma de pagamento e parcelamento. Cada escolha inclui ou exclui cláusulas do contrato, da procuração e da proposta.</p>
+    <p class="sub">As condições negociadas com cada cliente. A tela mostra a simulação do pagamento e as cláusulas como sairão no contrato; depois da assinatura, as cobranças vão para o Asaas com os mesmos valores.</p>
   </div>
 </div>
 
@@ -33,7 +33,7 @@
   <?php else: ?>
     <div class="tbl-wrap">
       <table class="tbl tbl-compact prop-lista">
-        <thead><tr><th>Atendimento</th><th>Honorários</th><th>Êxito</th><th>Pagamento</th><th>Atualizada</th></tr></thead>
+        <thead><tr><th>Atendimento</th><th>Honorários</th><th>Êxito</th><th>Pagamento</th><th>Asaas</th><th>Atualizada</th></tr></thead>
         <tbody>
         <?php foreach ($rows as $r): $d = array_replace_recursive(proposal_defaults(), json_decode((string) $r['data'], true) ?: []); $t = proposal_totals($d); $p = $d['pagamento']; ?>
           <tr>
@@ -41,6 +41,7 @@
             <td><?= $t['total'] ? e(brl($t['total'])) : '—' ?></td>
             <td><?= $d['exito']['ativo'] ? e(percent_extenso($d['exito']['percentual'])) : '—' ?></td>
             <td><?= $p['condicao'] === 'avista' ? 'À vista' : e(($t['entrada'] ? 'Entrada + ' : '') . ($p['modalidade'] === 'cartao' ? 'até ' . $p['cartao_parcelas'] . 'x no cartão' : $p['parcelas'] . 'x próprio')) ?></td>
+            <td><?php $as = asaas_summary((int) $r['case_id']); ?><?= $as ? e(brl($as['pago'])) . ' de ' . e(brl($as['total'])) . ($as['vencidas'] ? ' <small class="t-warn">' . (int) $as['vencidas'] . ' vencida(s)</small>' : '') : '—' ?></td>
             <td><small><?= e(fmt_datetime($r['updated_at'])) ?></small></td>
           </tr>
         <?php endforeach ?>

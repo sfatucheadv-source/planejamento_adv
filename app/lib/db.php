@@ -539,6 +539,32 @@ CREATE TABLE proposals (
 );
 SQL;
 
+    // Versão 7 — cobranças no Asaas geradas a partir do contrato assinado.
+    $migrations[7] = <<<SQL
+ALTER TABLE cases ADD COLUMN asaas_customer_id TEXT;
+CREATE TABLE asaas_charges (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    ref TEXT NOT NULL,
+    label TEXT NOT NULL,
+    env TEXT NOT NULL,
+    asaas_id TEXT NOT NULL,
+    installment_id TEXT,
+    customer_id TEXT,
+    billing_type TEXT NOT NULL,
+    value_cents INTEGER NOT NULL,
+    installments INTEGER NOT NULL DEFAULT 1,
+    due_date TEXT NOT NULL,
+    status TEXT NOT NULL,
+    invoice_url TEXT,
+    paid_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_asaas_case ON asaas_charges(case_id);
+CREATE INDEX idx_asaas_id ON asaas_charges(asaas_id);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();

@@ -649,8 +649,38 @@ $router->post('/painel/propostas/{id}', function (string $id) {
         return;
     }
     proposal_save((int) $c['id'], $d, (int) $u['id']);
-    flash('ok', 'Proposta salva. O contrato, a procuração e a proposta passam a usar estas condições: gere uma nova versão no kit do atendimento.');
-    redirect('painel/propostas/' . $c['id'] . '#resumo');
+    flash('ok', 'Proposta salva. Para o contrato usar estas condições, gere uma nova versão no kit do atendimento.');
+    redirect('painel/propostas/' . $c['id']);
+});
+
+// Simulação e prévia das cláusulas, refeitas a cada alteração do formulário (nada é salvo).
+$router->post('/painel/propostas/{id}/previa', function (string $id) {
+    $c = require_case_operator((int) $id);
+    [$d, $errors] = proposal_from_input($_POST);
+    json_out([
+        'simulacao' => render('panel/_proposta_simulacao', ['d' => $d]),
+        'auto' => proposal_auto_texts($d),
+        'clausulas' => proposal_clause_preview((int) $c['id'], $d),
+        'erros' => $errors,
+    ]);
+});
+
+$router->post('/painel/propostas/{id}/asaas', function (string $id) {
+    require_user();
+    $c = require_case_operator((int) $id);
+    $op = (string) input('op');
+    $err = match ($op) {
+        'enviar' => asaas_send($c, $_POST),
+        'atualizar' => asaas_refresh($c),
+        'cancelar' => asaas_cancel($c),
+        default => 'Ação desconhecida.',
+    };
+    flash($err ? 'error' : 'ok', $err ?? match ($op) {
+        'enviar' => 'Cobranças criadas no Asaas com os valores do contrato.',
+        'atualizar' => 'Situação das cobranças atualizada.',
+        default => 'Cobranças pendentes canceladas no Asaas.',
+    });
+    redirect('painel/propostas/' . $c['id'] . '#asaas');
 });
 
 /* ---------- Variáveis dos documentos ---------- */
@@ -755,6 +785,38 @@ $router->post('/painel/configuracoes', function () {
                 audit('ia_chave_alterada', null, $pk . ' final ' . substr($key, -4));
             }
         }
+    }
+    // Asaas: ambiente, chave (só trocada quando digitada), multa e juros de mora.
+    $akey = trim((string) ($_POST['asaas_api_key'] ?? ''));
+    if (input('asaas_remove_key') === '1') {
+        set_setting('asaas_api_key', null);
+        audit('asaas_chave_removida');
+    } elseif ($akey !== '') {
+        if (!asaas_key_format_ok($akey)) {
+            flash('error', 'A chave do Asaas começa com “$aact_”. Copie de novo em Integrações › Chaves de API.');
+        } else {
+            set_setting('asaas_api_key', $akey);
+            audit('asaas_chave_alterada', null, 'final ' . substr($akey, -4));
+        }
+    }
+    $aenv = (string) input('asaas_env');
+    if (isset(ASAAS_ENVS[$aenv])) {
+        set_setting('asaas_env', $aenv);
+    }
+    if ($akey !== '' && asaas_key_format_ok($akey) && ($kenv = asaas_key_env($akey)) && $kenv !== $aenv && isset(ASAAS_ENVS[$aenv])) {
+        set_setting('asaas_env', $kenv);
+        flash('error', 'A chave informada é do ambiente “' . ASAAS_ENVS[$kenv]['label'] . '”; o ambiente foi ajustado para ela.');
+    }
+    foreach (['asaas_multa' => 20, 'asaas_juros' => 10] as $k => $max) {
+        $v = parse_money(str_replace('%', '', (string) input($k)));
+        if ($v !== null && $v >= 0 && $v <= $max) {
+            set_setting($k, rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.'));
+        }
+    }
+    if (input('asaas_test') === '1') {
+        setting('__reset');
+        [$okA, $msgA] = asaas_test();
+        flash($okA ? 'ok' : 'error', 'Teste do Asaas: ' . $msgA);
     }
     if (input('llm_test') === '1') {
         setting('__reset');

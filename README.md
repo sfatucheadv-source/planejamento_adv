@@ -54,6 +54,12 @@ Menu *Propostas* (logo abaixo de *Modelos de documentos*): escolha o atendimento
 
 A proposta prevalece sobre os campos de honorários, êxito, pagamento e despesas da ficha. Cada escolha liga ou desliga cláusulas: os modelos usam `@se chave` / `@senao` / `@fimse`, e a numeração (`### Cláusula # — … {#chave}`, `**Parágrafo #.**`, `{{clausula:chave}}`) é refeita a cada geração, com “Parágrafo único” quando sobra um só. Teste: `php tests/propostas.php`.
 
+A tela tem as condições à esquerda e, à direita, a **simulação** (total, entrada, quadro de parcelas com os juros) e **como fica no contrato**: as cláusulas da remuneração e do pagamento do modelo aprovado, refeitas a cada alteração (`POST /painel/propostas/{id}/previa`, nada é gravado). O trecho escrito pela proposta pode ser ajustado ali mesmo; o ajuste é guardado e vai para o contrato e para a proposta. Enquanto não é ajustado, o texto acompanha os valores; depois de ajustado, a tela avisa se os valores mudaram e oferece voltar ao texto automático.
+
+### Cobrança no Asaas
+
+Em *Configurações › Asaas*: ambiente (sandbox ou produção), chave de API (fica só na tabela `settings`, aparece mascarada; o ambiente é ajustado pelo prefixo `$aact_prod_`/`$aact_hmlg_`), multa e juros de mora (2% e 1% a.m., os da cláusula de atraso). Depois que a contratação é registrada como *Formalizado*, a seção *Cobrança no Asaas* da proposta cria o cliente (pelo CPF da ficha) e as cobranças — entrada, cada parcela do parcelamento próprio com seus juros, pagamento à vista ou uma cobrança parcelada no cartão (com o acréscimo da operadora, se informado). O envio só é liberado se os textos da proposta gravados na versão assinada do contrato forem iguais aos da proposta atual: assim o Asaas recebe exatamente os valores do contrato. Vencimentos já passados precisam ser remarcados (o Asaas não aceita data passada). Há *Atualizar situação*, *Cancelar as não pagas* e o webhook `POST /webhook/asaas` (token mostrado em Configurações; cadastrar em Integrações › Webhooks do Asaas), que registra os pagamentos no histórico do atendimento. Código em `app/inicial/asaas.php`.
+
 ### Assistente com IA (OpenRouter ou Google Gemini)
 
 Opcional. Em **Configurações › Inteligência artificial**: ligue o uso de IA e escolha o **fornecedor**:

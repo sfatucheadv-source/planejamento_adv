@@ -526,28 +526,68 @@ details.more summary { cursor: pointer; color: var(--teal); font-weight: 600; fo
 #catalogo code{word-break:break-all}
 @media (max-width:640px){.var-tbl thead{display:none}.var-tbl,.var-tbl tbody,.var-tbl tr,.var-tbl td{display:block;width:auto}.var-tbl tr{padding:.5rem 0;border-bottom:1px solid var(--line-2)}.var-tbl td{border:0;padding:.1rem 0}.var-tbl td:first-child{width:auto;white-space:normal}.var-code{white-space:normal;word-break:break-all}}
 
-/* Propostas */
-.prop-rows { display: grid; gap: 4px; margin-bottom: 8px; }
-.prop-row { display: grid; grid-template-columns: minmax(0, 1fr) 160px; gap: 0 12px; }
-.prop-row3 { grid-template-columns: 200px minmax(0, 1fr) 140px; }
-.prop-formas { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 2px 12px; }
-.prop-formas legend { grid-column: 1 / -1; }
-.prop-form h3 { margin: 16px 0 4px; }
-.prop-form h3 .chk { font: inherit; }
-/* Mostra só o que vale para a escolha feita (sem JavaScript) */
-.prop-form:not(:has([name=fixos_ativo]:checked)) .prop-if-fixos,
+/* Propostas: condições à esquerda, simulação e cláusulas à direita */
+.prop-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 16px; align-items: start; margin-bottom: 16px; }
+.prop-previa { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow: auto; }
+@media (max-width: 1100px) { .prop-layout { grid-template-columns: minmax(0, 1fr); } .prop-previa { position: static; max-height: none; } }
+.prop-rows { display: grid; gap: 4px; margin: 6px 0 8px; }
+.prop-row { display: grid; grid-template-columns: minmax(0, 1fr) 140px; gap: 0 12px; }
+.prop-row3 { grid-template-columns: 180px minmax(0, 1fr) 120px; }
+.prop-form h3 { margin: 14px 0 4px; font-size: 15px; }
+.prop-mais > summary { cursor: pointer; color: var(--teal); font-weight: 600; margin: 8px 0 4px; }
+details.box.prop-mais > summary { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; color: inherit; list-style: none; }
+details.box.prop-mais > summary::-webkit-details-marker { display: none; }
+details.box.prop-mais > summary h2 { margin: 0; }
+details.box.prop-mais > summary h2::before { content: "+ "; color: var(--teal); }
+details.box.prop-mais[open] > summary h2::before { content: "− "; }
+.prop-toggle { margin-top: 10px; font-weight: 600; }
+.prop-exito { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 0 12px; margin-top: 6px; }
+.prop-km { width: 110px; margin-left: 6px; }
+.prop-validade { max-width: 220px; margin-top: 8px; }
+.prop-tipos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.prop-tipos label { display: block; cursor: pointer; }
+.prop-tipos input { position: absolute; opacity: 0; pointer-events: none; }
+.prop-tipos span { display: flex; flex-direction: column; gap: 2px; height: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.prop-tipos small { color: var(--muted); font-size: 12.5px; }
+.prop-tipos input:checked + span { border-color: var(--teal); background: var(--teal-soft); box-shadow: inset 0 0 0 1px var(--teal); }
+.prop-tipos input:focus-visible + span { outline: 2px solid var(--teal); outline-offset: 2px; }
+.prop-formas { display: flex; flex-wrap: wrap; gap: 2px 16px; border: 0; padding: 0; margin: 8px 0 0; }
+.prop-formas legend { width: 100%; margin-bottom: 2px; }
+/* Mostra só o que vale para a escolha feita (sem depender de JavaScript) */
 .prop-form:not(:has([name=exito_ativo]:checked)) .prop-if-exito,
 .prop-form:not(:has([name=deslocamento][value=sim]:checked)) .prop-if-desloc,
-.prop-form:not(:has([name=condicao][value=avista]:checked)) .prop-if-avista,
-.prop-form:not(:has([name=condicao][value=parcelado]:checked)) .prop-if-parcelado,
-.prop-form:not(:has([name=modalidade][value=proprio]:checked)) .prop-if-proprio,
-.prop-form:not(:has([name=modalidade][value=cartao]:checked)) .prop-if-cartao { display: none; }
+.prop-form:not(:has([name=pagamento_tipo][value=avista]:checked)) .prop-if-avista,
+.prop-form:has([name=pagamento_tipo][value=avista]:checked) .prop-if-parcelado,
+.prop-form:not(:has([name=pagamento_tipo][value=proprio]:checked)) .prop-if-proprio { display: none; }
 .prop-if-desloc { margin: 6px 0 0 24px; }
-.prop-efeitos { list-style: none; padding: 0; margin: 0; font-size: 14px; }
-.prop-efeitos li { padding: 3px 0; }
-.prop-efeitos li.on { color: var(--ok, #1f7a4d); }
-.prop-efeitos li.off { color: var(--muted, #7a7f8a); text-decoration: line-through; }
+.prop-totais { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; margin: 0 0 10px; }
+.prop-totais dt { font-size: 12.5px; color: var(--muted); }
+.prop-totais dd { margin: 0; }
+.prop-quadro td { white-space: nowrap; }
+.prop-clausula { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line-2); }
+.prop-doc .corpo { font-family: "Lora", Georgia, serif; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
+.prop-doc .corpo p { margin: 0 0 8px; text-align: justify; }
+.prop-doc .corpo h3 { font-family: var(--sans); font-size: 13.5px; text-transform: uppercase; letter-spacing: .02em; margin: 0 0 6px; color: var(--ink); }
+.prop-doc .corpo ul { margin: 0 0 8px 18px; padding: 0; }
+.prop-doc mark.pendente { background: var(--amber-soft); }
+.prop-editavel textarea { width: 100%; font-family: "Lora", Georgia, serif; font-size: 14px; line-height: 1.5; color: var(--ink); background: var(--gold-soft); border: 1px dashed var(--gold); border-radius: 8px; padding: 8px 10px; resize: vertical; field-sizing: content; min-height: 4.5em; }
+.prop-clausula.is-manual .prop-editavel textarea { background: var(--blue-soft); border-color: var(--blue); border-style: solid; }
+.prop-estado { font-size: 12.5px; color: var(--muted); margin: 2px 0 8px; }
+.prop-estado .-manual, .prop-estado .-velho { display: none; }
+.prop-clausula.is-manual .prop-estado .-auto { display: none; }
+.prop-clausula.is-manual .prop-estado .-manual { display: inline; }
+.prop-clausula.is-velho .prop-estado .-velho { display: inline; color: var(--amber); font-weight: 600; }
+.prop-bloqueios { margin: 6px 0 10px 18px; padding: 0; }
+.prop-bloqueios li { margin: 2px 0; }
+.b-link { background: none; border: 0; padding: 0; color: var(--teal); text-decoration: underline; cursor: pointer; font: inherit; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.t-warn { color: var(--amber); }
+tr.muted td { color: var(--muted); text-decoration: line-through; }
+[data-erros] { color: var(--red); }
 @media (max-width: 640px) {
   .prop-row, .prop-row3 { grid-template-columns: minmax(0, 1fr); border-bottom: 1px solid var(--line-2); padding-bottom: 6px; }
+  .prop-tipos { grid-template-columns: minmax(0, 1fr); }
+  .prop-exito { grid-template-columns: minmax(0, 1fr); }
+  .prop-quadro th:nth-child(3), .prop-quadro td:nth-child(3) { display: none; }
+  .prop-doc .corpo p { text-align: left; }
 }
-#resumo td { white-space: nowrap; }

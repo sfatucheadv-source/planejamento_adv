@@ -26,7 +26,8 @@ final class Router
             $regex = '#^' . preg_replace('#\{(\w+)\}#', '(?P<$1>[^/]+)', rtrim($pattern, '/') ?: '/') . '$#';
             if (preg_match($regex, $path, $m2)) {
                 $params = array_filter($m2, 'is_string', ARRAY_FILTER_USE_KEY);
-                if ($method === 'POST') {
+                // Webhooks de terceiros (Asaas) se autenticam pelo próprio token.
+                if ($method === 'POST' && !str_starts_with($pattern, '/webhook/')) {
                     verify_csrf();
                 }
                 $handler(...array_values($params));

@@ -27,6 +27,7 @@ require APP_DIR . '/inicial/base.php';
 require APP_DIR . '/inicial/campos.php';
 require APP_DIR . '/inicial/variaveis.php';
 require APP_DIR . '/inicial/propostas.php';
+require APP_DIR . '/inicial/asaas.php';
 require APP_DIR . '/inicial/fluxo.php';
 require APP_DIR . '/inicial/bot.php';
 require APP_DIR . '/inicial/ia.php';

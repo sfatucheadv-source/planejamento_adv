@@ -557,6 +557,9 @@ if ($P && $N) {
 
   <h3>Contratação</h3>
   <p><strong><?= e(CONTRACT_STATES[$c['contract_state']]) ?></strong><?= $c['contract_signed_at'] ? ' · assinado em ' . e(fmt_date($c['contract_signed_at'])) : '' ?><?= $c['contract_verified_at'] ? ' · conferido' : '' ?></p>
+  <?php if ($c['contract_state'] === 'formalizado'): $as = asaas_summary($id); ?>
+    <p class="hint">Cobrança no Asaas: <?= $as ? 'recebido ' . e(brl($as['pago'])) . ' de ' . e(brl($as['total'])) . ($as['vencidas'] ? ' · ' . (int) $as['vencidas'] . ' vencida(s)' : '') . ' · ' : 'ainda não criada · ' ?><a href="<?= e(url('painel/propostas/' . $id)) ?>#asaas"><?= $as ? 'ver cobranças' : 'criar as cobranças do contrato' ?></a></p>
+  <?php endif ?>
   <?php if ($c['contract_state'] !== 'formalizado'): ?>
     <details class="at-inline">
       <summary>Atualizar contratação</summary>

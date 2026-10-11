@@ -302,3 +302,11 @@ $router->post('/cliente/novo-atendimento', function () {
     flash('ok', 'Pedido enviado. Sidney vai verificar e abrir um novo atendimento para você.');
     redirect('cliente/sem-acesso');
 });
+
+/* ---------- Webhook do Asaas (situação das cobranças) ---------- */
+
+$router->post('/webhook/asaas', function () {
+    $payload = json_decode((string) file_get_contents('php://input'), true);
+    $code = asaas_webhook((string) ($_SERVER['HTTP_ASAAS_ACCESS_TOKEN'] ?? ''), is_array($payload) ? $payload : []);
+    json_out(['ok' => $code === 200], $code);
+});

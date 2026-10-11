@@ -45,6 +45,27 @@
   <?php if ($usage['calls']): ?>
     <p class="small">Últimos 30 dias: <?= (int) $usage['calls'] ?> chamada(s), <?= (int) $usage['errors'] ?> com erro<?= $usage['cost'] > 0 ? ', custo informado de US$ ' . e(number_format($usage['cost'], 4, ',', '.')) : '' ?>.<?php if ($usage['last_error']): ?> Último erro (<?= e(fmt_datetime($usage['last_error']['created_at'])) ?>): <?= e(mb_strimwidth((string) $usage['last_error']['error'], 0, 160, '…')) ?><?php endif ?></p>
   <?php endif ?>
+  <h2 id="asaas">Asaas (cobranças)</h2>
+  <p class="hint">Depois do contrato assinado, a tela da proposta cria no Asaas as cobranças com os mesmos valores e vencimentos do contrato: entrada, parcelas, pagamento à vista ou parcelamento no cartão.</p>
+  <fieldset class="radios at-channels"><legend class="lbl">Ambiente</legend>
+    <?php foreach (ASAAS_ENVS as $ek => $ev): ?>
+      <label class="chk"><input type="radio" name="asaas_env" value="<?= e($ek) ?>" <?= checked(asaas_env() === $ek) ?>> <?= e($ev['label']) ?></label>
+    <?php endforeach ?>
+  </fieldset>
+  <label class="fld"><span>Chave de API <?= asaas_key() ? '<small>(configurada, termina em ' . e(asaas_key_hint()) . ')</small>' : '<small>(não configurada)</small>' ?></span>
+    <input type="password" name="asaas_api_key" autocomplete="new-password" placeholder="<?= asaas_key() ? 'Deixe em branco para manter a chave atual' : '$aact_…' ?>" spellcheck="false">
+  </label>
+  <?php if (asaas_key()): ?><label class="chk"><input type="checkbox" name="asaas_remove_key" value="1"> Remover esta chave</label><?php endif ?>
+  <p class="hint">No Asaas: Integrações › Chaves de API › Gerar chave. Teste primeiro no Sandbox (conta separada em sandbox.asaas.com); a chave de produção começa com “$aact_prod_”.</p>
+  <div class="var-grid">
+    <label class="fld"><span>Multa por atraso (%)</span><input name="asaas_multa" inputmode="decimal" value="<?= e(str_replace('.', ',', (string) asaas_late_fees()['multa'])) ?>"></label>
+    <label class="fld"><span>Juros de mora (% ao mês)</span><input name="asaas_juros" inputmode="decimal" value="<?= e(str_replace('.', ',', (string) asaas_late_fees()['juros'])) ?>"></label>
+  </div>
+  <p class="hint">Os mesmos da cláusula “do atraso no pagamento” do contrato (2% de multa e 1% ao mês). Mude aqui só se mudar o contrato.</p>
+  <?php if (asaas_key()): ?>
+    <p class="small"><strong>Webhook</strong> (Integrações › Webhooks › Adicionar, eventos de cobrança): URL <code><?= e(asaas_webhook_url()) ?></code> · token de autenticação <code><?= e(asaas_webhook_token()) ?></code>. Com ele, pagamentos e vencimentos aparecem sozinhos no atendimento; sem ele, use “Atualizar situação” na proposta.</p>
+  <?php endif ?>
+  <label class="chk"><input type="checkbox" name="asaas_test" value="1"> Testar a conexão com o Asaas ao salvar</label>
   <button class="b b-primary" type="submit">Salvar</button>
 </form>
 <div class="box narrow-box">

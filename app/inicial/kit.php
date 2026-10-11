@@ -80,7 +80,8 @@ function builtin_var_labels(): array
     ] + array_map(fn($d) => $d['label'], OFFICE_VARS) + PROPOSAL_VAR_LABELS;
 }
 
-function kit_vars(int $caseId): array
+/** $proposal: dados de uma proposta ainda não salva (prévia da tela Propostas). */
+function kit_vars(int $caseId, ?array $proposal = null): array
 {
     $d = fn(string $f) => ($r = case_fields($caseId)[$f] ?? null) && $r['state'] === 'informado' ? field_display($f, $r) : null;
     $c = find_case($caseId);
@@ -161,7 +162,7 @@ function kit_vars(int $caseId): array
         'escritorio.advogado_oab' => office('lawyer_oab') ?: null,
     ];
     // A proposta registrada (módulo Propostas) prevalece sobre os textos da ficha.
-    foreach (proposal_vars($caseId) as $k => $v) {
+    foreach ($proposal !== null ? proposal_vars_data($proposal) : proposal_vars($caseId) as $k => $v) {
         if ($v !== null || isset(PROPOSAL_VAR_LABELS[$k])) {
             $vars[$k] = $v;
         }
