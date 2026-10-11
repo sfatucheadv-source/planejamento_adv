@@ -175,8 +175,8 @@ for ($i = 0; $i < 30 && !@file_get_contents("http://127.0.0.1:$mockPort/api/v1/m
     usleep(100000);
 }
 $sid->get('/painel/configuracoes');
-ok(str_contains($sid->html, 'Inteligência artificial (OpenRouter)') && str_contains($sid->html, '(não configurada)'), 'Configurações mostram a seção de IA sem chave');
-$cfg = ['operator_user_id' => (string) scalar('SELECT id FROM users LIMIT 1'), 'intake_workflow' => 'simple_v1', 'office_address' => 'Rua X, 1', 'llm_enabled' => '1', 'llm_model' => 'google/gemini-2.5-flash'];
+ok(str_contains($sid->html, 'Inteligência artificial') && str_contains($sid->html, 'Google Gemini (API direta)') && str_contains($sid->html, '(não configurada)'), 'Configurações mostram a IA com os dois fornecedores, sem chave');
+$cfg = ['operator_user_id' => (string) scalar('SELECT id FROM users LIMIT 1'), 'intake_workflow' => 'simple_v1', 'office_address' => 'Rua X, 1', 'llm_enabled' => '1', 'llm_provider' => 'openrouter', 'llm_model' => 'google/gemini-2.5-flash'];
 $sid->post('/painel/configuracoes', $cfg + ['llm_api_key' => 'chave-errada']);
 setting('__reset');
 ok(llm_key() === null && str_contains($sid->html, 'sk-or-'), 'chave em formato inválido é recusada');
@@ -269,6 +269,36 @@ $sid->post('/painel/atendimento/' . $id, ['op' => 'ia_conferir', 'group' => 'fin
 ok($f('capital')['source'] === 'contrato' && $f('cpf')['source'] === 'ia', 'Sidney confirma por grupo; os demais continuam “conferir”');
 $sid->post('/painel/atendimento/' . $id, ['op' => 'ia_extrair', 'doc_id' => scalar("SELECT id FROM documents WHERE case_id = ? AND kind = 'contrato'", [$id])]);
 ok(str_contains($sid->html, 'IA leu o documento') && $f('capital')['source'] === 'contrato', 'reler não sobrescreve dado já conferido');
+
+echo "\nFornecedor Google Gemini (API direta)\n";
+set_setting('gemini_endpoint', "http://127.0.0.1:$mockPort/v1beta");
+$gcfg = array_merge($cfg, ['llm_provider' => 'gemini', 'gemini_model' => 'models/gemini-2.5-flash']);
+$sid->post('/painel/configuracoes', $gcfg + ['gemini_api_key' => 'AQ.chave-errada-0000000000000', 'llm_test' => '1']);
+setting('__reset');
+ok(llm_provider() === 'gemini' && llm_model() === 'gemini-2.5-flash' && str_contains($sid->html, 'API key not valid'), 'Gemini selecionado; chave inválida mostra o erro do Google');
+$sid->post('/painel/configuracoes', $gcfg + ['gemini_api_key' => 'AQ.teste-gemini-valido-0000000000', 'llm_test' => '1']);
+setting('__reset');
+ok(str_contains($sid->html, 'Conexão funcionando: Google Gemini') && llm_key('openrouter') === 'sk-or-v1-teste-valido-0000', 'chave do Gemini aprovada; a do OpenRouter continua guardada');
+ok(!str_contains($sid->html, 'AQ.teste-gemini-valido-0000000000') && str_contains($sid->html, 'em uso'), 'chave do Gemini não volta para a tela');
+$sid->get('/painel/configuracoes?modelos=gemini');
+ok(str_contains($sid->html, 'value="gemini-2.5-flash"') && !str_contains($sid->html, 'text-embedding-004'), 'lista do Gemini traz só modelos de geração de conteúdo');
+$before = count(file($mockLog));
+$cliG = new Browser($base);
+$cliG->get('/comecar');
+preg_match('/name="form_key" value="([^"]+)"/', $cliG->html, $fk);
+sleep(3);
+$cliG->post('/comecar', ['nome' => 'Rita', 'telefone' => '(41) 96666-1111', 'email' => '', 'consent' => '1', 'website' => '', 'form_key' => $fk[1], 'aviso' => 'nenhum']);
+$idG = (int) scalar('SELECT MAX(id) FROM cases');
+$docG = (int) scalar("SELECT id FROM documents WHERE case_id = ? AND kind = 'contrato'", [$idG]);
+$cliG->post('/cliente/conversa/documento/' . $docG, ['choice' => 'enviar', 'k' => 'g1'], true, ['arquivo[]' => [$pdf, 'application/pdf']]);
+$gl = array_map(fn($l) => json_decode($l, true), array_slice(file($mockLog, FILE_IGNORE_NEW_LINES), $before));
+$gx = array_values(array_filter($gl, fn($l) => $l['provider'] === 'gemini' && $l['parts']));
+ok($gx && in_array('inline:application/pdf', $gx[0]['parts'], true) && $gx[0]['json'] === true && $gx[0]['model'] === 'gemini-2.5-flash', 'contrato enviado ao Gemini como PDF (inline_data), com resposta em JSON');
+$fg = one("SELECT * FROM case_fields WHERE case_id = ? AND field = 'capital'", [$idG]);
+ok($fg && $fg['value'] === '4000000' && $fg['source'] === 'ia', 'Gemini extrai os dados do contrato para a ficha');
+$cliG->post('/cliente/conversa/mensagem', ['message' => 'Tenho 2 atrasadas', 'k' => 'g2']);
+ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND author = 'bot' AND body LIKE 'Entendi. Sidney vai responder%'", [$idG]) && (bool) scalar("SELECT 1 FROM llm_log WHERE model = 'gemini:gemini-2.5-flash' AND kind = 'conversa' AND ok = 1"), 'mensagem livre respondida pelo Gemini e registrada com o fornecedor');
+set_setting('llm_provider', 'openrouter');
 
 echo "\nSem IA (ou com falha) o roteiro continua\n";
 set_setting('llm_api_key', 'sk-or-v1-invalida-2222');

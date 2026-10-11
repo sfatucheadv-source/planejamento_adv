@@ -23,7 +23,7 @@
 
     <h2>Com quem compartilhamos</h2>
     <p>Somente com quem for necessário para o seu caso e com a sua ciência, como o banco credor em uma negociação autorizada ou o Judiciário em um processo. Não vendemos nem cedemos dados.</p>
-    <p>Quando o assistente do site usa inteligência artificial, os documentos e as mensagens que você envia são processados por um provedor de IA contratado pelo escritório (por meio do OpenRouter), somente para ler e organizar as informações do seu atendimento. O resultado é conferido por Sidney, e nenhuma decisão sobre o seu caso é tomada pela IA.</p>
+    <p>Quando o assistente do site usa inteligência artificial, os documentos e as mensagens que você envia são processados por um provedor de IA contratado pelo escritório (OpenRouter ou Google Gemini, conforme a configuração do escritório), somente para ler e organizar as informações do seu atendimento. O resultado é conferido por Sidney, e nenhuma decisão sobre o seu caso é tomada pela IA.</p>
 
     <h2>Por quanto tempo guardamos</h2>
     <p>Pelo tempo do atendimento e, depois, pelo prazo exigido por obrigações legais e profissionais aplicáveis. O prazo de guarda do seu caso é informado no atendimento, e você pode pedir a exclusão de uma solicitação que não virou contratação.</p>

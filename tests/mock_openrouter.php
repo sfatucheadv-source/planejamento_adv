@@ -1,6 +1,7 @@
 <?php
 /**
- * Simulador local da API do OpenRouter para os testes (sem rede, sem custo).
+ * Simulador local das APIs do OpenRouter e do Google Gemini para os testes
+ * (sem rede, sem custo).
  * Uso: php -S 127.0.0.1:PORTA tests/mock_openrouter.php
  */
 declare(strict_types=1);
@@ -10,29 +11,61 @@ $auth = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
 header('Content-Type: application/json');
 $log = sys_get_temp_dir() . '/mock-openrouter-' . ($_SERVER['SERVER_PORT'] ?? '0') . '.log';
 
-if (str_ends_with($path, '/models')) {
+$gemini = str_contains($path, '/v1beta/');
+if ($gemini && preg_match('#/models$#', $path)) {
+    echo json_encode(['models' => [
+        ['name' => 'models/gemini-2.5-flash', 'displayName' => 'Gemini 2.5 Flash', 'supportedGenerationMethods' => ['generateContent', 'countTokens']],
+        ['name' => 'models/text-embedding-004', 'displayName' => 'Embedding', 'supportedGenerationMethods' => ['embedContent']],
+    ]]);
+    exit;
+}
+if (!$gemini && str_ends_with($path, '/models')) {
     echo json_encode(['data' => [
         ['id' => 'google/gemini-2.5-flash', 'name' => 'Gemini 2.5 Flash', 'architecture' => ['input_modalities' => ['text', 'image', 'file']]],
         ['id' => 'texto/so-texto', 'name' => 'Só texto', 'architecture' => ['input_modalities' => ['text']]],
     ]]);
     exit;
 }
-if (!str_ends_with($path, '/chat/completions')) {
-    http_response_code(404);
-    echo '{"error":{"message":"not found"}}';
-    exit;
-}
-if ($auth !== 'Bearer sk-or-v1-teste-valido-0000') {
-    http_response_code(401);
-    echo '{"error":{"message":"No auth credentials found","code":401}}';
-    exit;
-}
 $req = json_decode((string) file_get_contents('php://input'), true);
-$system = (string) ($req['messages'][0]['content'] ?? '');
-$user = $req['messages'][1]['content'] ?? ($req['messages'][0]['content'] ?? '');
-$text = is_array($user) ? (string) ($user[0]['text'] ?? '') : (string) $user;
-$parts = is_array($user) ? array_column(array_slice($user, 1), 'type') : [];
-file_put_contents($log, json_encode(['model' => $req['model'] ?? null, 'parts' => $parts, 'text' => mb_substr($text, 0, 80)]) . "\n", FILE_APPEND);
+if ($gemini) {
+    if (!preg_match('#/models/([^/:]+):generateContent$#', $path, $gm)) {
+        http_response_code(404);
+        echo '{"error":{"code":404,"message":"not found"}}';
+        exit;
+    }
+    if (($_SERVER['HTTP_X_GOOG_API_KEY'] ?? '') !== 'AQ.teste-gemini-valido-0000000000') {
+        http_response_code(400);
+        echo '{"error":{"code":400,"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT"}}';
+        exit;
+    }
+    $model = $gm[1];
+    $system = (string) ($req['systemInstruction']['parts'][0]['text'] ?? '');
+    $gparts = (array) ($req['contents'][0]['parts'] ?? []);
+    $text = (string) ($gparts[0]['text'] ?? '');
+    $parts = array_map(fn($p) => isset($p['inline_data']) ? 'inline:' . $p['inline_data']['mime_type'] : 'text', array_slice($gparts, 1));
+    $jsonMode = ($req['generationConfig']['responseMimeType'] ?? '') === 'application/json';
+} else {
+    if (!str_ends_with($path, '/chat/completions')) {
+        http_response_code(404);
+        echo '{"error":{"message":"not found"}}';
+        exit;
+    }
+    if ($auth !== 'Bearer sk-or-v1-teste-valido-0000') {
+        http_response_code(401);
+        echo '{"error":{"message":"No auth credentials found","code":401}}';
+        exit;
+    }
+    $model = $req['model'] ?? null;
+    $system = (string) ($req['messages'][0]['content'] ?? '');
+    $user = $req['messages'][1]['content'] ?? ($req['messages'][0]['content'] ?? '');
+    $text = is_array($user) ? (string) ($user[0]['text'] ?? '') : (string) $user;
+    $parts = is_array($user) ? array_column(array_slice($user, 1), 'type') : [];
+    $jsonMode = false;
+}
+if (count($req['messages'] ?? []) === 1 || (!$system && $gemini)) {
+    $system = '';
+}
+file_put_contents($log, json_encode(['provider' => $gemini ? 'gemini' : 'openrouter', 'model' => $model, 'parts' => $parts, 'json' => $jsonMode, 'text' => mb_substr($text, 0, 80)]) . "\n", FILE_APPEND);
 
 $out = ['ok' => true];
 if (str_contains($system, 'extrai dados')) {
@@ -55,8 +88,15 @@ if (str_contains($system, 'extrai dados')) {
 } else {
     $content = '{"ok": true}';
 }
+if ($gemini) {
+    echo json_encode([
+        'candidates' => [['content' => ['role' => 'model', 'parts' => [['text' => $content]]], 'finishReason' => 'STOP']],
+        'usageMetadata' => ['promptTokenCount' => 1500, 'candidatesTokenCount' => 80],
+    ]);
+    exit;
+}
 echo json_encode([
-    'id' => 'gen-mock', 'model' => $req['model'] ?? '',
+    'id' => 'gen-mock', 'model' => $model,
     'choices' => [['message' => ['role' => 'assistant', 'content' => $content]]],
     'usage' => ['prompt_tokens' => 1200, 'completion_tokens' => 90, 'cost' => 0.0004],
 ]);

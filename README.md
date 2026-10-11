@@ -27,9 +27,14 @@ Implementa o *Plano de reforma do site* (10/10/2026). Todo novo atendimento pert
 - **Acesso por atendimento**: conta do cliente separada do caso (`client_accounts`). Contratados continuam acessíveis; encerrado sem contratação fica disponível por 72 horas a partir da comunicação registrada, negado pela data em cada requisição (portal, chat e download). Retorno: o cliente pede, Sidney abre novo atendimento vinculado, sem revelar o histórico expirado.
 - **Execução**: ao formalizar, o caso segue para Negociação ou Preparação judicial nas ferramentas existentes (`Execução`, `Casos contratados`). O operador executa todas as funções; não há matriz de papéis.
 
-### Assistente com IA (OpenRouter)
+### Assistente com IA (OpenRouter ou Google Gemini)
 
-Opcional. Em **Configurações › Inteligência artificial**: ligue o uso de IA, escolha o modelo (identificador do OpenRouter; o padrão `google/gemini-2.5-flash` lê PDF e foto) e cole a chave `sk-or-…`. A chave fica só no servidor (tabela `settings`) e a tela mostra apenas o final dela; “Testar a conexão ao salvar” faz uma chamada mínima.
+Opcional. Em **Configurações › Inteligência artificial**: ligue o uso de IA e escolha o **fornecedor**:
+
+- **OpenRouter**: chave `sk-or-…` e modelo no formato `fornecedor/modelo` (padrão `google/gemini-2.5-flash`).
+- **Google Gemini (API direta)**: chave do Google AI Studio (o botão “Copiar chave”) e modelo `gemini-2.5-flash`, `gemini-2.5-flash-lite` ou `gemini-2.5-pro`. Usa a API `generateContent` com PDF e foto enviados como `inline_data`. Para documentos de clientes, use um projeto com faturamento ativo (no plano gratuito o Google pode usar o conteúdo para melhorar os produtos).
+
+Cada fornecedor guarda sua própria chave e seu modelo; trocar o fornecedor não apaga a chave do outro. As chaves ficam só no servidor (tabela `settings`) e a tela mostra apenas o final delas; “Testar a conexão” faz uma chamada mínima ao fornecedor escolhido. “Carregar a lista completa” busca os modelos disponíveis de cada fornecedor.
 
 Com a IA ligada:
 - o assistente pede os documentos logo depois do objetivo (contrato, identidade, comprovante de residência, extrato) e a IA lê os dados; o que estiver nos documentos não é perguntado ao cliente;
@@ -37,7 +42,7 @@ Com a IA ligada:
 - mensagens livres do cliente recebem resposta curta da IA, sem orientação jurídica, e os dados ditos ali vão para a ficha (só campos do cliente, validados);
 - toda chamada fica em `llm_log` (modelo, erro, tokens e custo); o resumo dos 30 dias aparece em Configurações.
 
-Sem chave, com a IA desligada ou se a chamada falhar, o roteiro determinístico continua funcionando. O código está em `app/inicial/ia.php`; o teste `php tests/assistente_ia.php` usa um simulador local da API (`tests/mock_openrouter.php`).
+Sem chave, com a IA desligada ou se a chamada falhar, o roteiro determinístico continua funcionando. O código está em `app/inicial/ia.php`; o teste `php tests/assistente_ia.php` usa um simulador local das duas APIs (`tests/mock_openrouter.php`).
 
 ### Configuração e implantação
 
@@ -97,7 +102,7 @@ Teste de ponta a ponta (percorre as 14 etapas pela interface, do formulário ao 
 ```bash
 php tests/fluxo_completo.php        # execução e modo de equipe (14 etapas)
 php tests/atendimento_inicial.php   # atendimento inicial (seção 16 do plano de reforma)
-php tests/assistente_ia.php         # assistente com IA (simulador local do OpenRouter)
+php tests/assistente_ia.php         # assistente com IA (simulador local do OpenRouter e do Gemini)
 ```
 
 ## Publicar na Hostinger

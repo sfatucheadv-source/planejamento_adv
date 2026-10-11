@@ -609,7 +609,7 @@ $router->post('/painel/modelos-documentos', function () {
 
 $router->get('/painel/configuracoes', function () {
     $u = require_user();
-    view('panel/configuracoes', ['meta_title' => 'Configurações · Painel', 'users' => users_list(), 'u' => $u, 'models' => input('modelos') === '1' ? llm_models_list() : [], 'usage' => llm_usage_summary()], 'panel');
+    view('panel/configuracoes', ['meta_title' => 'Configurações · Painel', 'users' => users_list(), 'u' => $u, 'models' => isset(LLM_PROVIDERS[(string) input('modelos')]) ? [(string) input('modelos') => llm_models_list((string) input('modelos'))] : (input('modelos') === '1' ? [llm_provider() => llm_models_list()] : []), 'usage' => llm_usage_summary()], 'panel');
 });
 
 $router->post('/painel/configuracoes', function () {
@@ -625,24 +625,33 @@ $router->post('/painel/configuracoes', function () {
     set_setting('operator_user_id', $op ? (string) $op : null);
     set_setting('intake_workflow', input('intake_workflow') === 'legacy' ? 'legacy' : 'simple_v1');
     set_setting('office_address', trim(mb_substr((string) input('office_address'), 0, 300)) ?: null);
-    // IA (OpenRouter): a chave só é trocada quando um valor novo é digitado; nunca volta para a tela.
+    // IA: fornecedor, modelo e chave de cada um. A chave só é trocada quando um
+    // valor novo é digitado; nunca volta para a tela.
     set_setting('llm_enabled', input('llm_enabled') === '1' ? '1' : '0');
-    $model = trim((string) input('llm_model'));
-    if ($model !== '' && preg_match('#^[a-z0-9._-]+/[A-Za-z0-9._:-]+$#', $model)) {
-        set_setting('llm_model', $model);
-    } elseif ($model !== '') {
-        flash('error', 'Modelo inválido. Use o identificador do OpenRouter, por exemplo google/gemini-2.5-flash.');
+    if (isset(LLM_PROVIDERS[(string) input('llm_provider')])) {
+        set_setting('llm_provider', (string) input('llm_provider'));
     }
-    $key = trim((string) ($_POST['llm_api_key'] ?? ''));
-    if (input('llm_remove_key') === '1') {
-        set_setting('llm_api_key', null);
-        audit('ia_chave_removida');
-    } elseif ($key !== '') {
-        if (!preg_match('/^sk-or-[A-Za-z0-9_-]{10,}$/', $key)) {
-            flash('error', 'A chave do OpenRouter começa com “sk-or-”. Confira e cole de novo.');
-        } else {
-            set_setting('llm_api_key', $key);
-            audit('ia_chave_alterada', null, 'final ' . substr($key, -4));
+    foreach (['openrouter' => ['llm_api_key', 'llm_model', '#^[a-z0-9._-]+/[A-Za-z0-9._:-]+$#'], 'gemini' => ['gemini_api_key', 'gemini_model', '#^[a-z0-9][a-z0-9._-]*$#']] as $pk => [$keyName, $modelName, $modelRe]) {
+        $model = trim((string) input($modelName));
+        if ($pk === 'gemini') {
+            $model = preg_replace('#^models/#', '', $model);
+        }
+        if ($model !== '' && preg_match($modelRe, $model)) {
+            set_setting(LLM_PROVIDERS[$pk]['model_setting'], $model);
+        } elseif ($model !== '') {
+            flash('error', 'Modelo inválido para ' . LLM_PROVIDERS[$pk]['label'] . ': use o identificador, por exemplo ' . LLM_PROVIDERS[$pk]['default_model'] . '.');
+        }
+        $key = trim((string) ($_POST[$keyName] ?? ''));
+        if (input('remove_key_' . $pk) === '1' || ($pk === 'openrouter' && input('llm_remove_key') === '1')) {
+            set_setting(LLM_PROVIDERS[$pk]['key_setting'], null);
+            audit('ia_chave_removida', null, $pk);
+        } elseif ($key !== '') {
+            if (!llm_key_format_ok($pk, $key)) {
+                flash('error', $pk === 'openrouter' ? 'A chave do OpenRouter começa com “sk-or-”. Confira e cole de novo.' : 'A chave do Gemini parece incompleta. Copie de novo pelo botão “Copiar chave”.');
+            } else {
+                set_setting(LLM_PROVIDERS[$pk]['key_setting'], $key);
+                audit('ia_chave_alterada', null, $pk . ' final ' . substr($key, -4));
+            }
         }
     }
     if (input('llm_test') === '1') {

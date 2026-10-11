@@ -2,12 +2,14 @@
 declare(strict_types=1);
 
 /**
- * Assistente com IA via OpenRouter (https://openrouter.ai).
+ * Assistente com IA: OpenRouter (https://openrouter.ai) ou API do Google
+ * Gemini (https://ai.google.dev), conforme o fornecedor escolhido nas
+ * Configurações.
  *
  * A IA lê os documentos enviados e preenche a ficha, para o assistente pedir
  * ao cliente só o que não estiver nos documentos. Também responde, de forma
  * simples, às mensagens livres do cliente. Regras:
- *  - a chave e o modelo ficam nas Configurações (servidor), nunca no navegador;
+ *  - fornecedor, chave e modelo ficam nas Configurações (servidor), nunca no navegador;
  *  - só são aceitas as chaves de campo listadas aqui, validadas como qualquer
  *    resposta do cliente; o texto dos documentos é dado, nunca instrução;
  *  - valores extraídos ficam com a origem "extraído por IA" até Sidney conferir;
@@ -16,32 +18,57 @@ declare(strict_types=1);
  * continua funcionando como antes.
  */
 
-const LLM_DEFAULT_MODEL = 'google/gemini-2.5-flash';
-const LLM_DEFAULT_ENDPOINT = 'https://openrouter.ai/api/v1';
-const LLM_SUGGESTED_MODELS = [
-    'google/gemini-2.5-flash' => 'Google Gemini 2.5 Flash (rápido e econômico, lê PDF e foto)',
-    'google/gemini-2.5-pro' => 'Google Gemini 2.5 Pro (mais preciso, mais caro)',
-    'anthropic/claude-sonnet-4.5' => 'Anthropic Claude Sonnet 4.5',
-    'openai/gpt-4o-mini' => 'OpenAI GPT-4o mini',
-    'openai/gpt-4.1' => 'OpenAI GPT-4.1',
+const LLM_PROVIDERS = [
+    'openrouter' => [
+        'label' => 'OpenRouter',
+        'key_setting' => 'llm_api_key', 'model_setting' => 'llm_model', 'endpoint_setting' => 'llm_endpoint',
+        'default_model' => 'google/gemini-2.5-flash', 'endpoint' => 'https://openrouter.ai/api/v1',
+        'models' => [
+            'google/gemini-2.5-flash' => 'Google Gemini 2.5 Flash (rápido e econômico, lê PDF e foto)',
+            'google/gemini-2.5-pro' => 'Google Gemini 2.5 Pro (mais preciso, mais caro)',
+            'anthropic/claude-sonnet-4.5' => 'Anthropic Claude Sonnet 4.5',
+            'openai/gpt-4o-mini' => 'OpenAI GPT-4o mini',
+            'openai/gpt-4.1' => 'OpenAI GPT-4.1',
+        ],
+    ],
+    'gemini' => [
+        'label' => 'Google Gemini (API direta)',
+        'key_setting' => 'gemini_api_key', 'model_setting' => 'gemini_model', 'endpoint_setting' => 'gemini_endpoint',
+        'default_model' => 'gemini-2.5-flash', 'endpoint' => 'https://generativelanguage.googleapis.com/v1beta',
+        'models' => [
+            'gemini-2.5-flash' => 'Gemini 2.5 Flash (rápido e econômico, lê PDF e foto)',
+            'gemini-2.5-flash-lite' => 'Gemini 2.5 Flash-Lite (o mais barato)',
+            'gemini-2.5-pro' => 'Gemini 2.5 Pro (mais preciso, mais caro)',
+        ],
+    ],
 ];
+/** Compatibilidade: modelo padrão do OpenRouter. */
+const LLM_DEFAULT_MODEL = 'google/gemini-2.5-flash';
 /** Limite de respostas da IA por atendimento e hora (evita uso abusivo e custo). */
 const LLM_REPLIES_PER_HOUR = 30;
 
-function llm_key(): ?string
+function llm_provider(): string
 {
-    $k = (string) setting('llm_api_key', '');
+    $p = (string) setting('llm_provider', 'openrouter');
+    return isset(LLM_PROVIDERS[$p]) ? $p : 'openrouter';
+}
+
+function llm_key(?string $provider = null): ?string
+{
+    $k = (string) setting(LLM_PROVIDERS[$provider ?? llm_provider()]['key_setting'], '');
     return $k !== '' ? $k : null;
 }
 
-function llm_model(): string
+function llm_model(?string $provider = null): string
 {
-    return (string) setting('llm_model', LLM_DEFAULT_MODEL);
+    $p = LLM_PROVIDERS[$provider ?? llm_provider()];
+    return (string) setting($p['model_setting'], $p['default_model']);
 }
 
-function llm_endpoint(): string
+function llm_endpoint(?string $provider = null): string
 {
-    return rtrim((string) setting('llm_endpoint', LLM_DEFAULT_ENDPOINT), '/');
+    $p = LLM_PROVIDERS[$provider ?? llm_provider()];
+    return rtrim((string) setting($p['endpoint_setting'], $p['endpoint']), '/');
 }
 
 function llm_enabled(): bool
@@ -49,61 +76,78 @@ function llm_enabled(): bool
     return setting('llm_enabled') === '1' && llm_key() !== null && function_exists('curl_init');
 }
 
-function llm_key_hint(): string
+function llm_key_hint(?string $provider = null): string
 {
-    $k = llm_key();
+    $k = llm_key($provider);
     return $k ? '…' . substr($k, -4) : '';
 }
 
+/** Valida o formato da chave de cada fornecedor (sem garantir que funcione). */
+function llm_key_format_ok(string $provider, string $key): bool
+{
+    return $provider === 'openrouter'
+        ? (bool) preg_match('/^sk-or-[A-Za-z0-9_-]{10,}$/', $key)
+        : (bool) preg_match('/^[A-Za-z0-9._-]{20,200}$/', $key);
+}
+
 /**
- * Chamada de chat ao OpenRouter (API compatível com OpenAI).
+ * Chamada de chat ao fornecedor configurado. As mensagens seguem o formato
+ * OpenAI (system/user, partes text, image_url e file com data URL); para o
+ * Gemini elas são convertidas para generateContent.
  * Retorna ['ok' => bool, 'content' => string, 'error' => ?string, 'usage' => array].
  */
 function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 1200, int $timeout = 90): array
 {
+    $provider = llm_provider();
     $key = llm_key();
     if (!$key || !function_exists('curl_init')) {
         return ['ok' => false, 'content' => '', 'error' => 'IA não configurada', 'usage' => []];
     }
     $model = llm_model();
-    $payload = json_encode([
-        'model' => $model,
-        'messages' => $messages,
-        'temperature' => 0,
-        'max_tokens' => $maxTokens,
-        'usage' => ['include' => true],
-    ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    $ch = curl_init(llm_endpoint() . '/chat/completions');
+    if ($provider === 'gemini') {
+        [$url, $headers, $payload] = gemini_request($model, $key, $messages, $maxTokens);
+    } else {
+        $url = llm_endpoint() . '/chat/completions';
+        $headers = ['Authorization: Bearer ' . $key, 'Content-Type: application/json', 'HTTP-Referer: ' . office('base_url'), 'X-Title: Fatuche Atendimento'];
+        $payload = ['model' => $model, 'messages' => $messages, 'temperature' => 0, 'max_tokens' => $maxTokens, 'usage' => ['include' => true]];
+    }
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $payload,
+        CURLOPT_POSTFIELDS => json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_CONNECTTIMEOUT => 10,
         CURLOPT_TIMEOUT => $timeout,
-        CURLOPT_HTTPHEADER => [
-            'Authorization: Bearer ' . $key,
-            'Content-Type: application/json',
-            'HTTP-Referer: ' . office('base_url'),
-            'X-Title: Fatuche Atendimento',
-        ],
+        CURLOPT_HTTPHEADER => $headers,
     ]);
     $raw = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $curlErr = curl_error($ch);
     curl_close($ch);
     $data = is_string($raw) ? json_decode($raw, true) : null;
-    $content = (string) ($data['choices'][0]['message']['content'] ?? '');
-    $usage = (array) ($data['usage'] ?? []);
+    if ($provider === 'gemini') {
+        $content = implode('', array_map(fn($p) => empty($p['thought']) ? (string) ($p['text'] ?? '') : '', (array) ($data['candidates'][0]['content']['parts'] ?? [])));
+        $um = (array) ($data['usageMetadata'] ?? []);
+        $usage = ['prompt_tokens' => $um['promptTokenCount'] ?? null, 'completion_tokens' => $um['candidatesTokenCount'] ?? null];
+        $finish = (string) ($data['candidates'][0]['finishReason'] ?? '');
+        $blocked = (string) ($data['promptFeedback']['blockReason'] ?? '');
+    } else {
+        $content = (string) ($data['choices'][0]['message']['content'] ?? '');
+        $usage = (array) ($data['usage'] ?? []);
+        $finish = $blocked = '';
+    }
     $error = null;
     if ($raw === false) {
         $error = 'Falha de conexão: ' . $curlErr;
     } elseif ($status >= 400 || isset($data['error'])) {
-        $error = 'OpenRouter respondeu ' . $status . ': ' . mb_substr((string) ($data['error']['message'] ?? $raw), 0, 300);
+        $error = LLM_PROVIDERS[$provider]['label'] . ' respondeu ' . $status . ': ' . mb_substr((string) ($data['error']['message'] ?? $raw), 0, 300);
+    } elseif ($blocked !== '') {
+        $error = 'Pedido bloqueado pelo filtro do Gemini (' . $blocked . ')';
     } elseif ($content === '') {
-        $error = 'Resposta vazia do modelo';
+        $error = 'Resposta vazia do modelo' . ($finish !== '' ? ' (' . $finish . ')' : '');
     }
     insert('llm_log', [
-        'case_id' => $caseId, 'kind' => $kind, 'model' => $model, 'ok' => $error ? 0 : 1, 'error' => $error,
+        'case_id' => $caseId, 'kind' => $kind, 'model' => $provider . ':' . $model, 'ok' => $error ? 0 : 1, 'error' => $error,
         'prompt_tokens' => isset($usage['prompt_tokens']) ? (int) $usage['prompt_tokens'] : null,
         'completion_tokens' => isset($usage['completion_tokens']) ? (int) $usage['completion_tokens'] : null,
         'cost' => isset($usage['cost']) ? (float) $usage['cost'] : null,
@@ -113,6 +157,43 @@ function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 
         error_log('[fatuche][ia] ' . $kind . ' caso ' . $caseId . ': ' . $error);
     }
     return ['ok' => $error === null, 'content' => $content, 'error' => $error, 'usage' => $usage];
+}
+
+/** Converte a conversa (formato OpenAI) para generateContent do Gemini. */
+function gemini_request(string $model, string $key, array $messages, int $maxTokens): array
+{
+    $system = [];
+    $contents = [];
+    foreach ($messages as $m) {
+        $parts = [];
+        foreach (is_array($m['content']) ? $m['content'] : [['type' => 'text', 'text' => (string) $m['content']]] as $p) {
+            $data = match ($p['type'] ?? 'text') {
+                'image_url' => (string) ($p['image_url']['url'] ?? ''),
+                'file' => (string) ($p['file']['file_data'] ?? ''),
+                default => null,
+            };
+            if ($data === null) {
+                $parts[] = ['text' => (string) ($p['text'] ?? '')];
+            } elseif (preg_match('#^data:([\w/+.-]+);base64,(.+)$#s', $data, $mm)) {
+                $parts[] = ['inline_data' => ['mime_type' => $mm[1], 'data' => $mm[2]]];
+            }
+        }
+        if ($m['role'] === 'system') {
+            $system = array_merge($system, $parts);
+        } else {
+            $contents[] = ['role' => $m['role'] === 'assistant' ? 'model' : 'user', 'parts' => $parts];
+        }
+    }
+    $gen = ['temperature' => 0, 'maxOutputTokens' => max($maxTokens, 1024), 'responseMimeType' => 'application/json'];
+    if (str_contains($model, 'flash')) {
+        $gen['thinkingConfig'] = ['thinkingBudget' => 0]; // extração direta: sem raciocínio pago
+    }
+    $payload = ['contents' => $contents, 'generationConfig' => $gen];
+    if ($system) {
+        $payload['systemInstruction'] = ['parts' => $system];
+    }
+    $url = llm_endpoint('gemini') . '/models/' . rawurlencode($model) . ':generateContent';
+    return [$url, ['x-goog-api-key: ' . $key, 'Content-Type: application/json'], $payload];
 }
 
 /** Extrai o primeiro objeto JSON da resposta (os modelos às vezes cercam com ```json). */
@@ -360,40 +441,55 @@ function ia_reply(array $c, string $message): ?string
 
 /* ---------- Configurações ---------- */
 
-/** Lista de modelos do OpenRouter que aceitam imagem ou arquivo (com cache de 1 dia). */
-function llm_models_list(): array
+/** Modelos do fornecedor que leem imagem ou PDF (cache de 1 dia por fornecedor). */
+function llm_models_list(?string $provider = null): array
 {
-    $cache = json_decode((string) setting('llm_models_cache', ''), true);
+    $provider ??= llm_provider();
+    $cacheKey = 'llm_models_cache_' . $provider;
+    $cache = json_decode((string) setting($cacheKey, ''), true);
     if (is_array($cache) && ($cache['at'] ?? 0) > time() - 86400 && !empty($cache['models'])) {
         return $cache['models'];
     }
-    if (!function_exists('curl_init')) {
+    if (!function_exists('curl_init') || ($provider === 'gemini' && !llm_key('gemini'))) {
         return [];
     }
-    $ch = curl_init(llm_endpoint() . '/models');
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => 15]);
+    $ch = curl_init(llm_endpoint($provider) . '/models' . ($provider === 'gemini' ? '?pageSize=200' : ''));
+    $opts = [CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => 15];
+    if ($provider === 'gemini') {
+        $opts[CURLOPT_HTTPHEADER] = ['x-goog-api-key: ' . llm_key('gemini')];
+    }
+    curl_setopt_array($ch, $opts);
     $raw = curl_exec($ch);
     curl_close($ch);
     $data = is_string($raw) ? json_decode($raw, true) : null;
     $models = [];
-    foreach ((array) ($data['data'] ?? []) as $m) {
-        $in = (array) ($m['architecture']['input_modalities'] ?? []);
-        if (isset($m['id']) && (in_array('image', $in, true) || in_array('file', $in, true))) {
-            $models[$m['id']] = (string) ($m['name'] ?? $m['id']);
+    if ($provider === 'gemini') {
+        foreach ((array) ($data['models'] ?? []) as $m) {
+            $id = preg_replace('#^models/#', '', (string) ($m['name'] ?? ''));
+            if ($id !== '' && str_starts_with($id, 'gemini') && in_array('generateContent', (array) ($m['supportedGenerationMethods'] ?? []), true)) {
+                $models[$id] = (string) ($m['displayName'] ?? $id);
+            }
+        }
+    } else {
+        foreach ((array) ($data['data'] ?? []) as $m) {
+            $in = (array) ($m['architecture']['input_modalities'] ?? []);
+            if (isset($m['id']) && (in_array('image', $in, true) || in_array('file', $in, true))) {
+                $models[$m['id']] = (string) ($m['name'] ?? $m['id']);
+            }
         }
     }
     if ($models) {
         ksort($models);
-        set_setting('llm_models_cache', json_encode(['at' => time(), 'models' => $models], JSON_UNESCAPED_UNICODE));
+        set_setting($cacheKey, json_encode(['at' => time(), 'models' => $models], JSON_UNESCAPED_UNICODE));
     }
     return $models;
 }
 
-/** Testa a chave e o modelo com uma chamada mínima. */
+/** Testa a chave e o modelo do fornecedor ativo com uma chamada mínima. */
 function llm_test(): array
 {
     $r = llm_chat([['role' => 'user', 'content' => 'Responda apenas com o JSON {"ok": true}']], null, 'teste', 20, 30);
-    return [$r['ok'], $r['ok'] ? 'Conexão funcionando com o modelo ' . llm_model() . '.' : (string) $r['error']];
+    return [$r['ok'], $r['ok'] ? 'Conexão funcionando: ' . LLM_PROVIDERS[llm_provider()]['label'] . ', modelo ' . llm_model() . '.' : (string) $r['error']];
 }
 
 function llm_usage_summary(): array

@@ -14,22 +14,35 @@
   <h2>Dados do escritório para os documentos</h2>
   <label class="fld"><span>Endereço profissional</span><input name="office_address" value="<?= e((string) setting('office_address', '')) ?>" placeholder="Rua, número, bairro, cidade/UF, CEP"></label>
   <p class="hint">Nome, OAB e CNPJ vêm do arquivo de configuração: <?= e(office('society')) ?> · <?= e(office('society_oab')) ?> · CNPJ <?= e(office('cnpj')) ?> · <?= e(office('lawyer')) ?> (<?= e(office('lawyer_oab')) ?>).</p>
-  <h2 id="ia">Inteligência artificial (OpenRouter)</h2>
+  <h2 id="ia">Inteligência artificial</h2>
   <p class="hint">Com a IA ligada, o assistente pede os documentos logo no começo, lê os dados (contrato, identidade, comprovante de residência, extrato) e só pergunta ao cliente o que não estiver neles. Também responde às mensagens livres, sem dar orientação jurídica. Os dados lidos ficam marcados “IA · conferir” na ficha até você confirmar.</p>
   <label class="chk"><input type="checkbox" name="llm_enabled" value="1" <?= checked(setting('llm_enabled') === '1') ?>> Usar IA no assistente</label>
-  <label class="fld"><span>Modelo (identificador do OpenRouter)</span>
-    <input name="llm_model" list="llm-models" value="<?= e(llm_model()) ?>" autocomplete="off" spellcheck="false">
-    <datalist id="llm-models">
-      <?php foreach (LLM_SUGGESTED_MODELS + $models as $id => $label): ?><option value="<?= e($id) ?>"><?= e($label) ?></option><?php endforeach ?>
-    </datalist>
-  </label>
-  <p class="hint">Use um modelo que leia PDF e foto. Sugestões: <?= e(implode(' · ', array_keys(LLM_SUGGESTED_MODELS))) ?>. <a href="<?= e(url('painel/configuracoes', ['modelos' => 1])) ?>#ia">Carregar a lista completa do OpenRouter</a><?= $models ? ' (' . count($models) . ' modelos com leitura de imagem ou arquivo)' : '' ?>.</p>
-  <label class="fld"><span>Chave de API do OpenRouter <?= llm_key() ? '<small>(configurada, termina em ' . e(llm_key_hint()) . ')</small>' : '<small>(não configurada)</small>' ?></span>
-    <input type="password" name="llm_api_key" autocomplete="new-password" placeholder="<?= llm_key() ? 'Deixe em branco para manter a chave atual' : 'sk-or-v1-…' ?>" spellcheck="false">
-  </label>
-  <?php if (llm_key()): ?><label class="chk"><input type="checkbox" name="llm_remove_key" value="1"> Remover a chave</label><?php endif ?>
-  <label class="chk"><input type="checkbox" name="llm_test" value="1"> Testar a conexão ao salvar</label>
-  <p class="hint">A chave fica guardada só no servidor e nunca aparece de novo nesta tela. Crie e limite o gasto da chave em openrouter.ai › Keys. Os documentos enviados pelo cliente são mandados ao provedor do modelo escolhido para leitura; o aviso de privacidade do site informa isso.</p>
+  <fieldset class="radios at-channels"><legend class="lbl">Fornecedor</legend>
+    <?php foreach (LLM_PROVIDERS as $pk => $pv): ?>
+      <label class="chk"><input type="radio" name="llm_provider" value="<?= e($pk) ?>" <?= checked(llm_provider() === $pk) ?>> <?= e($pv['label']) ?><?= llm_key($pk) ? ' <small>(chave ' . e(llm_key_hint($pk)) . ')</small>' : '' ?></label>
+    <?php endforeach ?>
+  </fieldset>
+  <?php foreach (LLM_PROVIDERS as $pk => $pv):
+    $keyName = $pk === 'openrouter' ? 'llm_api_key' : 'gemini_api_key';
+    $modelName = $pk === 'openrouter' ? 'llm_model' : 'gemini_model';
+    $list = $pv['models'] + ($models[$pk] ?? []);
+  ?>
+    <details class="at-inline" <?= llm_provider() === $pk ? 'open' : '' ?>>
+      <summary><?= e($pv['label']) ?><?= llm_provider() === $pk ? ' · em uso' : '' ?></summary>
+      <label class="fld"><span>Modelo</span>
+        <input name="<?= $modelName ?>" list="models-<?= e($pk) ?>" value="<?= e(llm_model($pk)) ?>" autocomplete="off" spellcheck="false">
+        <datalist id="models-<?= e($pk) ?>"><?php foreach ($list as $id => $label): ?><option value="<?= e($id) ?>"><?= e($label) ?></option><?php endforeach ?></datalist>
+      </label>
+      <p class="hint">Sugestões: <?= e(implode(' · ', array_keys($pv['models']))) ?>. <a href="<?= e(url('painel/configuracoes', ['modelos' => $pk])) ?>#ia">Carregar a lista completa</a><?= !empty($models[$pk]) ? ' (' . count($models[$pk]) . ' modelos)' : '' ?>.</p>
+      <label class="fld"><span>Chave de API <?= llm_key($pk) ? '<small>(configurada, termina em ' . e(llm_key_hint($pk)) . ')</small>' : '<small>(não configurada)</small>' ?></span>
+        <input type="password" name="<?= $keyName ?>" autocomplete="new-password" placeholder="<?= llm_key($pk) ? 'Deixe em branco para manter a chave atual' : ($pk === 'openrouter' ? 'sk-or-v1-…' : 'Chave do Google AI Studio') ?>" spellcheck="false">
+      </label>
+      <?php if (llm_key($pk)): ?><label class="chk"><input type="checkbox" name="remove_key_<?= e($pk) ?>" value="1"> Remover esta chave</label><?php endif ?>
+      <p class="hint"><?= $pk === 'openrouter' ? 'Crie a chave e limite o gasto em openrouter.ai › Keys. Um só cadastro dá acesso a modelos de vários fornecedores.' : 'Crie a chave em aistudio.google.com › Get API key (projeto do Google Cloud) e acompanhe o uso e o faturamento no mesmo projeto. No plano gratuito, o Google pode usar o conteúdo para melhorar os produtos; para documentos de clientes, use um projeto com faturamento ativo.' ?></p>
+    </details>
+  <?php endforeach ?>
+  <label class="chk"><input type="checkbox" name="llm_test" value="1"> Testar a conexão do fornecedor escolhido ao salvar</label>
+  <p class="hint">As chaves ficam guardadas só no servidor e nunca aparecem de novo nesta tela. Os documentos enviados pelo cliente são mandados ao fornecedor escolhido para leitura; o aviso de privacidade do site informa isso.</p>
   <?php if ($usage['calls']): ?>
     <p class="small">Últimos 30 dias: <?= (int) $usage['calls'] ?> chamada(s), <?= (int) $usage['errors'] ?> com erro<?= $usage['cost'] > 0 ? ', custo informado de US$ ' . e(number_format($usage['cost'], 4, ',', '.')) : '' ?>.<?php if ($usage['last_error']): ?> Último erro (<?= e(fmt_datetime($usage['last_error']['created_at'])) ?>): <?= e(mb_strimwidth((string) $usage['last_error']['error'], 0, 160, '…')) ?><?php endif ?></p>
   <?php endif ?>
