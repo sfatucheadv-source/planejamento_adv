@@ -605,6 +605,61 @@ $router->post('/painel/modelos-documentos', function () {
     redirect('painel/modelos-documentos');
 });
 
+/* ---------- Variáveis dos documentos ---------- */
+
+$router->get('/painel/variaveis', function () {
+    require_user();
+    seed_templates();
+    $used = [];
+    foreach (array_keys(template_var_labels()) as $k) {
+        $used[$k] = templates_using_var($k);
+    }
+    view('panel/variaveis', [
+        'meta_title' => 'Variáveis dos documentos · Painel',
+        'catalog' => template_var_catalog(),
+        'used' => $used,
+        'custom' => custom_vars(),
+        'edit' => (int) input('editar'),
+    ], 'panel');
+});
+
+$router->post('/painel/variaveis', function () {
+    $u = require_user();
+    if (!is_operator($u) && !has_role('supervisor')) {
+        forbidden();
+    }
+    $op = (string) input('op');
+    if ($op === 'escritorio') {
+        $errs = [];
+        $pixType = (string) input('escritorio_pix_tipo');
+        foreach (OFFICE_VARS as $k => $d) {
+            [$v, $err] = normalize_office_var($k, (string) ($_POST[str_replace('.', '_', $k)] ?? ''), $pixType);
+            if ($err) {
+                $errs[] = $d['label'] . ': ' . $err;
+                continue;
+            }
+            set_setting($d['setting'], $v);
+        }
+        foreach (CASE_VAR_DEFAULTS as $k => $d) {
+            set_setting($d['setting'], trim(mb_substr((string) input($d['setting']), 0, 300)) ?: null);
+        }
+        audit('variaveis_escritorio', null, null);
+        flash($errs ? 'error' : 'ok', $errs ? 'Os demais dados foram salvos. ' . implode(' ', $errs) : 'Dados do escritório salvos. Documentos já gerados mostram o aviso de dados alterados.');
+        redirect('painel/variaveis#escritorio');
+    }
+    if ($op === 'criar' || $op === 'alterar') {
+        $err = save_custom_var($op === 'alterar' ? (int) input('id') : null, $_POST);
+        flash($err ? 'error' : 'ok', $err ?? ($op === 'criar' ? 'Variável criada. Use-a nos modelos de documentos.' : 'Variável alterada.'));
+        redirect('painel/variaveis' . ($err && $op === 'alterar' ? '?editar=' . (int) input('id') : '') . '#personalizadas');
+    }
+    if ($op === 'excluir') {
+        $err = delete_custom_var((int) input('id'));
+        flash($err ? 'error' : 'ok', $err ?? 'Variável excluída.');
+        redirect('painel/variaveis#personalizadas');
+    }
+    redirect('painel/variaveis');
+});
+
 /* ---------- Configurações (operador, entrada, dados do escritório) ---------- */
 
 $router->get('/painel/configuracoes', function () {
@@ -624,7 +679,6 @@ $router->post('/painel/configuracoes', function () {
     }
     set_setting('operator_user_id', $op ? (string) $op : null);
     set_setting('intake_workflow', input('intake_workflow') === 'legacy' ? 'legacy' : 'simple_v1');
-    set_setting('office_address', trim(mb_substr((string) input('office_address'), 0, 300)) ?: null);
     // IA: fornecedor, modelo e chave de cada um. A chave só é trocada quando um
     // valor novo é digitado; nunca volta para a tela.
     set_setting('llm_enabled', input('llm_enabled') === '1' ? '1' : '0');

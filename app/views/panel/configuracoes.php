@@ -12,8 +12,7 @@
   <label class="chk"><input type="radio" name="intake_workflow" value="legacy" <?= checked(intake_workflow() === 'legacy') ?>> Formulário antigo de seis passos (reversão)</label>
   <p class="hint">A reversão só muda como as novas entradas chegam. Os atendimentos já registrados continuam como estão.</p>
   <h2>Dados do escritório para os documentos</h2>
-  <label class="fld"><span>Endereço profissional</span><input name="office_address" value="<?= e((string) setting('office_address', '')) ?>" placeholder="Rua, número, bairro, cidade/UF, CEP"></label>
-  <p class="hint">Nome, OAB e CNPJ vêm do arquivo de configuração: <?= e(office('society')) ?> · <?= e(office('society_oab')) ?> · CNPJ <?= e(office('cnpj')) ?> · <?= e(office('lawyer')) ?> (<?= e(office('lawyer_oab')) ?>).</p>
+  <p class="hint">Endereço, telefone, e-mail, prazo de resposta, orientação para urgências, chave PIX, foro padrão e as variáveis personalizadas ficam em <a href="<?= e(url('painel/variaveis')) ?>">Variáveis dos documentos</a>.</p>
   <h2 id="ia">Inteligência artificial</h2>
   <p class="hint">Com a IA ligada, o assistente pede os documentos logo no começo, lê os dados (contrato, identidade, comprovante de residência, extrato) e só pergunta ao cliente o que não estiver neles. Também responde às mensagens livres, sem dar orientação jurídica. Os dados lidos ficam marcados “IA · conferir” na ficha até você confirmar.</p>
   <label class="chk"><input type="checkbox" name="llm_enabled" value="1" <?= checked(setting('llm_enabled') === '1') ?>> Usar IA no assistente</label>

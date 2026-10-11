@@ -508,6 +508,20 @@ CREATE TABLE llm_log (
 CREATE INDEX idx_llm_log_case ON llm_log(case_id, created_at);
 SQL;
 
+    // Versão 4 — variáveis personalizadas dos modelos de documentos.
+    $migrations[4] = <<<SQL
+CREATE TABLE template_vars (
+    id INTEGER PRIMARY KEY,
+    key TEXT NOT NULL UNIQUE,
+    label TEXT NOT NULL,
+    scope TEXT NOT NULL CHECK (scope IN ('escritorio','atendimento')),
+    value TEXT,
+    help TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();

@@ -15,6 +15,7 @@ const FIELD_GROUPS = [
     'endereco'      => 'Endereço',
     'relacao'       => 'Relação com o contrato',
     'financiamento' => 'Financiamento',
+    'veiculo'       => 'Veículo',
     'pagamentos'    => 'Pagamentos',
     'contexto'      => 'Contexto',
     'gratuidade'    => 'Justiça gratuita',
@@ -22,11 +23,31 @@ const FIELD_GROUPS = [
     'analise'       => 'Análise (Sidney)',
     'proposta'      => 'Proposta (Sidney)',
     'juridico'      => 'Pontos jurídicos (Sidney)',
+    'documento'     => 'Contrato de honorários e assinatura (Sidney)',
+    'personalizadas'=> 'Variáveis personalizadas (Sidney)',
 ];
 
 const YES_NO_UNSURE = ['sim' => 'Sim', 'nao' => 'Não', 'nao_sei' => 'Não sei'];
 
-function field_defs(): array
+const FINANCING_STANDING = ['adimplente' => 'Adimplente', 'inadimplente' => 'Inadimplente', 'quitado' => 'Quitado'];
+
+/**
+ * Campos da ficha. As variáveis personalizadas "por atendimento" (painel de
+ * variáveis) entram aqui como campos var_{id}; field_defs(true) recarrega.
+ */
+function field_defs(bool $reset = false): array
+{
+    static $merged = null;
+    if ($reset) {
+        $merged = null;
+    }
+    if ($merged === null) {
+        $merged = base_field_defs() + custom_field_defs();
+    }
+    return $merged;
+}
+
+function base_field_defs(): array
 {
     static $defs = null;
     if ($defs !== null) {
@@ -89,6 +110,12 @@ function field_defs(): array
         'taxa_mensal'        => ['g' => 'financiamento', 'label' => 'Taxa de juros mensal', 'type' => 'rate', 'unit' => '% a.m.', 'material' => true],
         'taxa_anual'         => ['g' => 'financiamento', 'label' => 'Taxa de juros anual', 'type' => 'rate', 'unit' => '% a.a.', 'material' => true],
         'cet'                => ['g' => 'financiamento', 'label' => 'CET (custo efetivo total)', 'type' => 'rate', 'unit' => '% a.a.', 'material' => true],
+        // Veículo (contrato ou CRLV)
+        'veiculo_marca'      => ['g' => 'veiculo', 'label' => 'Marca do veículo', 'type' => 'text', 'max' => 60],
+        'veiculo_modelo'     => ['g' => 'veiculo', 'label' => 'Modelo', 'type' => 'text', 'max' => 120],
+        'veiculo_ano'        => ['g' => 'veiculo', 'label' => 'Ano de fabricação/modelo', 'type' => 'year', 'max' => 9],
+        'veiculo_placa'      => ['g' => 'veiculo', 'label' => 'Placa', 'type' => 'plate'],
+        'veiculo_renavam'    => ['g' => 'veiculo', 'label' => 'Renavam', 'type' => 'renavam'],
         // Pagamentos
         'parcelas_pagas'     => ['g' => 'pagamentos', 'label' => 'Parcelas pagas', 'type' => 'int', 'min' => 0, 'max' => 120, 'material' => true],
         'saldo_cobrado'      => ['g' => 'pagamentos', 'label' => 'Saldo cobrado pelo banco', 'type' => 'money', 'material' => true],
@@ -131,10 +158,19 @@ function field_defs(): array
         'proposta_riscos'    => ['g' => 'proposta', 'label' => 'Riscos explicados', 'type' => 'textarea', 'max' => 2000, 'sidney' => true],
         'proposta_exclusoes' => ['g' => 'proposta', 'label' => 'O que não está incluído', 'type' => 'textarea', 'max' => 1500, 'sidney' => true],
         'proposta_validade'  => ['g' => 'proposta', 'label' => 'Validade da proposta', 'type' => 'date', 'sidney' => true],
+        'proposta_prazo_repasse' => ['g' => 'proposta', 'label' => 'Prazo para repassar ao cliente o saldo recebido', 'type' => 'text', 'max' => 300, 'sidney' => true],
         'procuracao_poderes' => ['g' => 'proposta', 'label' => 'Poderes da procuração', 'type' => 'textarea', 'max' => 2000, 'sidney' => true],
         // Pontos jurídicos para a ficha da inicial (seção 10.3)
         'encargos_discutidos'=> ['g' => 'juridico', 'label' => 'Encargos discutidos', 'type' => 'textarea', 'max' => 2000, 'sidney' => true],
         'obs_juridicas'      => ['g' => 'juridico', 'label' => 'Observações jurídicas de Sidney', 'type' => 'textarea', 'max' => 4000, 'sidney' => true],
+        // Contrato de honorários e assinatura
+        'contrato_situacao'  => ['g' => 'documento', 'label' => 'Situação do financiamento no contrato', 'type' => 'choice', 'options' => FINANCING_STANDING, 'sidney' => true],
+        'processos_notificacoes' => ['g' => 'documento', 'label' => 'Processos, notificações e eventual apreensão existentes', 'type' => 'textarea', 'max' => 2000, 'sidney' => true],
+        'foro'               => ['g' => 'documento', 'label' => 'Foro do contrato (comarca e UF)', 'type' => 'text', 'max' => 120, 'sidney' => true],
+        'testemunha1_nome'   => ['g' => 'documento', 'label' => 'Testemunha 1 · nome', 'type' => 'text', 'max' => 160, 'sidney' => true],
+        'testemunha1_cpf'    => ['g' => 'documento', 'label' => 'Testemunha 1 · CPF', 'type' => 'cpf', 'sidney' => true],
+        'testemunha2_nome'   => ['g' => 'documento', 'label' => 'Testemunha 2 · nome', 'type' => 'text', 'max' => 160, 'sidney' => true],
+        'testemunha2_cpf'    => ['g' => 'documento', 'label' => 'Testemunha 2 · CPF', 'type' => 'cpf', 'sidney' => true],
     ];
     return $defs;
 }
@@ -228,8 +264,39 @@ function normalize_field(array $def, string $raw): array
             return [(string) $n, null];
         case 'choice':
             return isset($def['options'][$raw]) ? [$raw, null] : [null, 'Escolha uma das opções.'];
+        case 'year':
+            if (preg_match('#^((?:19|20)\d{2})(?:\s*[/-]\s*((?:19|20)?\d{2}))?$#', $raw, $m)) {
+                $model = isset($m[2]) ? (strlen($m[2]) === 2 ? substr($m[1], 0, 2) . $m[2] : $m[2]) : null;
+                return [$model && $model !== $m[1] ? $m[1] . '/' . $model : $m[1], null];
+            }
+            return [null, 'Informe o ano, por exemplo 2020/2021.'];
+        case 'plate':
+            $p = strtoupper(preg_replace('/[\s-]/', '', $raw));
+            return preg_match('/^[A-Z]{3}\d[A-Z0-9]\d{2}$/', $p) ? [$p, null] : [null, 'Confira a placa: três letras e quatro caracteres (ex.: ABC1D23 ou ABC-1234).'];
+        case 'renavam':
+            $d = only_digits($raw);
+            return valid_renavam($d) ? [str_pad($d, 11, '0', STR_PAD_LEFT), null] : [null, 'Confira o Renavam: são 11 números (os antigos têm 9).'];
     }
     return [null, 'Campo desconhecido.'];
+}
+
+/** Renavam: 11 dígitos (os de 9 recebem zeros à esquerda) com dígito verificador. */
+function valid_renavam(string $d): bool
+{
+    if (!preg_match('/^\d{9,11}$/', $d)) {
+        return false;
+    }
+    $d = str_pad($d, 11, '0', STR_PAD_LEFT);
+    if (preg_match('/^(\d)\1{10}$/', $d)) {
+        return false;
+    }
+    $w = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+    $sum = 0;
+    for ($i = 0; $i < 10; $i++) {
+        $sum += (int) $d[$i] * $w[$i];
+    }
+    $dv = ($sum * 10) % 11;
+    return ($dv === 10 ? 0 : $dv) === (int) $d[10];
 }
 
 function valid_cpf(string $d): bool
@@ -287,6 +354,7 @@ function field_display(string $key, ?array $row): string
         'cpf' => preg_replace('/^(\d{3})(\d{3})(\d{3})(\d{2})$/', '$1.$2.$3-$4', $v),
         'cep' => preg_replace('/^(\d{5})(\d{3})$/', '$1-$2', $v),
         'phone' => format_phone($v),
+        'plate' => preg_match('/^[A-Z]{3}\d{4}$/', $v) ? substr($v, 0, 3) . '-' . substr($v, 3) : $v,
         'choice' => (string) ($def['options'][$v] ?? $v),
         default => $v,
     };

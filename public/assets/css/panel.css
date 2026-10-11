@@ -516,3 +516,12 @@ details.more summary { cursor: pointer; color: var(--teal); font-weight: 600; fo
 }
 
 .src-ia { background: #EDE6F7; color: #5B3F8C; }
+
+/* Variáveis dos documentos */
+.var-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:.25rem 1rem}
+.var-grid > *{min-width:0}
+.var-wide{grid-column:1 / -1}
+.var-code{font-size:.82em;white-space:nowrap;background:var(--line-2);padding:1px 6px;border-radius:5px}
+.var-tbl td:first-child{width:1%;white-space:nowrap}
+#catalogo code{word-break:break-all}
+@media (max-width:640px){.var-tbl thead{display:none}.var-tbl,.var-tbl tbody,.var-tbl tr,.var-tbl td{display:block;width:auto}.var-tbl tr{padding:.5rem 0;border-bottom:1px solid var(--line-2)}.var-tbl td{border:0;padding:.1rem 0}.var-tbl td:first-child{width:auto;white-space:normal}.var-code{white-space:normal;word-break:break-all}}

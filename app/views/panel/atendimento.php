@@ -33,7 +33,7 @@ $input = function (string $k, bool $withState = true) use ($fields): string {
         'choice' => '<select id="' . $idAttr . '" name="' . $name . '"><option value="">—</option>' . implode('', array_map(fn($o, $l) => '<option value="' . e($o) . '"' . selected($o, $v) . '>' . e($l) . '</option>', array_keys($def['options']), $def['options'])) . '</select>',
         'date' => '<input id="' . $idAttr . '" type="date" name="' . $name . '" value="' . e($v) . '">',
         'money', 'rate' => '<input id="' . $idAttr . '" type="text" inputmode="decimal" name="' . $name . '" value="' . e($v) . '"' . ($def['type'] === 'rate' ? ' placeholder="' . e($def['unit']) . '"' : ' placeholder="R$"') . '>',
-        'int', 'cpf', 'cep', 'phone' => '<input id="' . $idAttr . '" type="text" inputmode="numeric" name="' . $name . '" value="' . e($v) . '">',
+        'int', 'cpf', 'cep', 'phone', 'renavam' => '<input id="' . $idAttr . '" type="text" inputmode="numeric" name="' . $name . '" value="' . e($v) . '">',
         'email' => '<input id="' . $idAttr . '" type="email" name="' . $name . '" value="' . e($v) . '">',
         default => '<input id="' . $idAttr . '" type="text" name="' . $name . '" value="' . e($v) . '">',
     };
@@ -148,7 +148,7 @@ if ($P && $N) {
     </div>
   <?php endif ?>
 
-  <?php foreach (['abertura', 'urgencia', 'situacao', 'qualificacao', 'endereco', 'relacao', 'financiamento', 'pagamentos', 'contexto', 'gratuidade', 'reuniao'] as $g):
+  <?php foreach (['abertura', 'urgencia', 'situacao', 'qualificacao', 'endereco', 'relacao', 'financiamento', 'veiculo', 'pagamentos', 'contexto', 'gratuidade', 'reuniao'] as $g):
     $keys = $groupFields[$g];
     $answered = count(array_filter($keys, fn($k) => isset($fields[$k])));
   ?>
@@ -329,8 +329,28 @@ if ($P && $N) {
     <?= $input('impedimento_motivo', false) ?>
     <h3>Proposta</h3>
     <?php foreach (['proposta_escopo', 'proposta_honorarios', 'proposta_base_exito', 'proposta_pagamento', 'proposta_despesas', 'proposta_riscos', 'proposta_exclusoes'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
-    <div class="row2"><div><?= $input('proposta_validade', false) ?></div><div></div></div>
+    <div class="row2"><div><?= $input('proposta_validade', false) ?></div><div><?= $input('proposta_prazo_repasse', false) ?></div></div>
+    <?php if (!isset($fields['proposta_prazo_repasse']) && setting('default_prazo_repasse')): ?><p class="hint">Em branco, o contrato usa o padrão do escritório: “<?= e(setting('default_prazo_repasse')) ?>”.</p><?php endif ?>
     <?= $input('procuracao_poderes', false) ?>
+    <h3>Contrato de honorários e assinatura</h3>
+    <?php $standing = financing_standing($id); ?>
+    <div class="row2">
+      <div><?= $input('contrato_situacao', false) ?><?php if (!isset($fields['contrato_situacao'])): ?><p class="hint"><?= $standing ? 'Em branco, vale o que o cliente informou: ' . e(mb_strtolower(FINANCING_STANDING[$standing])) . '.' : 'O que o cliente informou não basta para definir a situação.' ?></p><?php endif ?></div>
+      <div><?= $input('foro', false) ?><?php if (!isset($fields['foro'])): ?><p class="hint"><?= setting('default_foro') ? 'Em branco, vale o padrão do escritório: ' . e(setting('default_foro')) . '.' : 'Sem padrão do escritório: defina em Variáveis.' ?> Independe da cidade do escritório.</p><?php endif ?></div>
+    </div>
+    <?= $input('processos_notificacoes', false) ?>
+    <?php $relato = array_filter([isset($fields['aviso']) ? $val('aviso') : null, $val('aviso_data') ?: null, $val('aviso_descricao') ?: null, isset($fields['processo_existente']) ? 'processo sobre o financiamento: ' . mb_strtolower($val('processo_existente')) : null]); ?>
+    <?php if ($relato): ?><p class="hint">Relato do cliente (confira antes de escrever no contrato): <?= e(implode(' · ', $relato)) ?></p><?php endif ?>
+    <div class="row2"><div><?= $input('testemunha1_nome', false) ?></div><div><?= $input('testemunha1_cpf', false) ?></div></div>
+    <div class="row2"><div><?= $input('testemunha2_nome', false) ?></div><div><?= $input('testemunha2_cpf', false) ?></div></div>
+    <p class="hint">Testemunhas são opcionais, conforme a forma de assinatura. Os dados do veículo ficam no bloco 1, grupo Veículo.</p>
+    <?php if ($customKeys = $groupFields['personalizadas'] ?? []): ?>
+      <h3>Variáveis personalizadas</h3>
+      <?php foreach ($customKeys as $k): $cv = custom_vars()[field_def($k)['var']] ?? null; ?>
+        <?= $input($k, false) ?>
+        <p class="hint"><code>{{<?= e(field_def($k)['var']) ?>}}</code><?= $cv && $cv['help'] ? ' · ' . e($cv['help']) : '' ?><?= $cv && $cv['value'] !== null && !isset($fields[$k]) ? ' · em branco, vale o padrão: “' . e(mb_strimwidth($cv['value'], 0, 120, '…')) . '”' : '' ?></p>
+      <?php endforeach ?>
+    <?php endif ?>
     <h3>Para a reunião e a inicial</h3>
     <?= $input('perguntas_reuniao', false) ?>
     <?= $input('encargos_discutidos', false) ?>

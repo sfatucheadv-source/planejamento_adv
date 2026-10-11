@@ -219,7 +219,9 @@ function ia_doc_fields(string $kind): array
 {
     return match ($kind) {
         'contrato' => ['banco', 'credor_cnpj', 'contrato_numero', 'contrato_data', 'modalidade', 'valor_veiculo', 'entrada', 'capital', 'prazo', 'parcela', 'taxa_mensal', 'taxa_anual', 'cet',
-                       'nome_completo', 'cpf', 'estado_civil', 'profissao', 'nacionalidade', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'],
+                       'nome_completo', 'cpf', 'estado_civil', 'profissao', 'nacionalidade', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf',
+                       'veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'veiculo_placa', 'veiculo_renavam'],
+        'veiculo' => ['veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'veiculo_placa', 'veiculo_renavam', 'banco'],
         'identidade' => ['nome_completo', 'cpf', 'identificacao', 'nacionalidade', 'estado_civil'],
         'residencia' => ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'],
         'historico' => ['banco', 'contrato_numero', 'parcela', 'prazo', 'parcelas_pagas', 'saldo_cobrado', 'saldo_data', 'atraso_qtd'],
@@ -243,6 +245,9 @@ function ia_field_spec(array $keys): string
             'date' => 'data AAAA-MM-DD',
             'cpf' => '11 dígitos',
             'cep' => '8 dígitos',
+            'year' => 'ano de fabricação/modelo, ex.: 2020/2021',
+            'plate' => 'placa com 7 caracteres, ex.: ABC1D23',
+            'renavam' => 'Renavam, 11 dígitos',
             'choice' => 'um destes códigos: ' . implode(', ', array_keys($d['options'])),
             default => 'texto',
         };

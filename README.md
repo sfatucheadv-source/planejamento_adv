@@ -27,6 +27,17 @@ Implementa o *Plano de reforma do site* (10/10/2026). Todo novo atendimento pert
 - **Acesso por atendimento**: conta do cliente separada do caso (`client_accounts`). Contratados continuam acessíveis; encerrado sem contratação fica disponível por 72 horas a partir da comunicação registrada, negado pela data em cada requisição (portal, chat e download). Retorno: o cliente pede, Sidney abre novo atendimento vinculado, sem revelar o histórico expirado.
 - **Execução**: ao formalizar, o caso segue para Negociação ou Preparação judicial nas ferramentas existentes (`Execução`, `Casos contratados`). O operador executa todas as funções; não há matriz de papéis.
 
+### Variáveis dos documentos
+
+Em *Variáveis dos documentos* (`/painel/variaveis`, código em `app/inicial/variaveis.php`) Sidney:
+
+- preenche os dados do escritório usados nos modelos: endereço, telefone, e-mail, prazo de resposta, orientação para urgências, tipo e chave PIX (a chave é conferida contra o tipo);
+- define padrões para `{{documento.foro}}` e `{{proposta.prazo_repasse}}`, que cada atendimento pode trocar na ficha (o foro é independente de `{{data.cidade}}`);
+- cria variáveis personalizadas no formato `grupo.nome`, do escritório (um valor) ou do atendimento (preenchida na ficha, bloco 3, com valor padrão opcional). O nome não muda depois de criado, e uma variável usada em algum modelo não pode ser excluída;
+- consulta o catálogo de todas as variáveis, de onde vem cada uma e em que modelos é usada.
+
+Campos novos da ficha: veículo (marca, modelo, ano, placa e Renavam com dígito verificador, lidos também pela IA no contrato e no CRLV), situação do financiamento (adimplente, inadimplente ou quitado; sem escolha de Sidney, vem do relato do cliente), processos e notificações, foro e duas testemunhas opcionais (use `{{testemunha1.nome|____}}` no modelo). Teste: `php tests/variaveis.php`.
+
 ### Assistente com IA (OpenRouter ou Google Gemini)
 
 Opcional. Em **Configurações › Inteligência artificial**: ligue o uso de IA e escolha o **fornecedor**:
@@ -103,6 +114,7 @@ Teste de ponta a ponta (percorre as 14 etapas pela interface, do formulário ao 
 php tests/fluxo_completo.php        # execução e modo de equipe (14 etapas)
 php tests/atendimento_inicial.php   # atendimento inicial (seção 16 do plano de reforma)
 php tests/assistente_ia.php         # assistente com IA (simulador local do OpenRouter e do Gemini)
+php tests/variaveis.php             # variáveis dos documentos e campos do contrato
 ```
 
 ## Publicar na Hostinger

@@ -36,8 +36,9 @@
     <p class="small">Use <code>{{variável}}</code> para inserir um dado. Para um texto padrão quando o dado não existir, use <code>{{variável|texto padrão}}</code>. Sem padrão, o dado que faltar aparece marcado e bloqueia a publicação.</p>
     <p class="small">Trechos que você ainda precisa escrever podem ficar como <code>[[COMPLETAR: descrição]]</code>; eles também bloqueiam a revisão.</p>
     <p class="small">Os modelos iniciais trazem só a estrutura. As cláusulas, os poderes e o texto da declaração são seus.</p>
+    <p class="small"><a class="b b-xs" href="<?= e(url('painel/variaveis')) ?>">Editar e criar variáveis</a></p>
     <h3>Variáveis disponíveis</h3>
     <ul class="small at-vars"><?php foreach ($vars as $k => $l): ?><li><code>{{<?= e($k) ?>}}</code> <?= e($l) ?></li><?php endforeach ?></ul>
-    <p class="small">O endereço do escritório vem de <a href="<?= e(url('painel/configuracoes')) ?>">Configurações</a>.</p>
+    <p class="small">Os dados do escritório (endereço, telefone, PIX…) e as variáveis personalizadas são editados em <a href="<?= e(url('painel/variaveis')) ?>">Variáveis dos documentos</a>.</p>
   </aside>
 </div>

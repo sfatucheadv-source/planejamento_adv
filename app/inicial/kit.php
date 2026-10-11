@@ -37,6 +37,15 @@ function doc_template(string $key): ?array
 /** Variáveis aprovadas para os modelos (seção 14.2: somente chaves aprovadas). */
 function template_var_labels(): array
 {
+    $out = builtin_var_labels();
+    foreach (custom_vars() as $k => $r) {
+        $out[$k] = $r['label'];
+    }
+    return $out;
+}
+
+function builtin_var_labels(): array
+{
     return [
         'atendimento.protocolo' => 'Protocolo', 'data.hoje' => 'Data de hoje', 'data.cidade' => 'Cidade do escritório', 'kit.versao' => 'Versão do documento',
         'cliente.nome_completo' => 'Nome completo', 'cliente.cpf' => 'CPF', 'cliente.nacionalidade' => 'Nacionalidade', 'cliente.estado_civil' => 'Estado civil',
@@ -45,15 +54,20 @@ function template_var_labels(): array
         'contrato.banco' => 'Banco', 'contrato.numero' => 'Número do contrato', 'contrato.data' => 'Data do contrato', 'contrato.capital' => 'Valor financiado',
         'contrato.prazo' => 'Prazo', 'contrato.parcela' => 'Parcela', 'contrato.taxa_mensal' => 'Taxa mensal', 'contrato.cet' => 'CET',
         'contrato.parcelas_pagas' => 'Parcelas pagas', 'contrato.saldo' => 'Saldo e data-base',
+        'contrato.situacao' => 'Situação do financiamento (adimplente, inadimplente ou quitado)', 'contrato.processos_notificacoes' => 'Processos, notificações e eventual apreensão existentes',
+        'veiculo.marca' => 'Marca do veículo', 'veiculo.modelo' => 'Modelo do veículo', 'veiculo.ano' => 'Ano de fabricação/modelo', 'veiculo.placa' => 'Placa', 'veiculo.renavam' => 'Renavam',
         'analise.data_base' => 'Data-base', 'analise.bacen' => 'Referência BCB', 'analise.metodo' => 'Método', 'analise.resultados' => 'Resultados',
         'analise.limitacoes' => 'Limitações', 'analise.conclusao' => 'Conclusão', 'analise.conclusao_texto' => 'Conclusão por extenso',
         'analise.revisao_data' => 'Data de revisão', 'analise.documentos' => 'Documentos usados',
         'proposta.escopo' => 'Escopo', 'proposta.honorarios' => 'Honorários', 'proposta.base_exito' => 'Base de êxito', 'proposta.pagamento' => 'Pagamento',
         'proposta.despesas' => 'Despesas', 'proposta.riscos' => 'Riscos', 'proposta.exclusoes' => 'Exclusões', 'proposta.validade' => 'Validade',
+        'proposta.prazo_repasse' => 'Prazo para repassar ao cliente o saldo recebido',
+        'documento.foro' => 'Foro do contrato (comarca e UF)',
+        'testemunha1.nome' => 'Testemunha 1 · nome', 'testemunha1.cpf' => 'Testemunha 1 · CPF', 'testemunha2.nome' => 'Testemunha 2 · nome', 'testemunha2.cpf' => 'Testemunha 2 · CPF',
         'procuracao.poderes' => 'Poderes da procuração', 'gratuidade.renda' => 'Atividade e renda',
         'escritorio.nome' => 'Sociedade', 'escritorio.oab' => 'Registro da sociedade', 'escritorio.cnpj' => 'CNPJ', 'escritorio.advogado' => 'Advogado',
-        'escritorio.advogado_oab' => 'OAB do advogado', 'escritorio.endereco' => 'Endereço do escritório',
-    ];
+        'escritorio.advogado_oab' => 'OAB do advogado',
+    ] + array_map(fn($d) => $d['label'], OFFICE_VARS);
 }
 
 function kit_vars(int $caseId): array
@@ -69,7 +83,8 @@ function kit_vars(int $caseId): array
     $docs = array_column(all("SELECT label FROM documents WHERE case_id = ? AND status = 'conferido' ORDER BY id", [$caseId]), 'label');
     $renda = trim(implode(' · ', array_filter([$d('renda_atividade'), $d('renda_valor') ? 'renda aproximada de ' . $d('renda_valor') : null])));
     $titular = fv($caseId, 'relacao_contrato') === 'titular' || !fv($caseId, 'relacao_contrato') ? $d('nome_completo') : $d('titular_nome');
-    return [
+    $withDefault = fn(string $var) => $d(CASE_VAR_DEFAULTS[$var]['field']) ?? setting(CASE_VAR_DEFAULTS[$var]['setting']);
+    return custom_var_values($caseId) + array_map(fn($k) => office_var($k), array_combine(array_keys(OFFICE_VARS), array_keys(OFFICE_VARS))) + [
         'atendimento.protocolo' => $c['protocol'],
         'data.hoje' => fmt_date(now()->format('Y-m-d'), true),
         'data.cidade' => office('city') ?: null,
@@ -93,6 +108,13 @@ function kit_vars(int $caseId): array
         'contrato.cet' => $d('cet'),
         'contrato.parcelas_pagas' => $d('parcelas_pagas'),
         'contrato.saldo' => $saldo,
+        'contrato.situacao' => ($sit = financing_standing($caseId)) ? mb_strtolower(FINANCING_STANDING[$sit]) : null,
+        'contrato.processos_notificacoes' => $d('processos_notificacoes'),
+        'veiculo.marca' => $d('veiculo_marca'),
+        'veiculo.modelo' => $d('veiculo_modelo'),
+        'veiculo.ano' => $d('veiculo_ano'),
+        'veiculo.placa' => $d('veiculo_placa'),
+        'veiculo.renavam' => $d('veiculo_renavam'),
         'analise.data_base' => $d('data_base'),
         'analise.bacen' => $bacen,
         'analise.metodo' => $d('metodo'),
@@ -110,6 +132,12 @@ function kit_vars(int $caseId): array
         'proposta.riscos' => $d('proposta_riscos'),
         'proposta.exclusoes' => $d('proposta_exclusoes'),
         'proposta.validade' => $d('proposta_validade'),
+        'proposta.prazo_repasse' => $withDefault('proposta.prazo_repasse'),
+        'documento.foro' => $withDefault('documento.foro'),
+        'testemunha1.nome' => $d('testemunha1_nome'),
+        'testemunha1.cpf' => $d('testemunha1_cpf'),
+        'testemunha2.nome' => $d('testemunha2_nome'),
+        'testemunha2.cpf' => $d('testemunha2_cpf'),
         'procuracao.poderes' => $d('procuracao_poderes'),
         'gratuidade.renda' => $renda ?: null,
         'escritorio.nome' => office('society') ?: null,
@@ -117,8 +145,26 @@ function kit_vars(int $caseId): array
         'escritorio.cnpj' => office('cnpj') ?: null,
         'escritorio.advogado' => office('lawyer') ?: null,
         'escritorio.advogado_oab' => office('lawyer_oab') ?: null,
-        'escritorio.endereco' => setting('office_address') ?: null,
     ];
+}
+
+/**
+ * Situação do financiamento para o contrato: a escolhida por Sidney ou, sem
+ * ela, a que decorre do que o cliente informou (quitado, em atraso ou em dia).
+ */
+function financing_standing(int $caseId): ?string
+{
+    if ($v = fv($caseId, 'contrato_situacao')) {
+        return $v;
+    }
+    if (fv($caseId, 'situacao_contrato') === 'quitado') {
+        return 'quitado';
+    }
+    return match (fv($caseId, 'atraso')) {
+        'sim' => 'inadimplente',
+        'nao' => in_array(fv($caseId, 'situacao_contrato'), ['ativo', 'renegociado'], true) ? 'adimplente' : null,
+        default => null,
+    };
 }
 
 /**
@@ -130,7 +176,7 @@ function render_template(string $body, array $vars): array
 {
     $labels = template_var_labels();
     $missing = [];
-    $out = preg_replace_callback('/\{\{\s*([a-z_.]+)\s*(?:\|([^}]*))?\}\}/u', function ($m) use ($vars, $labels, &$missing) {
+    $out = preg_replace_callback('/\{\{\s*([a-z0-9_.]+)\s*(?:\|([^}]*))?\}\}/u', function ($m) use ($vars, $labels, &$missing) {
         $key = $m[1];
         if (!array_key_exists($key, $labels)) {
             $missing[] = 'variável não aprovada: ' . $key;
@@ -239,7 +285,7 @@ function kit_fresh(int $caseId, string $kind): array
     [$content, $missing] = render_template($t['body'], $vars);
     // A fotografia guarda só as variáveis que o modelo usa: mudar um dado que
     // não aparece no documento não o marca como desatualizado.
-    preg_match_all('/\{\{\s*([a-z_.]+)/u', $t['body'], $m);
+    preg_match_all('/\{\{\s*([a-z0-9_.]+)/u', $t['body'], $m);
     $used = array_diff(array_unique($m[1]), ['data.hoje', 'kit.versao']);
     $snap = array_intersect_key($vars, array_flip($used));
     ksort($snap);
