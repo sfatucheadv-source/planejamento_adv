@@ -98,11 +98,11 @@ $flashes = take_flashes();
       <p>Financiamento de veículos: revisão, negociação, busca e apreensão e prestação de contas da venda. Atendimento digital para todo o Brasil, com base em <?= e(office('city')) ?>.</p>
       <p class="availability <?= $open ? 'is-open' : '' ?>">
         <span class="dot" aria-hidden="true"></span>
-        <?= $open ? 'Equipe em atendimento agora' : 'Fora do horário. Retornamos ' . e(fmt_when($nextOpen)) ?>
+        <?= $open ? 'Sidney em atendimento agora' : 'Fora do horário. Retornamos ' . e(fmt_when($nextOpen)) ?>
       </p>
     </div>
     <div>
-      <h2 class="footer-title">Fale com a equipe</h2>
+      <h2 class="footer-title">Fale com o escritório</h2>
       <ul class="footer-list">
         <li><a href="<?= e(whatsapp_link($waText)) ?>" rel="noopener" target="_blank">WhatsApp <?= e(office('phone_display')) ?></a></li>
         <li><a href="mailto:<?= e(office('email')) ?>"><?= e(office('email')) ?></a></li>
@@ -140,5 +140,6 @@ $flashes = take_flashes();
 </a>
 
 <script src="<?= e(asset('js/site.js')) ?>" defer></script>
+<script src="<?= e(asset('js/chat.js')) ?>" defer></script>
 </body>
 </html>

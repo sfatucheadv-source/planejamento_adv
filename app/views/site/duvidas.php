@@ -2,7 +2,7 @@
   <div class="wrap narrow">
     <p class="kicker">Dúvidas frequentes</p>
     <h1>Respostas diretas, sem juridiquês</h1>
-    <p class="lead">Se a sua dúvida não estiver aqui, pergunte. Uma pessoa da equipe responde.</p>
+    <p class="lead">Se a sua dúvida não estiver aqui, pergunte. Sidney responde.</p>
   </div>
 </section>
 <section class="section">

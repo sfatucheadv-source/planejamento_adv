@@ -95,7 +95,7 @@ function situations(): array
                 ['Defesa e negociação em paralelo', 'Avaliamos defesa e acordo ao mesmo tempo, porque às vezes a melhor saída é uma combinação dos dois.'],
             ],
             'docs' => ['processo', 'notificacoes', 'contrato', 'historico'],
-            'honest' => 'Nenhum site consegue calcular o seu prazo com segurança. Se há apreensão ou intimação recente, fale com a equipe agora pelo WhatsApp e envie o documento que você tem em mãos, mesmo que seja só uma foto.',
+            'honest' => 'Nenhum site consegue calcular o seu prazo com segurança. Se há apreensão ou intimação recente, fale com Sidney agora pelo WhatsApp e envie o documento que você tem em mãos, mesmo que seja só uma foto.',
             'posts' => ['02', '01', '16'],
         ],
         'venda-do-veiculo-e-saldo' => [
@@ -156,7 +156,7 @@ function faq(): array
         ['Quanto tempo leva?', 'Depende do caminho. A análise do contrato tem meta de até 2 dias úteis depois que os documentos estiverem completos. Prazos do banco e da Justiça não dependem de nós, e não prometemos duração nem resultado. Mas você sempre sabe qual é o próximo passo e quando terá notícia.'],
         ['Quanto custa?', 'O custo é apresentado por escrito, antes de qualquer contratação, com o que está incluído e o que não está. Despesas e riscos (como custas e honorários da outra parte, se houver processo) também são explicados antes.'],
         ['Como vou acompanhar o meu caso?', 'Pelo canal que você preferir, normalmente o WhatsApp. Se quiser, também pode usar a área do cliente aqui no site, que mostra a etapa atual, os documentos e a data do próximo retorno. Mesmo sem novidade, você recebe notícia a cada 15 dias.'],
-        ['Quando o caso termina?', 'Não basta assinar um acordo ou ganhar uma decisão. Só encerramos depois de conferir o efeito na prática: o boleto novo correto, o pagamento reconhecido, a devolução no seu bolso ou a baixa do gravame. E prestamos contas de tudo.'],
+        ['Quando o caso termina?', 'Concluir o atendimento inicial (análise, conversa e proposta) não significa que a dívida foi resolvida. Na atuação contratada, não basta assinar um acordo ou ganhar uma decisão: só encerramos depois de conferir o efeito na prática: o boleto novo correto, o pagamento reconhecido, a devolução no seu bolso ou a baixa do gravame. E prestamos contas de tudo.'],
         ['Atendem fora do Paraná?', 'Sim. O atendimento é digital, para todo o Brasil, por WhatsApp, ligação e videochamada. O escritório tem base em São José dos Pinhais/PR.'],
     ];
 }

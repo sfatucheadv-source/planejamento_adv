@@ -191,7 +191,50 @@ insert('feedback', ['case_id' => $c10['id'], 'kind' => 'encerramento', 'ease' =>
 // Acesso de demonstração à área do cliente para o caso 5
 q('UPDATE cases SET portal_pass_hash = ? WHERE id = ?', [password_hash('cliente2026', PASSWORD_DEFAULT), $c5['id']]);
 
+/* ---------- Atendimento inicial (fluxo novo: operador único e assistente) ---------- */
 unset($GLOBALS['FAKE_NOW']);
+set_setting('operator_user_id', (string) $sidney);
+set_setting('office_address', 'Rua de Demonstração, 100, Centro, São José dos Pinhais/PR');
+act_as($sidney);
+seed_templates();
+$bot = function (int $id, array $answers): void {
+    foreach ($answers as $k => $v) {
+        $state = $v === null ? 'desconhecido' : 'informado';
+        chat_post($id, 'bot', 'Pergunta do assistente: ' . field_def($k)['label'], $k);
+        set_field($id, $k, $v, $state, 'cliente');
+        chat_post($id, 'client', $v === null ? 'Não sei' : field_display($k, case_fields($id)[$k]), $k);
+        bot_after_answer($id, $k);
+    }
+};
+$i1 = create_initial_case(['nome' => 'Larissa Exemplo (demo)', 'telefone' => '(41) 90000-1001', 'email' => '', 'adaptacao' => ''], 'site');
+chat_post((int) $i1['id'], 'bot', BOT_GREETING);
+$bot((int) $i1['id'], ['aviso' => 'apreendido', 'aviso_data' => date('Y-m-d', strtotime('-2 days')), 'objetivo_prioridade' => 'apreensao', 'objetivo_texto' => 'Levaram o carro ontem de manhã, preciso dele para trabalhar.']);
+$i2 = create_initial_case(['nome' => 'Paulo Exemplo (demo)', 'telefone' => '(41) 90000-1002', 'email' => 'paulo@exemplo.invalid', 'adaptacao' => ''], 'site');
+$bot((int) $i2['id'], ['aviso' => 'nenhum', 'objetivo_prioridade' => 'reduzir_parcela', 'situacao_contrato' => 'ativo', 'atraso' => 'nao', 'banco' => 'Banco Exemplo S.A.', 'capital' => '45000,00', 'prazo' => '48', 'parcela' => '1.390,00', 'taxa_mensal' => '1,99', 'reuniao_canal' => 'meet']);
+foreach (all('SELECT * FROM documents WHERE case_id = ?', [$i2['id']]) as $d) {
+    q("UPDATE documents SET status = 'conferido', received_at = ?, reviewed_at = ? WHERE id = ?", [now_str(), now_str(), $d['id']]);
+}
+initial_command(find_case((int) $i2['id']), 'liberar_analise', ['note' => 'Contrato e extrato legíveis']);
+$i3 = create_initial_case(['nome' => 'Renata Exemplo (demo)', 'telefone' => '(41) 90000-1003', 'email' => '', 'adaptacao' => ''], 'site');
+$bot((int) $i3['id'], ['aviso' => 'banco', 'objetivo_prioridade' => 'manter_veiculo', 'situacao_contrato' => 'ativo', 'atraso' => 'sim', 'banco' => 'Financeira Exemplo', 'capital' => '38000,00', 'prazo' => '60', 'parcela' => '1.120,00', 'taxa_mensal' => '2,10', 'nome_completo' => 'Renata Exemplo da Silva', 'reuniao_canal' => 'phone']);
+foreach (all('SELECT * FROM documents WHERE case_id = ?', [$i3['id']]) as $d) {
+    q("UPDATE documents SET status = 'conferido' WHERE id = ?", [$d['id']]);
+}
+initial_command(find_case((int) $i3['id']), 'liberar_analise', ['note' => 'ok']);
+foreach (['data_base' => date('Y-m-d'), 'bacen_codigo' => '25471', 'bacen_taxa' => '1,62', 'conclusao' => 'negociacao', 'resultados' => 'Taxa contratada acima da média de mercado do período (exemplo).', 'conflito' => 'sem_conflito', 'legitimidade' => 'ok',
+          'proposta_escopo' => 'Negociação com o credor (exemplo).', 'proposta_honorarios' => 'A definir por Sidney.', 'proposta_riscos' => 'O credor pode recusar (exemplo).', 'perguntas_reuniao' => "Qual parcela cabe no orçamento?"] as $k => $v) {
+    set_field((int) $i3['id'], $k, $v, 'informado', 'sidney');
+}
+initial_command(find_case((int) $i3['id']), 'aprovar_preparacao', []);
+initial_command(find_case((int) $i3['id']), 'confirmar_reuniao', ['channel' => 'phone', 'starts_at' => date('Y-m-d', strtotime('+2 weekdays')) . ' 15:00', 'duration' => 30, 'phone' => '41900001003']);
+$i4 = create_initial_case(['nome' => 'Carlos Exemplo (demo)', 'telefone' => '(41) 90000-1004', 'email' => '', 'adaptacao' => ''], 'site');
+q("UPDATE cases SET initial_status = 'awaiting_decision', preparation_at = ?, sufficiency_at = ?, decision = 'aceitou', decision_at = ?, contract_state = 'assinatura_pendente', next_action = 'Receber o contrato assinado', next_action_due = ? WHERE id = ?", [now_str(), now_str(), now_str(), date('Y-m-d 18:00:00', strtotime('+2 days')), $i4['id']]);
+$i5 = create_initial_case(['nome' => 'Beatriz Exemplo (demo)', 'telefone' => '(41) 90000-1005', 'email' => '', 'adaptacao' => ''], 'site');
+initial_command(find_case((int) $i5['id']), 'encerrar_antes', ['decision' => 'desistiu', 'note' => 'Resolveu direto com o banco; orientada a guardar os comprovantes.']);
+login_portal((int) $i2['id'], password_hash('cliente2026', PASSWORD_DEFAULT));
+unset($_SESSION['portal_account'], $_SESSION['portal_case']);
+
 echo "Banco de demonstração criado em $dbFile\n";
 echo "Painel: sidney@demo.local ou gestora@demo.local · senha $senha\n";
-echo "Área do cliente: protocolo " . find_case((int) $c5['id'])['protocol'] . " · senha cliente2026\n";
+echo "Área do cliente: protocolo " . find_case((int) $c5['id'])['protocol'] . " (execução) ou " . find_case((int) $i2['id'])['protocol'] . " (atendimento inicial) · senha cliente2026\n";
+echo "Operador dos atendimentos: sidney@demo.local\n";

@@ -7,13 +7,36 @@ São três partes integradas, sobre o mesmo banco de dados:
 | Parte | Endereço | Para quem |
 |---|---|---|
 | Site público e blog | `/`, `/blog`, `/atendimento`, `/sobre`, páginas por situação | Quem procura ajuda |
-| Triagem conversacional | `/comecar` | Primeiro contato (etapa 1 do workflow) |
-| Área do cliente | `/cliente` | Cliente acompanha o caso (opcional, nunca barreira) |
-| Painel da equipe | `/painel` | Gestor, advogado, cálculos, negociação, financeiro e supervisão |
+| Assistente virtual (atendimento inicial) | `/comecar` | Primeiro contato: coleta retomável por chatbot |
+| Área do cliente | `/cliente` | Início, Conversa, Documentos, Reunião e proposta |
+| Painel | `/painel` | Sidney (operador único) e, na execução, as ferramentas das 14 etapas |
 
 Tecnologia: **PHP 8.1+ e SQLite**, sem dependências externas. Funciona na hospedagem compartilhada da Hostinger: basta enviar os arquivos.
 
 ---
+
+## Atendimento inicial (reforma v1.0 — operador único)
+
+Implementa o *Plano de reforma do site* (10/10/2026). Todo novo atendimento pertence ao operador configurado (Sidney). O assistente coleta; Sidney confere, analisa, prepara a proposta e as minutas, faz a reunião, revisa o kit e registra a decisão.
+
+- **Cinco situações** (`initial_status`): `collecting` Em coleta · `analysis` Em análise · `meeting_scheduled` Reunião agendada · `awaiting_decision` Aguardando decisão · `completed` Concluído (atendimento inicial, não a dívida).
+- **Assistente** (`app/inicial/bot.php`): roteiro determinístico B02–B10, sem IA. Cada resposta grava campos estruturados (`case_fields`, com origem e estado “não sei/depois/não se aplica”) e a conversa (`chat_messages`). A pergunta da vez é calculada pelo que falta: fechar a página e voltar retoma do ponto certo. “Corrigir resposta” volta a um item sem reiniciar. Sidney pode **assumir a conversa** e **retomar a coleta automática**.
+- **Ficha única** (`/painel/atendimento/{id}`): cabeçalho com situação, urgência, próxima ação e retorno; blocos 1 Dados e contexto · 2 Documentos · 3 Análise e proposta · 4 Reunião · 5 Kit e decisão; conversa ao lado. Salvar mantém a posição.
+- **Travas no servidor** (`app/inicial/fluxo.php`): liberar análise só com suficiência e sem pendência essencial (ou atuação urgente delimitada); confirmar reunião só com preparação validada e dados do canal (URL do Meet validada; telefone; WhatsApp; chat do site), com checagem de conflito; registrar reunião exige resumo e proposta apresentada ou motivo do adiamento; finalizar exige decisão, kit pronto e contratação formalizada quando houver aceite. Aceite sem assinatura nunca vira “contratado”.
+- **Kit** (`app/inicial/kit.php`): proposta, honorários, procuração, hipossuficiência (só com pedido de gratuidade), parecer de cálculos e ficha para a inicial. Modelos editáveis em *Modelos de documentos*, com versão e aprovação de Sidney; variável ausente ou `[[COMPLETAR: …]]` bloqueia revisão/publicação. Cada minuta guarda a fotografia dos dados; mudança posterior mostra “há alterações não revisadas”. Versões publicadas e assinadas nunca são reescritas.
+- **Acesso por atendimento**: conta do cliente separada do caso (`client_accounts`). Contratados continuam acessíveis; encerrado sem contratação fica disponível por 72 horas a partir da comunicação registrada, negado pela data em cada requisição (portal, chat e download). Retorno: o cliente pede, Sidney abre novo atendimento vinculado, sem revelar o histórico expirado.
+- **Execução**: ao formalizar, o caso segue para Negociação ou Preparação judicial nas ferramentas existentes (`Execução`, `Casos contratados`). O operador executa todas as funções; não há matriz de papéis.
+
+### Configuração e implantação
+
+1. Faça backup do banco (com WAL ativo, copie `fatuche.sqlite`, `-wal` e `-shm` juntos, com o site parado, ou use `sqlite3 fatuche.sqlite ".backup copia.sqlite"`).
+2. Publique o código: a migração 2 é aditiva e roda sozinha no primeiro acesso (nenhuma coluna antiga é removida; senhas do portal viram contas ligadas ao próprio caso).
+3. Em **Configurações**: escolha o operador, informe o endereço do escritório e mantenha a entrada pelo assistente. Sem operador, o site continua com o formulário antigo.
+4. Em **Modelos de documentos**: revise e aprove cada modelo (cláusulas, poderes e texto da declaração são de Sidney).
+5. Em **Configurações › Migração**: confira e migre os pré-contratuais. Contratados, em processo e encerrados permanecem na execução. `php scripts/relatorio-migracao.php` gera o mesmo relatório pelo terminal.
+6. **Reversão**: em Configurações, “Formulário antigo” desliga novas entradas pelo assistente e conserva tudo o que já foi registrado.
+
+Homologação automatizada: `php tests/atendimento_inicial.php` (cenários T01–T26 e S01–S13 da seção 16).
 
 ## Como o workflow virou sistema
 
@@ -60,7 +83,8 @@ Abra `http://127.0.0.1:8080`. Painel: `sidney@demo.local` / `demonstracao2026`. 
 Teste de ponta a ponta (percorre as 14 etapas pela interface, do formulário ao encerramento):
 
 ```bash
-php tests/fluxo_completo.php
+php tests/fluxo_completo.php        # execução e modo de equipe (14 etapas)
+php tests/atendimento_inicial.php   # atendimento inicial (seção 16 do plano de reforma)
 ```
 
 ## Publicar na Hostinger
@@ -107,10 +131,11 @@ Os 16 estudos estão em `app/content/posts.json` (título, texto, fontes oficiai
 app/            código (não público): workflow, regras, rotas, telas
   workflow.php  etapas, condições de avanço, metas, documentos, exceções, desfechos
   messages.php  modelos de mensagem da seção 21
-  routes/       site, área do cliente e painel
+  inicial/      atendimento inicial: campos, assistente, fluxo e travas, kit, migração
+  routes/       site, área do cliente e painel (inicial.php e inicial_painel.php para o fluxo novo)
   views/        páginas
 public/         raiz web: index.php, CSS, JS, imagens, fotos
-scripts/        criar-usuario.php, demo.php
+scripts/        criar-usuario.php, demo.php, relatorio-migracao.php
 storage/        banco SQLite, sessões e documentos enviados (não versionado)
 tests/          teste de ponta a ponta
 ```
@@ -120,3 +145,4 @@ tests/          teste de ponta a ponta
 - Envio automático de WhatsApp ou e-mail. O painel prepara a mensagem, abre o WhatsApp com o texto e registra o envio; a confirmação de envio continua humana.
 - Agenda e cobrança online (Asaas, Google Agenda). O fluxo de contratação está no painel; integrações de pagamento precisam de credenciais e teste próprio.
 - Leitura automática de documentos por IA (prevista como etapa futura no PRD).
+- Integrações opcionais do plano de reforma: criação automática de link do Meet ou agenda, envio automático por WhatsApp, assinatura eletrônica integrada, OCR e geração de DOCX. Hoje o link do Meet é criado por Sidney, o instrumento assinado é anexado e os documentos saem em texto selecionável para imprimir/PDF ou baixar em HTML (abre no Word).

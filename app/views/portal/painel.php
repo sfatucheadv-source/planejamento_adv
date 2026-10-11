@@ -39,9 +39,9 @@ foreach ($files as $f) { $filesByDoc[(int) $f['document_id']][] = $f; }
             <div><dt>Situação atual</dt><dd><?= $closed ? 'Caso encerrado' . ($c['outcome'] ? ' · ' . e(OUTCOMES[$c['outcome']]['label']) : '') : e(CLIENT_PHASES[$phaseKey]['label']) ?><br><small class="muted"><?= e(CLIENT_PHASES[$phaseKey]['text']) ?></small></dd></div>
             <div><dt>O que concluímos</dt><dd><?= $lastDone ? e($lastDone['title']) . ' <small class="muted">(' . e(fmt_date($lastDone['at'])) . ')</small>' : 'Recebemos o seu caso.' ?></dd></div>
             <?php if (!$closed): ?>
-              <div><dt>Próximo passo da equipe</dt><dd><?= e($c['next_action'] ?: 'Organizar os próximos passos') ?><?= $c['next_action_owner_id'] ? ' <small class="muted">· ' . e(user_name((int) $c['next_action_owner_id'])) . '</small>' : '' ?></dd></div>
+              <div><dt>Próximo passo do escritório</dt><dd><?= e($c['next_action'] ?: 'Organizar os próximos passos') ?><?= $c['next_action_owner_id'] ? ' <small class="muted">· ' . e(user_name((int) $c['next_action_owner_id'])) . '</small>' : '' ?></dd></div>
               <div><dt>Sua próxima ação</dt><dd><?= e($c['client_next_action'] ?: 'Nenhuma no momento. Pode deixar com a gente.') ?></dd></div>
-              <div><dt>Próximo retorno</dt><dd><?= $c['next_client_update'] ? 'Até ' . e(fmt_when(dt($c['next_client_update']))) : 'A equipe informa em breve' ?></dd></div>
+              <div><dt>Próximo retorno</dt><dd><?= $c['next_client_update'] ? 'Até ' . e(fmt_when(dt($c['next_client_update']))) : 'Informamos em breve' ?></dd></div>
             <?php endif ?>
           </dl>
         </section>
@@ -60,7 +60,7 @@ foreach ($files as $f) { $filesByDoc[(int) $f['document_id']][] = $f; }
                 <?php foreach ($opts as $o): ?><label class="option"><input type="radio" name="answer" value="<?= e($o) ?>" required><span><?= e($o) ?></span></label><?php endforeach ?>
                 <label class="option"><input type="radio" name="answer" value="Quero conversar antes de decidir"><span>Quero conversar antes de decidir</span></label>
               </div>
-              <label class="field"><span>Por quê? <small>(opcional, ajuda a equipe)</small></span><textarea name="reason" rows="2"></textarea></label>
+              <label class="field"><span>Por quê? <small>(opcional, ajuda Sidney)</small></span><textarea name="reason" rows="2"></textarea></label>
               <button class="btn btn-gold" type="submit">Enviar minha resposta</button>
             </form>
           <?php endforeach ?>

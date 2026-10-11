@@ -24,7 +24,14 @@ function current_user(): ?array
 function user_roles(?array $u = null): array
 {
     $u ??= current_user();
-    return $u ? array_filter(explode(',', $u['roles'])) : [];
+    if (!$u) {
+        return [];
+    }
+    // Operador único: executa todas as funções da execução contratada, sem matriz de papéis.
+    if (function_exists('operator_id') && operator_id() === (int) $u['id']) {
+        return array_keys(ROLES);
+    }
+    return array_filter(explode(',', $u['roles']));
 }
 
 function has_role(string ...$roles): bool
@@ -95,25 +102,106 @@ function user_name(?int $id): string
     return $id && isset($names[$id]) ? $names[$id] : '—';
 }
 
-/* ---------- Portal do cliente ---------- */
+/* ---------- Portal do cliente (seção 13: acesso por atendimento) ---------- */
 
+/**
+ * Caso aberto na área do cliente, revalidado a cada requisição: vínculo com a
+ * conta (ou com a sessão privada da coleta) e carência de acesso.
+ */
 function portal_case(): ?array
 {
-    $id = $_SESSION['portal_case'] ?? null;
-    return $id ? one('SELECT * FROM cases WHERE id = ?', [$id]) : null;
+    $id = $_SESSION['portal_case'] ?? $_SESSION['intake_case'] ?? null;
+    if (!$id) {
+        return null;
+    }
+    $c = one('SELECT * FROM cases WHERE id = ?', [(int) $id]);
+    return $c && client_case_authorized($c) ? $c : null;
+}
+
+function portal_account_id(): ?int
+{
+    $a = $_SESSION['portal_account'] ?? null;
+    return $a ? (int) $a : null;
+}
+
+/** O caso está contratado (acesso permanece) ou é do fluxo antigo? */
+function case_contracted(array $c): bool
+{
+    return ($c['workflow_version'] ?? 'legacy') === 'legacy' || !empty($c['execution_started_at']) || ($c['contract_state'] ?? '') === 'formalizado';
+}
+
+/** Carência vencida: a negação vale pela data, mesmo sem rotina agendada (S05). */
+function case_access_expired(array $c): bool
+{
+    if (case_contracted($c) || empty($c['access_expires_at'])) {
+        return false;
+    }
+    return now() >= dt($c['access_expires_at']);
+}
+
+function client_case_authorized(array $c): bool
+{
+    $acc = portal_account_id();
+    $bound = (int) ($_SESSION['intake_case'] ?? 0) === (int) $c['id'];
+    $linked = $acc !== null && (int) ($c['account_id'] ?? 0) === $acc;
+    if (!$bound && !$linked) {
+        return false;
+    }
+    return !case_access_expired($c);
+}
+
+/** Atendimentos que a conta pode abrir agora. */
+function account_cases(int $accountId): array
+{
+    return array_values(array_filter(
+        all('SELECT * FROM cases WHERE account_id = ? ORDER BY id DESC', [$accountId]),
+        fn($c) => !case_access_expired($c)
+    ));
 }
 
 function require_portal(): array
 {
     $c = portal_case();
     if (!$c) {
-        redirect('cliente/entrar');
+        redirect(portal_account_id() ? 'cliente/sem-acesso' : 'cliente/entrar');
     }
     return $c;
 }
 
-function login_portal(int $caseId): void
+function login_account(int $accountId, ?int $caseId = null): void
 {
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_regenerate_id(true);
+    }
+    $_SESSION['portal_account'] = $accountId;
+    if ($caseId) {
+        $_SESSION['portal_case'] = $caseId;
+    } else {
+        unset($_SESSION['portal_case']);
+    }
+    q('UPDATE client_accounts SET last_login_at = ? WHERE id = ?', [now_str(), $accountId]);
+}
+
+/** Cria (ou reaproveita) a conta do caso e entra com ela. */
+function login_portal(int $caseId, ?string $newPassHash = null): void
+{
+    $c = one('SELECT * FROM cases WHERE id = ?', [$caseId]);
+    $acc = $c['account_id'] ? (int) $c['account_id'] : null;
+    if (!$acc) {
+        $acc = insert('client_accounts', ['name' => $c['client_name'], 'phone' => $c['client_phone'], 'email' => $c['client_email'], 'pass_hash' => $newPassHash, 'created_at' => now_str()]);
+        q('UPDATE cases SET account_id = ? WHERE id = ?', [$acc, $caseId]);
+    } elseif ($newPassHash) {
+        q('UPDATE client_accounts SET pass_hash = ? WHERE id = ?', [$newPassHash, $acc]);
+    }
+    if ($newPassHash) {
+        q('UPDATE cases SET portal_pass_hash = ? WHERE id = ?', [$newPassHash, $caseId]);
+    }
+    unset($_SESSION['intake_case']);
+    login_account($acc, $caseId);
+}
+
+function logout_portal(): void
+{
+    unset($_SESSION['portal_account'], $_SESSION['portal_case'], $_SESSION['intake_case']);
     session_regenerate_id(true);
-    $_SESSION['portal_case'] = $caseId;
 }

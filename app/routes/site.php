@@ -79,6 +79,9 @@ $router->get('/blog/{slug}', function (string $slug) {
 /* ---------- Triagem (etapa 1 do workflow) ---------- */
 
 $router->get('/comecar', function () {
+    if (intake_workflow() === 'simple_v1') {
+        intake_start_page();
+    }
     $pre = [];
     $aviso = (string) input('aviso');
     if (isset(NOTICE_OPTIONS[$aviso])) {
@@ -99,6 +102,9 @@ $router->get('/comecar', function () {
 });
 
 $router->post('/comecar', function () {
+    if (intake_workflow() === 'simple_v1') {
+        intake_start_post();
+    }
     $a = [
         'notice' => (string) input('notice'),
         'notice_date' => (string) input('notice_date'),
@@ -203,9 +209,8 @@ $router->post('/comecar/acesso', function () {
         flash('error', 'Use pelo menos 8 caracteres na senha.');
         redirect('comecar/recebido');
     }
-    q('UPDATE cases SET portal_pass_hash = ? WHERE id = ?', [password_hash($pass, PASSWORD_DEFAULT), $t['id']]);
     add_event((int) $t['id'], 'portal', 'Cliente criou acesso à área do cliente', null, false, 'cliente');
-    login_portal((int) $t['id']);
+    login_portal((int) $t['id'], password_hash($pass, PASSWORD_DEFAULT));
     unset($_SESSION['triage_case']);
     flash('ok', 'Pronto! Esta é a sua área. Guarde o protocolo e a senha para voltar quando quiser.');
     redirect('cliente');
@@ -245,9 +250,16 @@ $router->get('/sitemap.xml', function () {
 $router->get('/arquivo/{id}', function (string $id) {
     $f = one('SELECT * FROM files WHERE id = ?', [(int) $id]) ?? not_found();
     $user = current_user();
-    $portal = $_SESSION['portal_case'] ?? null;
-    if (!$user && (int) $portal !== (int) $f['case_id']) {
-        forbidden();
+    $c = one('SELECT * FROM cases WHERE id = ?', [$f['case_id']]);
+    if ($user) {
+        if (!$c || !can_operate($c, $user)) {
+            forbidden();
+        }
+    } else {
+        // Cliente: permissão, carência e visibilidade revalidadas a cada pedido.
+        if (!$c || !client_case_authorized($c) || (int) $f['internal'] === 1 || $f['replaced_at']) {
+            forbidden();
+        }
     }
     $path = config('storage_dir') . '/uploads/' . $f['case_id'] . '/' . $f['stored_name'];
     if (!is_file($path)) {

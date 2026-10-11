@@ -8,6 +8,32 @@ declare(strict_types=1);
  * datas e orientação jurídica antes de enviar.
  */
 const MESSAGE_TEMPLATES = [
+    // Seção 5.4 do plano de reforma: mensagens do atendimento inicial, em nome de Sidney.
+    'inicial_complemento' => [
+        'label' => 'Atendimento inicial · complemento',
+        'stage' => 'documentos',
+        'text'  => "Para continuar, falta apenas: [lista]. Você pode enviar aqui. Se não tiver algum item, me avise.",
+    ],
+    'inicial_recebimento' => [
+        'label' => 'Atendimento inicial · arquivo recebido',
+        'stage' => 'documentos',
+        'text'  => "Arquivo recebido. Sidney ainda vai conferir se está completo e legível.",
+    ],
+    'inicial_preferencia' => [
+        'label' => 'Atendimento inicial · formato da conversa',
+        'stage' => 'decisao',
+        'text'  => "A conversa pode ser por vídeo no Google Meet. Se preferir, pode ser por telefone, WhatsApp por texto ou por este chat. Qual formato funciona melhor?",
+    ],
+    'inicial_reuniao' => [
+        'label' => 'Atendimento inicial · reunião confirmada',
+        'stage' => 'decisao',
+        'text'  => "Sua conversa com Sidney está confirmada para [data/hora, Brasília], por [canal]. [Link ou orientação aplicável].",
+    ],
+    'inicial_apos_reuniao' => [
+        'label' => 'Atendimento inicial · depois da reunião',
+        'stage' => 'decisao',
+        'text'  => "Este é o resumo do que conversamos e o próximo passo: [resumo/ação/data]. Se alguma informação estiver diferente, você pode corrigir aqui.",
+    ],
     'primeiro_contato' => [
         'label' => 'Primeiro contato',
         'stage' => 'acolhimento',
@@ -56,7 +82,7 @@ const MESSAGE_TEMPLATES = [
     'cartao' => [
         'label' => 'Cartão de acompanhamento',
         'stage' => '*',
-        'text'  => "Seu objetivo: {{objetivo}}.\nEtapa atual: {{fase}}.\nO que concluímos: [entrega].\nPróximo passo da equipe: {{proxima_acao}} ({{responsavel}}).\nSua próxima ação: {{acao_cliente}}.\nPróximo retorno: {{proximo_retorno}}.",
+        'text'  => "Seu objetivo: {{objetivo}}.\nEtapa atual: {{fase}}.\nO que concluímos: [entrega].\nPróximo passo do escritório: {{proxima_acao}} ({{responsavel}}).\nSua próxima ação: {{acao_cliente}}.\nPróximo retorno: {{proximo_retorno}}.",
     ],
 ];
 

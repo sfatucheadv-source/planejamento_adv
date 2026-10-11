@@ -129,7 +129,12 @@ $team->post('/painel/instalar', ['code' => 'ERRADO1234', 'name' => 'Advogada Tes
 ok((int) scalar('SELECT COUNT(*) FROM users') === 0, 'código errado não cria usuário');
 $team->get('/painel/instalar');
 $team->post('/painel/instalar', ['code' => strtolower($installCode), 'name' => 'Advogada Teste', 'email' => 'adv@teste.local', 'password' => 'senha-de-teste-1', 'password2' => 'senha-de-teste-1']);
-ok((int) scalar('SELECT COUNT(*) FROM users') === 1 && str_contains($team->html, 'casos ativos'), 'código certo cria o primeiro acesso e entra no painel');
+ok((int) scalar('SELECT COUNT(*) FROM users') === 1 && str_contains($team->html, 'Atendimentos'), 'código certo cria o primeiro acesso e entra no painel');
+// Este teste cobre o modo de equipe e o formulário antigo (chave de reversão em Configurações).
+$team->get('/painel/configuracoes');
+$team->post('/painel/configuracoes', ['operator_user_id' => '0', 'intake_workflow' => 'legacy', 'office_address' => '']);
+setting('__reset');
+ok(operator_id() === null && intake_workflow() === 'legacy', 'configurações: modo de equipe e formulário antigo reativados sem editar código');
 ok(!is_file($codeFile), 'arquivo de código apagado após a instalação');
 $late = new Browser($base);
 $late->get('/painel/instalar');

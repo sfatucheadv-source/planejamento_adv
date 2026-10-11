@@ -389,12 +389,12 @@ const ROLE_DUTIES = [
 
 /** Seção 4 — metas internas propostas. */
 const SERVICE_GOALS = [
-    ['event' => 'Primeiro contato', 'goal' => 'Resposta humana em até 1 hora útil', 'miss' => 'Gestor substituto recebe a conversa', 'public' => 'Uma pessoa da equipe responde em até 1 hora útil.'],
-    ['event' => 'Notificação ou apreensão', 'goal' => 'Encaminhamento ao advogado imediato; avaliação inicial em até 2 horas úteis', 'miss' => 'Supervisor acionado imediatamente', 'public' => 'Notificação ou apreensão vai direto ao advogado, com avaliação inicial em até 2 horas úteis.'],
+    ['event' => 'Primeiro contato', 'goal' => 'Resposta humana em até 1 hora útil', 'miss' => 'Responder assim que possível e informar nova previsão ao cliente', 'public' => 'Sidney responde assim que possível no horário de atendimento.'],
+    ['event' => 'Notificação ou apreensão', 'goal' => 'Encaminhamento ao advogado imediato; avaliação inicial em até 2 horas úteis', 'miss' => 'Prioridade imediata: avaliar antes das demais tarefas', 'public' => 'Notificação ou apreensão vai direto ao advogado, com avaliação inicial em até 2 horas úteis.'],
     ['event' => 'Recebimento documental', 'goal' => 'Conferência em até 1 dia útil', 'miss' => 'Aviso de pendências com nova data', 'public' => 'Cada documento enviado é conferido em até 1 dia útil.'],
     ['event' => 'Análise ordinária completa', 'goal' => 'Até 2 dias úteis após documentos suficientes', 'miss' => 'Justificar complexidade e fixar nova entrega', 'public' => 'A análise do contrato fica pronta em até 2 dias úteis depois que os documentos estiverem completos.'],
-    ['event' => 'Proposta ou decisão relevante', 'goal' => 'Comunicar em até 1 dia útil, antes se houver prazo curto', 'miss' => 'Advogado assume a comunicação', 'public' => 'Toda proposta do banco ou decisão relevante chega até você em até 1 dia útil.'],
-    ['event' => 'Caso sem novidade', 'goal' => 'Atualizar a cada 15 dias corridos', 'miss' => 'Tarefa automática para o gestor', 'public' => 'Mesmo sem novidade, você recebe notícia do seu caso a cada 15 dias.'],
+    ['event' => 'Proposta ou decisão relevante', 'goal' => 'Comunicar em até 1 dia útil, antes se houver prazo curto', 'miss' => 'Comunicar ao cliente ainda hoje', 'public' => 'Toda proposta do banco ou decisão relevante chega até você em até 1 dia útil.'],
+    ['event' => 'Caso sem novidade', 'goal' => 'Atualizar a cada 15 dias corridos', 'miss' => 'Dar notícia ao cliente com a próxima data', 'public' => 'Mesmo sem novidade, você recebe notícia do seu caso a cada 15 dias.'],
 ];
 
 /** Etapa 3 — catálogo de documentos. */
@@ -413,6 +413,16 @@ const DOC_CATALOG = [
         'label' => 'Documento de identidade e comprovante de endereço do titular',
         'why'   => 'Identificação e representação.',
         'how'   => 'Foto legível do documento com CPF e de uma conta recente. Se já nos enviou, não precisa repetir.',
+    ],
+    'identidade' => [
+        'label' => 'Documento de identificação pessoal',
+        'why'   => 'Identifica você nos documentos da contratação, como a procuração.',
+        'how'   => 'Foto legível do RG ou da CNH (frente e verso). Não precisa mandar os dois.',
+    ],
+    'residencia' => [
+        'label' => 'Comprovante de residência',
+        'why'   => 'Confirma o endereço que vai nos documentos da contratação.',
+        'how'   => 'Conta de luz, água, telefone ou internet recente, em seu nome ou de quem mora com você.',
     ],
     'veiculo' => [
         'label' => 'Documento do veículo (CRLV)',
@@ -445,9 +455,9 @@ const DOC_CATALOG = [
         'how'   => 'Normalmente vem junto com a cobrança do saldo. Se o banco não enviou, a ausência também é um dado importante.',
     ],
     'renda' => [
-        'label' => 'Renda e despesas essenciais',
-        'why'   => 'Ajuda a desenhar um acordo que caiba no orçamento e, quando for o caso, avaliar gratuidade.',
-        'how'   => 'Uma ficha simples basta. Documentos de renda só quando o pedido de justiça gratuita for considerado.',
+        'label' => 'Comprovante de renda',
+        'why'   => 'Permite a Sidney avaliar o pedido de justiça gratuita que você pediu para considerar.',
+        'how'   => 'Holerite, extrato de benefício, declaração de imposto de renda ou extrato bancário recente.',
     ],
 ];
 

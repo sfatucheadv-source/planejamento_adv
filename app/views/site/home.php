@@ -21,7 +21,7 @@ $open = is_open();
           <a class="fq-option" href="<?= e(url('comecar', ['aviso' => 'nao_sei', 'origem' => 'home'])) ?>">Não sei dizer</a>
         </div>
         <p class="fq-foot">
-          <span class="availability <?= $open ? 'is-open' : '' ?>"><span class="dot" aria-hidden="true"></span><?= $open ? 'Equipe em atendimento agora' : 'Fora do horário · retornamos ' . e(fmt_when(next_opening())) ?></span>
+          <span class="availability <?= $open ? 'is-open' : '' ?>"><span class="dot" aria-hidden="true"></span><?= $open ? 'Sidney em atendimento agora' : 'Fora do horário · retornamos ' . e(fmt_when(next_opening())) ?></span>
           <a href="<?= e(whatsapp_link('Olá! Vim pelo site e gostaria de falar sobre meu financiamento de veículo.')) ?>" target="_blank" rel="noopener">Prefere conversar direto? Chame no WhatsApp</a>
         </p>
       </div>
@@ -37,7 +37,7 @@ $open = is_open();
         <div class="person-card">
           <?php partial('mark', ['size' => 54, 'light' => true]) ?>
           <blockquote>“Examino os documentos, respondo às dúvidas e oriento a forma de enfrentar o caso.”</blockquote>
-          <p class="person-line">Você fala com uma pessoa da equipe desde o primeiro contato e sempre sabe qual é o próximo passo.</p>
+          <p class="person-line">O assistente virtual organiza suas informações. Sidney analisa o caso e conversa com você sobre as opções.</p>
           <p class="person-name"><strong>Sidney Fatuche</strong><span>Advogado · OAB/PR 131.033</span></p>
           <ul class="person-facts">
             <li>Atendimento digital para todo o Brasil</li>
@@ -52,7 +52,7 @@ $open = is_open();
 
 <section class="section trust-strip" aria-label="Como trabalhamos">
   <div class="wrap trust-grid">
-    <div><strong>Gente de verdade do outro lado</strong><span>Uma pessoa da equipe acompanha seu caso do começo ao fim. Você não precisa procurar cada setor.</span></div>
+    <div><strong>Atendimento com Sidney</strong><span>Depois da coleta, você conversa diretamente com o advogado. Sem repassar seu caso de pessoa em pessoa.</span></div>
     <div><strong>Nada é decidido sem você</strong><span>Toda oferta do banco e toda decisão importante são explicadas e confirmadas por escrito.</span></div>
     <div><strong>Sem promessas fáceis</strong><span>Mostramos o que é regular, o que merece discussão e o que ainda depende de prova.</span></div>
   </div>
@@ -88,8 +88,9 @@ $open = is_open();
     </div>
     <div>
       <p class="kicker">Como funciona</p>
-      <h2>Cinco situações, sempre com o próximo passo à vista</h2>
-      <p>Por dentro, o trabalho tem muitas etapas: cálculos, negociação, prazos, processo. Para você, mostramos só o que importa: onde o caso está, o que a equipe vai fazer e se você precisa agir.</p>
+      <h2>Primeiro, o atendimento inicial; depois, a solução</h2>
+      <p><strong>Atendimento inicial:</strong> o assistente reúne suas informações e documentos (você pode parar e continuar depois), Sidney analisa o financiamento, vocês conversam por Google Meet, telefone, WhatsApp ou pelo chat do site, e você recebe a proposta. Concluir essa parte não significa que a dívida foi resolvida.</p>
+      <p><strong>Se você contratar,</strong> a atuação segue nas situações abaixo, sempre com o próximo passo à vista:</p>
       <ol class="journey">
         <?php
         $yours = [
@@ -121,11 +122,12 @@ $open = is_open();
   <div class="wrap">
     <header class="section-head">
       <p class="kicker kicker-light">Compromissos de atendimento</p>
-      <h2>O que você pode esperar da equipe</h2>
-      <p>São as metas internas que perseguimos todos os dias. Prazos do banco e da Justiça não dependem de nós, e quando uma meta atrasar, você é avisado antes, com nova data.</p>
+      <h2>O que você pode esperar</h2>
+      <p>O atendimento humano é realizado por Sidney. Informamos o próximo retorno e avisamos se a previsão mudar. Documentos ou prazos urgentes recebem prioridade para avaliação.</p>
     </header>
     <ul class="goals">
-      <?php foreach (SERVICE_GOALS as $g): ?><li><?= e($g['public']) ?></li><?php endforeach ?>
+      <li>O assistente virtual funciona a qualquer hora, mas não é plantão do advogado.</li>
+      <li>Você sabe sempre qual é o próximo passo e a data do próximo retorno.</li>
       <li>Nunca pedimos senha do banco, do Gov.br ou código de autenticação.</li>
       <li>Custos explicados por escrito antes de qualquer despesa.</li>
     </ul>

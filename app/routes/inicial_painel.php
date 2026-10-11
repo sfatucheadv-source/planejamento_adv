@@ -1,0 +1,642 @@
+<?php
+declare(strict_types=1);
+
+/**
+ * Painel do operador único (seção 11): lista de atendimentos e ficha com cinco
+ * blocos. Salvar mantém Sidney na mesma ficha e posição; as travas valem para
+ * confirmar atos, não para navegar.
+ */
+
+/** @var Router $router */
+
+function require_case_operator(int $id): array
+{
+    $u = require_user();
+    $c = find_case($id);
+    if (!can_operate($c, $u)) {
+        forbidden();
+    }
+    return $c;
+}
+
+/* ---------- Lista de atendimentos (seção 11.1) ---------- */
+
+const ATTENDANCE_FILTERS = ['todos' => 'Todos', 'urgentes' => 'Urgentes', 'retorno' => 'Retorno hoje/vencido', 'aguardando' => 'Aguardando cliente', 'concluidos' => 'Concluídos'];
+
+$router->get('/painel/atendimentos', function () {
+    $u = require_user();
+    $filter = (string) input('f', 'todos');
+    $filter = isset(ATTENDANCE_FILTERS[$filter]) ? $filter : 'todos';
+    $where = ["workflow_version = 'simple_v1'", 'execution_started_at IS NULL', 'operator_id = ?'];
+    $params = [(int) $u['id']];
+    $where[] = $filter === 'concluidos' ? "initial_status = 'completed'" : "initial_status <> 'completed'";
+    if (($term = trim((string) input('q'))) !== '') {
+        $where[] = '(client_name LIKE ? OR protocol LIKE ? OR client_phone LIKE ? OR bank LIKE ? OR id IN (SELECT case_id FROM case_fields WHERE field = \'contrato_numero\' AND value LIKE ?))';
+        $like = '%' . $term . '%';
+        array_push($params, $like, $like, '%' . (only_digits($term) ?: '§') . '%', $like, $like);
+    }
+    $rows = [];
+    $today = now()->format('Y-m-d 23:59:59');
+    foreach (all('SELECT * FROM cases WHERE ' . implode(' AND ', $where), $params) as $c) {
+        $alerts = initial_alerts($c);
+        $due = $c['next_client_update'] ?: $c['next_action_due'];
+        $urgent = $c['urgency_signal'] && !$c['urgency_reviewed_at'] || array_filter($alerts, fn($a) => str_starts_with($a[1], 'Prazo confirmado'));
+        $waitingClient = in_array($c['initial_status'], ['collecting', 'awaiting_decision'], true) && !$c['activity_at'] || ($c['initial_status'] === 'collecting' && !$c['intake_done_at']) || ($c['initial_status'] === 'awaiting_decision' && $c['decision'] === 'pendente');
+        if ($filter === 'urgentes' && !$urgent) {
+            continue;
+        }
+        if ($filter === 'retorno' && !($due && $due <= $today)) {
+            continue;
+        }
+        if ($filter === 'aguardando' && !$waitingClient) {
+            continue;
+        }
+        $pend = open_pendings((int) $c['id']);
+        $rows[] = [
+            'c' => $c, 'alerts' => $alerts, 'urgent' => (bool) $urgent, 'due' => $due,
+            'pending' => $pend[0]['description'] ?? null, 'new' => $c['activity_at'] && (!$c['activity_seen_at'] || $c['activity_at'] > $c['activity_seen_at']),
+            'contract' => fv((int) $c['id'], 'contrato_numero'),
+        ];
+    }
+    // Ordenação: urgência/prazo confirmado, retorno vencido/hoje, demais retornos, atualização.
+    usort($rows, function ($a, $b) use ($today) {
+        $rank = fn($r) => [$r['urgent'] ? 0 : 1, $r['new'] ? 0 : 1, $r['due'] && $r['due'] <= $today ? 0 : 1, $r['due'] ?: '9999', $r['c']['updated_at']];
+        return $rank($a) <=> $rank($b);
+    });
+    view('panel/atendimentos', ['meta_title' => 'Atendimentos · Painel', 'rows' => $rows, 'filter' => $filter, 'u' => $u], 'panel');
+});
+
+$router->get('/painel/atendimentos/novo', function () {
+    require_user();
+    view('panel/atendimento_novo', ['meta_title' => 'Registrar atendimento · Painel', 'errors' => [], 'old' => []], 'panel');
+});
+
+/** Alternativa assistida: Sidney registra o que recebeu por telefone ou WhatsApp. */
+$router->post('/painel/atendimentos/novo', function () {
+    $u = require_user();
+    if (!is_operator($u)) {
+        flash('error', 'Somente o operador configurado registra atendimentos novos.');
+        redirect('painel/atendimentos');
+    }
+    $a = ['nome' => trim((string) input('nome')), 'telefone' => (string) input('telefone'), 'email' => trim((string) input('email')), 'adaptacao' => '', 'origem' => 'painel'];
+    $errors = [];
+    if (mb_strlen($a['nome']) < 2) {
+        $errors['nome'] = 'Informe o nome.';
+    }
+    if (strlen(only_digits($a['telefone'])) < 10) {
+        $errors['telefone'] = 'Informe o telefone com DDD.';
+    }
+    if ($a['email'] !== '' && !filter_var($a['email'], FILTER_VALIDATE_EMAIL)) {
+        $errors['email'] = 'Confira o e-mail.';
+    }
+    if ($errors) {
+        view('panel/atendimento_novo', ['meta_title' => 'Registrar atendimento · Painel', 'errors' => $errors, 'old' => $_POST], 'panel', 422);
+    }
+    $c = create_initial_case($a, (string) input('source', 'whatsapp'));
+    $id = (int) $c['id'];
+    if (isset(NOTICE_OPTIONS[(string) input('aviso')])) {
+        set_field($id, 'aviso', (string) input('aviso'), 'informado', 'sidney');
+        update_urgency_signal($id);
+    }
+    if (($t = trim((string) input('relato'))) !== '') {
+        set_field($id, 'objetivo_texto', $t, 'informado', 'sidney');
+    }
+    sync_intake_documents($id);
+    bump_case($id, ['activity_seen_at' => now_str()]);
+    audit('atendimento_registrado', $id);
+    flash('ok', 'Atendimento ' . $c['protocol'] . ' registrado.');
+    redirect('painel/atendimento/' . $id);
+});
+
+/* ---------- Ficha (seção 11.2) ---------- */
+
+$router->get('/painel/atendimento/{id}', function (string $id) {
+    $c = require_case_operator((int) $id);
+    if (!is_initial($c)) {
+        redirect('painel/caso/' . $c['id']);
+    }
+    $cid = (int) $c['id'];
+    q('UPDATE cases SET activity_seen_at = ? WHERE id = ?', [now_str(), $cid]);
+    $c = find_case($cid);
+    view('panel/atendimento', [
+        'meta_title' => $c['client_name'] . ' · ' . $c['protocol'],
+        'c' => $c,
+        'fields' => case_fields($cid, true),
+        'docs' => all('SELECT * FROM documents WHERE case_id = ? ORDER BY essential DESC, id', [$cid]),
+        'files' => all('SELECT * FROM files WHERE case_id = ? ORDER BY uploaded_at DESC', [$cid]),
+        'pendings' => all('SELECT * FROM case_pending_items WHERE case_id = ? ORDER BY status = \'aberta\' DESC, id DESC', [$cid]),
+        'open' => open_pendings($cid),
+        'alerts' => initial_alerts($c),
+        'meetings' => all('SELECT * FROM case_meetings WHERE case_id = ? ORDER BY id DESC', [$cid]),
+        'meeting' => current_meeting($cid),
+        'kit' => kit_status($c),
+        'versions' => all('SELECT * FROM case_artifact_versions WHERE case_id = ? ORDER BY kind, version DESC', [$cid]),
+        'chat' => all('SELECT * FROM chat_messages WHERE case_id = ? ORDER BY id', [$cid]),
+        'events' => all('SELECT * FROM events WHERE case_id = ? ORDER BY at DESC, id DESC LIMIT 60', [$cid]),
+        'deadlines' => all("SELECT * FROM deadlines WHERE case_id = ? ORDER BY status, due_at", [$cid]),
+        'q' => bot_current($c),
+        'prev' => $c['previous_case_id'] ? one('SELECT id, protocol, initial_status FROM cases WHERE id = ?', [$c['previous_case_id']]) : null,
+        'dup' => $c['duplicate_of'] ? one('SELECT id, protocol, client_name FROM cases WHERE id = ?', [$c['duplicate_of']]) : null,
+        'next_cases' => all('SELECT id, protocol FROM cases WHERE previous_case_id = ?', [$cid]),
+        'code' => $_SESSION['portal_code_' . $cid] ?? null,
+    ], 'panel');
+});
+
+$router->get('/painel/atendimento/{id}/conversa/novas', function (string $id) {
+    $c = require_case_operator((int) $id);
+    $after = (int) input('depois');
+    $msgs = all('SELECT * FROM chat_messages WHERE case_id = ? AND id > ? ORDER BY id', [$c['id'], $after]);
+    if ($msgs) {
+        q('UPDATE cases SET activity_seen_at = ? WHERE id = ?', [now_str(), $c['id']]);
+    }
+    json_out(['html' => render('partials/chat_msgs', ['msgs' => $msgs, 'operator' => true, 'c' => $c]), 'last' => $msgs ? (int) end($msgs)['id'] : $after]);
+});
+
+$router->get('/painel/atendimento/{id}/kit/{vid}', function (string $id, string $vid) {
+    $c = require_case_operator((int) $id);
+    $v = kit_version($c, (int) $vid) ?? not_found();
+    if (input('baixar') === '1') {
+        kit_download($c, $v);
+    }
+    view('panel/kit_doc', ['c' => $c, 'v' => $v, 'meta_title' => KIT_ITEMS[$v['kind']]['label'] . ' v' . $v['version'], 'client' => false], 'print');
+});
+
+$router->post('/painel/atendimento/{id}', function (string $id) {
+    $c = require_case_operator((int) $id);
+    $anchor = initial_panel_action($c, (string) input('op'));
+    redirect('painel/atendimento/' . $c['id'] . '#' . $anchor);
+});
+
+/** Executa uma ação da ficha e devolve a âncora do bloco. */
+function initial_panel_action(array $c, string $op): string
+{
+    $id = (int) $c['id'];
+    $msg = fn(?string $err, string $ok) => flash($err ? 'error' : 'ok', $err ?: $ok);
+    switch ($op) {
+        case 'dados':
+            if (version_conflict($c)) {
+                flash('error', 'Os dados mudaram enquanto você editava (cliente ou assistente). Nada foi sobrescrito: confira os valores atuais e salve de novo.');
+                return 'dados';
+            }
+            $source = in_array(input('source'), ['contrato', 'sidney', 'cliente'], true) ? (string) input('source') : 'sidney';
+            $errs = [];
+            $changed = 0;
+            foreach ((array) ($_POST['f'] ?? []) as $key => $raw) {
+                $def = field_def((string) $key);
+                if (!$def) {
+                    continue;
+                }
+                $state = (string) ($_POST['st'][$key] ?? 'informado');
+                $raw = trim((string) $raw);
+                $cur = case_fields($id)[$key] ?? null;
+                if ($state === 'informado' && $raw === '') {
+                    continue; // campo vazio na tela: não apaga silenciosamente
+                }
+                if ($state !== 'informado' && $cur && $cur['state'] === $state) {
+                    continue;
+                }
+                if ($state === 'informado' && $cur && field_input_value((string) $key, $cur) === $raw) {
+                    continue;
+                }
+                $src = !empty($def['sidney']) ? 'sidney' : $source;
+                if ($e = set_field($id, (string) $key, $raw, $state, $src)) {
+                    $errs[] = $def['label'] . ': ' . $e;
+                } else {
+                    $changed++;
+                }
+            }
+            foreach (['aviso', 'processo_existente', 'objetivo_prioridade', 'gratuidade', 'aviso_data'] as $k) {
+                if (isset($_POST['f'][$k])) {
+                    bot_after_answer($id, $k);
+                }
+            }
+            bump_case($id, []);
+            flash($errs ? 'error' : 'ok', $errs ? implode(' ', $errs) : ($changed ? 'Dados salvos.' : 'Nada mudou.'));
+            return (string) input('anchor', 'dados');
+
+        case 'analise':
+        case 'aprovar_preparacao':
+            if (version_conflict($c)) {
+                flash('error', 'A ficha mudou enquanto você editava. Nada foi sobrescrito: confira e salve de novo.');
+                return 'analise';
+            }
+            $errs = [];
+            foreach ((array) ($_POST['f'] ?? []) as $key => $raw) {
+                $def = field_def((string) $key);
+                if (!$def || empty($def['sidney'])) {
+                    continue;
+                }
+                $raw = trim((string) $raw);
+                $cur = case_fields($id)[$key] ?? null;
+                if ($raw === '') {
+                    if ($cur && $cur['state'] === 'informado') {
+                        q('DELETE FROM case_fields WHERE case_id = ? AND field = ?', [$id, $key]);
+                        case_fields($id, true);
+                    }
+                    continue;
+                }
+                if ($cur && field_input_value((string) $key, $cur) === $raw) {
+                    continue;
+                }
+                if ($e = set_field($id, (string) $key, $raw, 'informado', 'sidney')) {
+                    $errs[] = $def['label'] . ': ' . $e;
+                }
+            }
+            if ($errs) {
+                flash('error', implode(' ', $errs));
+                return 'analise';
+            }
+            if ($op === 'aprovar_preparacao') {
+                $msg(initial_command(find_case($id), 'aprovar_preparacao', $_POST), 'Análise e proposta validadas. A reunião pode ser confirmada.');
+            } else {
+                bump_case($id, []);
+                flash('ok', 'Análise salva (preliminar).');
+            }
+            return 'analise';
+
+        case 'urgencia_revisar':
+            $op = trim((string) input('opinion'));
+            if ($op === '') {
+                flash('error', 'Registre um parecer breve sobre a urgência.');
+                return 'dados';
+            }
+            bump_case($id, ['urgency_reviewed_at' => now_str(), 'urgency_opinion' => mb_substr($op, 0, 1000), 'urgent' => input('confirmed') === '1' ? 1 : 0]);
+            if (($due = (string) input('due_at')) !== '' && ($d = dt(str_replace('T', ' ', $due)))) {
+                insert('deadlines', ['case_id' => $id, 'description' => mb_substr(trim((string) input('deadline')) ?: 'Prazo confirmado por Sidney', 0, 200), 'trigger_event' => $c['urgency_reason'], 'due_at' => $d->format('Y-m-d H:i:s'), 'owner_id' => $c['operator_id'], 'status' => 'aberto']);
+            }
+            add_event($id, 'urgencia', 'Urgência conferida por Sidney', $op);
+            flash('ok', 'Urgência conferida.');
+            return 'dados';
+
+        case 'prazo_cumprido':
+            q("UPDATE deadlines SET status = 'cumprido', done_at = ? WHERE id = ? AND case_id = ?", [now_str(), (int) input('deadline_id'), $id]);
+            return 'dados';
+
+        case 'proxima':
+            $due = dt(str_replace('T', ' ', (string) input('due')));
+            $ret = dt(str_replace('T', ' ', (string) input('client_return')));
+            if (trim((string) input('action')) === '' || !$due) {
+                flash('error', 'Informe a próxima ação e a data.');
+                return 'topo';
+            }
+            set_next($id, trim((string) input('action')), $due->format('Y-m-d H:i:s'), $ret ? $ret->format('Y-m-d H:i:s') : null);
+            flash('ok', 'Próxima ação atualizada.');
+            return 'topo';
+
+        case 'pendencia_add':
+            $desc = trim((string) input('description'));
+            if ($desc === '') {
+                flash('error', 'Descreva a pendência.');
+                return 'documentos';
+            }
+            add_pending($id, (string) input('type'), $desc, (string) input('criticality'));
+            flash('ok', 'Pendência registrada.');
+            return 'documentos';
+
+        case 'pendencia_status':
+            $st = (string) input('status');
+            if (isset(PENDING_STATUS[$st])) {
+                q('UPDATE case_pending_items SET status = ?, criticality = COALESCE(?, criticality), resolved_at = ?, note = COALESCE(?, note) WHERE id = ? AND case_id = ?', [
+                    $st, in_array(input('criticality'), ['essencial', 'pontual'], true) ? input('criticality') : null, $st === 'aberta' ? null : now_str(),
+                    trim((string) input('note')) ?: null, (int) input('item_id'), $id,
+                ]);
+                bump_case($id, []);
+            }
+            return (string) input('anchor', 'documentos');
+
+        case 'doc_conferir':
+            $doc = one('SELECT * FROM documents WHERE id = ? AND case_id = ?', [(int) input('doc_id'), $id]);
+            $st = (string) input('status');
+            if (!$doc || !in_array($st, ['conferido', 'pendencia', 'dispensado', 'falta', 'ajuda'], true)) {
+                return 'documentos';
+            }
+            $reason = trim((string) input('reason'));
+            if ($st === 'pendencia' && $reason === '') {
+                flash('error', 'Diga em palavras simples por que precisa reenviar.');
+                return 'documentos';
+            }
+            q('UPDATE documents SET status = ?, reject_reason = ?, essential = ?, reviewed_at = ?, reviewed_by = ? WHERE id = ?', [
+                $st, $st === 'pendencia' ? mb_substr($reason, 0, 200) : null, input('essential') === '1' ? 1 : 0,
+                in_array($st, ['conferido', 'pendencia'], true) ? now_str() : $doc['reviewed_at'], current_user()['id'], $doc['id'],
+            ]);
+            q('UPDATE files SET reviewed_at = ? WHERE document_id = ? AND reviewed_at IS NULL', [now_str(), $doc['id']]);
+            if ($st === 'pendencia') {
+                $later = case_data($c, 'doc_later', []);
+                unset($later[$doc['kind']]);
+                set_case_data($id, 'doc_later', $later);
+                add_event($id, 'documento', 'Precisamos de nova cópia: ' . $doc['label'], $reason, true);
+            } elseif ($st === 'conferido') {
+                add_event($id, 'documento', 'Conferido: ' . $doc['label'], null, true);
+            }
+            bump_case($id, []);
+            flash('ok', 'Documento atualizado.');
+            return 'doc-' . $doc['id'];
+
+        case 'doc_add':
+            $kind = (string) input('kind');
+            $label = trim((string) input('label'));
+            if (isset(DOC_CATALOG[$kind])) {
+                $label = DOC_CATALOG[$kind]['label'];
+            } elseif ($label === '') {
+                flash('error', 'Escolha o tipo ou descreva o documento.');
+                return 'documentos';
+            } else {
+                $kind = 'outro_' . substr(sha1($label . microtime()), 0, 6);
+            }
+            if (scalar('SELECT 1 FROM documents WHERE case_id = ? AND kind = ?', [$id, $kind])) {
+                flash('error', 'Este documento já está no checklist.');
+                return 'documentos';
+            }
+            insert('documents', ['case_id' => $id, 'kind' => $kind, 'label' => mb_substr($label, 0, 150), 'status' => 'falta', 'essential' => input('essential') === '1' ? 1 : 0, 'requested_at' => now_str(), 'origin' => 'sidney']);
+            flash('ok', 'Documento incluído no checklist.');
+            return 'documentos';
+
+        case 'doc_upload':
+            $doc = one('SELECT * FROM documents WHERE id = ? AND case_id = ?', [(int) input('doc_id'), $id]);
+            $files = uploaded_files('arquivo');
+            if (!$doc || !$files) {
+                flash('error', 'Escolha o documento e o arquivo.');
+                return 'documentos';
+            }
+            foreach ($files as $f) {
+                $r = store_case_file($f, $id, (int) $doc['id'], false);
+                if (is_string($r)) {
+                    flash('error', $r);
+                    return 'documentos';
+                }
+            }
+            $origin = trim((string) input('origin')) ?: 'obtido por Sidney';
+            q("UPDATE documents SET status = 'recebido', received_at = ?, origin = ?, reject_reason = NULL WHERE id = ?", [now_str(), mb_substr($origin, 0, 80), $doc['id']]);
+            add_event($id, 'documento', 'Arquivo registrado por Sidney: ' . $doc['label'], 'Origem: ' . $origin);
+            if ($c['preparation_at'] && in_array($doc['kind'], ['contrato', 'historico'], true)) {
+                bump_case($id, ['review_flag' => 'analise']);
+            } else {
+                bump_case($id, []);
+            }
+            flash('ok', 'Arquivo registrado. Confira para concluir.');
+            return 'doc-' . $doc['id'];
+
+        case 'arquivo_interno':
+            $kind = in_array(input('kind'), ['memoria', 'assinado', 'nota'], true) ? (string) input('kind') : 'nota';
+            $files = uploaded_files('arquivo');
+            if (!$files) {
+                flash('error', 'Escolha o arquivo.');
+                return $kind === 'assinado' ? 'kit' : 'analise';
+            }
+            foreach ($files as $f) {
+                $r = store_case_file($f, $id, null, false, null, $kind, $kind !== 'assinado');
+                if (is_string($r)) {
+                    flash('error', $r);
+                    return 'analise';
+                }
+            }
+            add_event($id, 'arquivo', $kind === 'memoria' ? 'Memória de cálculo anexada' : ($kind === 'assinado' ? 'Instrumento assinado anexado' : 'Arquivo interno anexado'));
+            flash('ok', 'Arquivo anexado.');
+            return $kind === 'assinado' ? 'kit' : 'analise';
+
+        case 'pedir_complemento':
+            $items = [];
+            foreach ((array) ($_POST['docs'] ?? []) as $did) {
+                if ($d = one('SELECT label FROM documents WHERE id = ? AND case_id = ?', [(int) $did, $id])) {
+                    $items[] = $d['label'];
+                }
+            }
+            foreach ((array) ($_POST['items'] ?? []) as $pid) {
+                if ($p = one("SELECT description FROM case_pending_items WHERE id = ? AND case_id = ? AND status = 'aberta'", [(int) $pid, $id])) {
+                    $items[] = $p['description'];
+                }
+            }
+            if (($extra = trim((string) input('extra'))) !== '') {
+                add_pending($id, 'esclarecimento', $extra, (string) input('criticality', 'pontual'));
+                $items[] = $extra;
+            }
+            $ret = parse_br_date((string) input('return_at'));
+            if (!$items || !$ret) {
+                flash('error', 'Escolha o que falta e a data do próximo retorno.');
+                return 'documentos';
+            }
+            $text = 'Para continuar, falta apenas: ' . implode('; ', $items) . '. Você pode enviar aqui. Se não tiver algum item, me avise.';
+            chat_post($id, 'operator', $text);
+            add_event($id, 'complemento', 'Pedido de complemento', $text, true);
+            set_next($id, 'Conferir o complemento pedido', $ret . ' 18:00:00', $ret . ' 18:00:00');
+            bump_case($id, ['client_next_action' => 'Enviar: ' . mb_substr(implode('; ', $items), 0, 180)]);
+            flash('ok', 'Pedido de complemento enviado na conversa do cliente.');
+            return 'documentos';
+
+        case 'liberar_analise':
+        case 'confirmar_reuniao':
+        case 'registrar_reuniao':
+        case 'reanalisar':
+        case 'registrar_decisao':
+        case 'finalizar':
+        case 'encerrar_antes':
+        case 'comunicar_encerramento':
+            $ok = [
+                'liberar_analise' => 'Suficiência aprovada. Atendimento em análise.',
+                'confirmar_reuniao' => 'Reunião confirmada e comunicada ao cliente.',
+                'registrar_reuniao' => 'Reunião registrada.',
+                'reanalisar' => 'Atendimento voltou para análise.',
+                'registrar_decisao' => 'Decisão registrada.',
+                'finalizar' => 'Atendimento inicial concluído.',
+                'encerrar_antes' => 'Atendimento inicial encerrado.',
+                'comunicar_encerramento' => 'Comunicação registrada; a carência de acesso começou.',
+            ][$op];
+            $msg(initial_command($c, $op, $_POST), $ok);
+            return match ($op) {
+                'liberar_analise' => 'documentos',
+                'confirmar_reuniao', 'registrar_reuniao' => 'reuniao',
+                'reanalisar' => 'analise',
+                default => 'kit',
+            };
+
+        case 'contrato':
+            $file = (int) input('signed_file_id');
+            if ($file === 0 && ($files = uploaded_files('arquivo'))) {
+                $r = store_case_file($files[0], $id, null, false, null, 'assinado', false);
+                if (is_string($r)) {
+                    flash('error', $r);
+                    return 'kit';
+                }
+                $file = $r;
+            }
+            $in = $_POST;
+            $in['signed_file_id'] = $file;
+            $msg(initial_command($c, 'contrato', $in), 'Situação do contrato atualizada.');
+            return 'kit';
+
+        case 'kit_gerar':
+            $msg(kit_generate($c, (string) input('kind')), 'Minuta gerada com os dados atuais.');
+            return 'kit-' . input('kind');
+        case 'kit_editar':
+            $msg(kit_edit($c, (int) input('vid'), (string) ($_POST['content'] ?? '')), 'Minuta salva. Revise de novo antes de publicar.');
+            return 'kit-' . input('kind');
+        case 'kit_revisar':
+            $msg(kit_review($c, (int) input('vid')), 'Documento revisado.');
+            return 'kit-' . input('kind');
+        case 'kit_publicar':
+            $msg(kit_publish($c, (int) input('vid')), 'Documento publicado para o cliente.');
+            return 'kit-' . input('kind');
+        case 'kit_na':
+            $msg(kit_not_applicable($c, (string) input('kind'), (string) input('reason')), 'Marcado como não aplicável.');
+            return 'kit-' . input('kind');
+
+        case 'chat_enviar':
+            $text = trim((string) input('message'));
+            if ($text !== '') {
+                chat_post($id, 'operator', $text, null, (string) input('k') ?: null);
+                bump_case($id, ['activity_seen_at' => now_str()]);
+            }
+            if (input('ajax') === '1') {
+                json_out(['ok' => true]);
+            }
+            return 'conversa';
+
+        case 'chat_modo':
+            $mode = input('mode') === 'bot' ? 'bot' : 'human';
+            bump_case($id, ['chat_mode' => $mode, 'intake_edit' => null]);
+            add_event($id, 'conversa', $mode === 'human' ? 'Sidney assumiu a conversa' : 'Coleta automática retomada');
+            chat_post($id, $mode === 'human' ? 'operator' : 'bot', $mode === 'human'
+                ? 'Olá, aqui é o Sidney. A partir de agora sou eu que converso com você por aqui.'
+                : 'Vou retomar a organização das informações que ainda faltam.');
+            return 'conversa';
+
+        case 'duplicidade_ok':
+            bump_case($id, ['duplicate_of' => null]);
+            add_event($id, 'duplicidade', 'Sidney conferiu a possível duplicidade', trim((string) input('note')) ?: null);
+            return 'topo';
+
+        case 'novo_vinculado':
+            if (!$c['account_id'] && input('confirm') !== '1') {
+                flash('error', 'Confirme a identidade do cliente antes de abrir o novo atendimento.');
+                return 'kit';
+            }
+            if ($c['account_id'] && ($cur = one("SELECT protocol FROM cases WHERE account_id = ? AND workflow_version = 'simple_v1' AND execution_started_at IS NULL AND initial_status <> 'completed'", [$c['account_id']]))) {
+                flash('error', 'O cliente já tem um atendimento pré-contratual atual (' . $cur['protocol'] . ').');
+                return 'kit';
+            }
+            $n = create_initial_case(['nome' => $c['client_name'], 'telefone' => (string) $c['client_phone'], 'email' => (string) $c['client_email'], 'adaptacao' => (string) $c['accessibility'], 'origem' => 'retorno'], 'retorno', $c['account_id'] ? (int) $c['account_id'] : null, $id);
+            foreach (case_fields($id) as $k => $r) {
+                $def = field_def($k);
+                if ($def && empty($def['sidney']) && !field_answered((int) $n['id'], $k) && $r['state'] === 'informado' && in_array($def['g'], ['qualificacao', 'endereco', 'relacao', 'financiamento'], true)) {
+                    q('INSERT INTO case_fields (case_id, field, value, state, source, updated_at) VALUES (?,?,?,?,?,?)', [$n['id'], $k, $r['value'], 'informado', 'anterior', now_str()]);
+                }
+            }
+            sync_intake_documents((int) $n['id']);
+            bump_case($id, ['return_requested_at' => null]);
+            add_event($id, 'vinculo', 'Novo atendimento aberto: ' . $n['protocol']);
+            flash('ok', 'Novo atendimento ' . $n['protocol'] . ' aberto e vinculado. Os dados trazidos precisam de confirmação de atualidade.');
+            redirect('painel/atendimento/' . $n['id']);
+
+        case 'codigo_portal':
+            $code = random_code(8, '0123456789');
+            bump_case($id, ['portal_code_hash' => password_hash($code, PASSWORD_DEFAULT), 'portal_code_expires' => now()->modify('+7 days')->format('Y-m-d H:i:s')]);
+            $_SESSION['portal_code_' . $id] = $code;
+            add_event($id, 'portal', 'Código de acesso gerado (válido por 7 dias)');
+            return 'topo';
+    }
+    flash('error', 'Ação desconhecida.');
+    return 'topo';
+}
+
+/* ---------- Modelos de documentos (sem editar PHP) ---------- */
+
+$router->get('/painel/modelos-documentos', function () {
+    require_user();
+    seed_templates();
+    view('panel/modelos_documentos', [
+        'meta_title' => 'Modelos de documentos · Painel',
+        'templates' => all('SELECT * FROM doc_templates ORDER BY key'),
+        'vars' => template_var_labels(),
+        'edit' => (string) input('editar'),
+    ], 'panel');
+});
+
+$router->post('/painel/modelos-documentos', function () {
+    $u = require_user();
+    if (!is_operator($u) && !has_role('supervisor')) {
+        forbidden();
+    }
+    $key = (string) input('key');
+    $t = doc_template($key) ?? not_found();
+    if (input('op') === 'aprovar') {
+        q('UPDATE doc_templates SET approved_at = ?, approved_by = ? WHERE key = ?', [now_str(), $u['id'], $key]);
+        audit('modelo_aprovado', null, $key . ' v' . $t['version']);
+        flash('ok', 'Modelo aprovado. Documentos gerados com esta versão podem ser publicados.');
+    } else {
+        $body = str_replace("\r\n", "\n", (string) ($_POST['body'] ?? ''));
+        if (trim($body) === '') {
+            flash('error', 'O modelo não pode ficar vazio.');
+            redirect('painel/modelos-documentos?editar=' . $key);
+        }
+        [, $missing] = render_template($body, array_fill_keys(array_keys(template_var_labels()), 'x'));
+        $bad = array_filter($missing, fn($m) => str_starts_with($m, 'variável não aprovada'));
+        if ($bad) {
+            flash('error', 'Variáveis não reconhecidas: ' . implode(', ', $bad) . '.');
+            redirect('painel/modelos-documentos?editar=' . $key);
+        }
+        if ($body !== $t['body']) {
+            q('UPDATE doc_templates SET body = ?, title = ?, version = version + 1, approved_at = NULL, approved_by = NULL, updated_at = ? WHERE key = ?', [$body, mb_substr(trim((string) input('title')) ?: $t['title'], 0, 120), now_str(), $key]);
+            audit('modelo_editado', null, $key);
+            flash('ok', 'Nova versão do modelo salva. Revise e aprove para liberar a publicação.');
+        }
+    }
+    redirect('painel/modelos-documentos');
+});
+
+/* ---------- Configurações (operador, entrada, dados do escritório) ---------- */
+
+$router->get('/painel/configuracoes', function () {
+    $u = require_user();
+    view('panel/configuracoes', ['meta_title' => 'Configurações · Painel', 'users' => users_list(), 'u' => $u], 'panel');
+});
+
+$router->post('/painel/configuracoes', function () {
+    $u = require_user();
+    if (!has_role('supervisor') && !is_operator($u)) {
+        forbidden();
+    }
+    $op = (int) input('operator_user_id');
+    if ($op && !one('SELECT id FROM users WHERE id = ? AND active = 1', [$op])) {
+        flash('error', 'Usuário inválido.');
+        redirect('painel/configuracoes');
+    }
+    set_setting('operator_user_id', $op ? (string) $op : null);
+    set_setting('intake_workflow', input('intake_workflow') === 'legacy' ? 'legacy' : 'simple_v1');
+    set_setting('office_address', trim(mb_substr((string) input('office_address'), 0, 300)) ?: null);
+    if ($op) {
+        q("UPDATE cases SET operator_id = ? WHERE workflow_version = 'simple_v1' AND operator_id IS NULL", [$op]);
+    }
+    audit('configuracoes', null, 'operador=' . $op . ' entrada=' . setting('intake_workflow'));
+    flash('ok', 'Configurações salvas.');
+    redirect('painel/configuracoes');
+});
+
+/* ---------- Migração dos casos existentes (seção 15.2) ---------- */
+
+$router->get('/painel/migracao', function () {
+    require_user();
+    $rows = [];
+    foreach (all("SELECT * FROM cases WHERE workflow_version = 'legacy' ORDER BY status, id") as $c) {
+        $rows[] = ['c' => $c, 'class' => migration_class($c)];
+    }
+    view('panel/migracao', ['meta_title' => 'Migração · Painel', 'rows' => $rows], 'panel');
+});
+
+$router->post('/painel/migracao', function () {
+    $u = require_user();
+    if (!is_operator($u)) {
+        flash('error', 'Configure o operador antes de migrar atendimentos.');
+        redirect('painel/migracao');
+    }
+    $c = find_case((int) input('case_id'));
+    [$class, , $suggest] = migration_class($c);
+    $target = (string) input('target');
+    if ($c['workflow_version'] !== 'legacy' || !$suggest || !isset(INITIAL_STATUS[$target]) || $target === 'completed') {
+        flash('error', 'Este caso não é candidato à migração para o atendimento inicial.');
+        redirect('painel/migracao');
+    }
+    migrate_case_to_initial($c, $target);
+    flash('ok', 'Atendimento ' . $c['protocol'] . ' migrado. Confira a ficha.');
+    redirect('painel/atendimento/' . $c['id']);
+});
+

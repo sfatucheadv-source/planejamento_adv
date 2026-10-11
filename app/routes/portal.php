@@ -6,7 +6,15 @@ declare(strict_types=1);
 $router->get('/cliente', function () {
     $c = portal_case();
     if (!$c) {
-        redirect('cliente/entrar');
+        $acc = portal_account_id();
+        if ($acc && ($list = account_cases($acc))) {
+            $_SESSION['portal_case'] = (int) $list[0]['id'];
+            redirect('cliente');
+        }
+        redirect($acc ? 'cliente/sem-acesso' : 'cliente/entrar');
+    }
+    if (($c['workflow_version'] ?? 'legacy') === 'simple_v1' && empty($c['execution_started_at'])) {
+        portal_initial_view($c);
     }
     $id = (int) $c['id'];
     view('portal/painel', [
@@ -14,12 +22,13 @@ $router->get('/cliente', function () {
         'noindex' => true,
         'c' => $c,
         'docs' => client_documents($id),
-        'files' => all('SELECT * FROM files WHERE case_id = ? ORDER BY uploaded_at DESC', [$id]),
+        'files' => all('SELECT * FROM files WHERE case_id = ? AND internal = 0 ORDER BY uploaded_at DESC', [$id]),
         'decisions' => all('SELECT * FROM decisions WHERE case_id = ? AND answer IS NULL ORDER BY requested_at', [$id]),
         'answered' => all('SELECT * FROM decisions WHERE case_id = ? AND answer IS NOT NULL ORDER BY answered_at DESC LIMIT 5', [$id]),
         'events' => all('SELECT * FROM events WHERE case_id = ? AND visible_to_client = 1 ORDER BY at DESC, id DESC LIMIT 30', [$id]),
         'schedule' => all("SELECT * FROM schedule WHERE case_id = ? ORDER BY due_date", [$id]),
         'feedback' => one("SELECT * FROM feedback WHERE case_id = ? AND kind = 'encerramento'", [$id]),
+        'others' => portal_account_id() ? array_filter(account_cases(portal_account_id()), fn($o) => (int) $o['id'] !== $id) : [],
     ]);
 });
 
@@ -34,16 +43,23 @@ $router->post('/cliente/entrar', function () {
     $protocol = strtoupper(trim((string) input('protocol')));
     $bucket = 'portal:' . client_ip();
     if (too_many_attempts($bucket)) {
-        flash('error', 'Muitas tentativas seguidas. Aguarde 15 minutos ou peça ajuda pelo WhatsApp.');
+        flash('error', 'Muitas tentativas seguidas. Aguarde 15 minutos ou fale com Sidney pelo WhatsApp.');
         redirect('cliente/entrar');
     }
     $c = one('SELECT * FROM cases WHERE protocol = ?', [$protocol]);
-    if (!$c || !$c['portal_pass_hash'] || !password_verify((string) ($_POST['password'] ?? ''), $c['portal_pass_hash'])) {
+    $acc = $c && $c['account_id'] ? one('SELECT * FROM client_accounts WHERE id = ?', [$c['account_id']]) : null;
+    $hash = $acc['pass_hash'] ?? ($c['portal_pass_hash'] ?? null);
+    if (!$c || !$hash || !password_verify((string) ($_POST['password'] ?? ''), $hash)) {
         record_attempt($bucket);
-        flash('error', 'Protocolo ou senha não conferem. Se ainda não criou senha, use o código enviado pela equipe.');
+        flash('error', 'Protocolo ou senha não conferem. Se ainda não criou senha, use o código de acesso que você recebeu.');
         redirect('cliente/entrar');
     }
-    login_portal((int) $c['id']);
+    // O protocolo localiza a credencial; as permissões são calculadas para a conta verificada.
+    if (!$acc) {
+        login_portal((int) $c['id'], $hash);
+    } else {
+        login_account((int) $acc['id'], case_access_expired($c) ? null : (int) $c['id']);
+    }
     redirect('cliente');
 });
 
@@ -53,30 +69,29 @@ $router->post('/cliente/ativar', function () {
     $pass = (string) ($_POST['password'] ?? '');
     $bucket = 'portal:' . client_ip();
     if (too_many_attempts($bucket)) {
-        flash('error', 'Muitas tentativas seguidas. Aguarde 15 minutos ou peça ajuda pelo WhatsApp.');
+        flash('error', 'Muitas tentativas seguidas. Aguarde 15 minutos ou fale com Sidney pelo WhatsApp.');
         redirect('cliente/entrar');
     }
     $c = one('SELECT * FROM cases WHERE protocol = ?', [$protocol]);
     $valid = $c && $c['portal_code_hash'] && dt($c['portal_code_expires']) > now() && password_verify($code, $c['portal_code_hash']);
     if (!$valid) {
         record_attempt($bucket);
-        flash('error', 'Código inválido ou vencido. Peça um novo código à equipe.');
+        flash('error', 'Código inválido ou vencido. Peça um novo código a Sidney.');
         redirect('cliente/entrar');
     }
     if (mb_strlen($pass) < 8) {
         flash('error', 'Use pelo menos 8 caracteres na senha.');
         redirect('cliente/entrar');
     }
-    q('UPDATE cases SET portal_pass_hash = ?, portal_code_hash = NULL, portal_code_expires = NULL WHERE id = ?', [password_hash($pass, PASSWORD_DEFAULT), $c['id']]);
+    q('UPDATE cases SET portal_code_hash = NULL, portal_code_expires = NULL WHERE id = ?', [$c['id']]);
     add_event((int) $c['id'], 'portal', 'Cliente ativou o acesso à área do cliente', null, false, 'cliente');
-    login_portal((int) $c['id']);
+    login_portal((int) $c['id'], password_hash($pass, PASSWORD_DEFAULT));
     flash('ok', 'Acesso criado. Bem-vindo à sua área.');
     redirect('cliente');
 });
 
 $router->get('/cliente/sair', function () {
-    unset($_SESSION['portal_case']);
-    session_regenerate_id(true);
+    logout_portal();
     redirect('cliente/entrar');
 });
 

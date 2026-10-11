@@ -24,10 +24,10 @@
     </ul>
 
     <h2>Boletos e pagamentos ao banco</h2>
-    <p>Antes de pagar qualquer boleto de acordo, conferimos com você o beneficiário e a autenticidade pelo canal oficial do banco. Qualquer mudança de destinatário ou de valor exige nova conferência. Se algo parecer estranho, suspenda o pagamento e fale com a equipe.</p>
+    <p>Antes de pagar qualquer boleto de acordo, conferimos com você o beneficiário e a autenticidade pelo canal oficial do banco. Qualquer mudança de destinatário ou de valor exige nova conferência. Se algo parecer estranho, suspenda o pagamento e fale com Sidney.</p>
 
     <h2>Seus documentos</h2>
-    <p>Os arquivos enviados pela área do cliente ficam em área protegida, acessível apenas à equipe responsável pelo seu caso e a você, mediante login. Não usamos documentos nem relatos para divulgação do escritório.</p>
+    <p>Os arquivos enviados pela área do cliente ficam em área protegida, acessível apenas a Sidney e a você, mediante login. Não usamos documentos nem relatos para divulgação do escritório.</p>
 
     <h2>Confira a inscrição na OAB</h2>
     <p>Você pode conferir a inscrição de <?= e(office('lawyer')) ?> (<?= e(office('lawyer_oab')) ?>) no <a href="<?= e(office('oab_lookup_url')) ?>" target="_blank" rel="noopener">Cadastro Nacional dos Advogados</a>.</p>

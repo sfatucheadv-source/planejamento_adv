@@ -34,6 +34,8 @@ $router = new Router();
 require APP_DIR . '/routes/site.php';
 require APP_DIR . '/routes/portal.php';
 require APP_DIR . '/routes/panel.php';
+require APP_DIR . '/routes/inicial.php';
+require APP_DIR . '/routes/inicial_painel.php';
 
 try {
     $router->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', request_path());

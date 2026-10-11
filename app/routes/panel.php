@@ -78,11 +78,15 @@ $router->post('/painel/instalar', function () {
         'created_at' => now_str(),
     ]);
     $pdo->exec('COMMIT');
+    // Seção 14.1: o primeiro acesso é o operador único configurado (alterável em Configurações).
+    if (!operator_id()) {
+        set_setting('operator_user_id', (string) $id);
+    }
     @unlink($file);
     login_user(one('SELECT * FROM users WHERE id = ?', [$id]));
     audit('instalacao', null, $email);
-    flash('ok', 'Instalação concluída. Este é o painel da equipe; cadastre os colegas em Equipe.');
-    redirect('painel');
+    flash('ok', 'Instalação concluída. Você é o operador dos novos atendimentos; revise os modelos de documentos antes da primeira publicação.');
+    redirect('painel/atendimentos');
 });
 
 $router->post('/painel/entrar', function () {
@@ -106,7 +110,7 @@ $router->post('/painel/entrar', function () {
         header('Location: ' . $to, true, 303);
         exit;
     }
-    redirect('painel/fila');
+    redirect(is_operator($u) ? 'painel/atendimentos' : 'painel/fila');
 });
 
 $router->get('/painel/sair', function () {
@@ -119,7 +123,10 @@ $router->get('/painel/sair', function () {
 
 $router->get('/painel', function () {
     $u = require_user();
-    $active = all("SELECT * FROM cases WHERE status = 'ativo' ORDER BY urgent DESC, created_at");
+    if (is_operator($u) && input('visao') !== 'execucao') {
+        redirect('painel/atendimentos');
+    }
+    $active = all("SELECT * FROM cases WHERE status = 'ativo' AND " . SQL_EXECUTION . " ORDER BY urgent DESC, created_at");
     $alerts = [];
     foreach ($active as $c) {
         foreach (case_alerts($c) as $a) {
@@ -151,6 +158,9 @@ $router->get('/painel/casos', function () {
     require_user();
     $where = ['1=1'];
     $params = [];
+    if (trim((string) input('q')) === '') {
+        $where[] = SQL_EXECUTION; // atendimentos iniciais ficam em Atendimentos
+    }
     $status = (string) input('status', 'ativo');
     if ($status !== 'todos') {
         $where[] = 'status = ?';
@@ -239,6 +249,12 @@ $router->post('/painel/casos/novo', function () {
 $router->get('/painel/caso/{id}', function (string $id) {
     require_user();
     $c = find_case((int) $id);
+    if (is_initial($c) && input('legado') !== '1') {
+        redirect('painel/atendimento/' . $c['id']);
+    }
+    if (!can_operate($c)) {
+        forbidden();
+    }
     $cid = (int) $c['id'];
     view('panel/caso', [
         'meta_title' => $c['client_name'] . ' · ' . $c['protocol'],
@@ -263,6 +279,10 @@ $router->get('/painel/caso/{id}', function (string $id) {
 $router->post('/painel/caso/{id}', function (string $id) {
     require_user();
     $c = find_case((int) $id);
+    if (is_initial($c)) {
+        flash('error', 'Este atendimento está no fluxo inicial: use a ficha do atendimento.');
+        redirect('painel/atendimento/' . $c['id']);
+    }
     $tab = handle_case_action($c, (string) input('op'));
     $volta = (string) input('volta');
     if (preg_match('#^executar/' . (int) $c['id'] . '(\?[\w=&-]*)?$#', $volta)) {
@@ -280,6 +300,9 @@ $router->get('/painel/fila', function () {
 });
 
 $router->get('/painel/executar/{id}', function (string $id) {
+    if (is_initial(find_case((int) $id))) {
+        redirect('painel/atendimento/' . (int) $id);
+    }
     $u = require_user();
     $c = find_case((int) $id);
     $steps = $c['status'] === 'ativo' ? guide_state($c, $u) : [];

@@ -751,7 +751,7 @@ function guide_queue(array $u): array
     foreach ($taskRows as $t) {
         $tasksByCase[(int) $t['case_id']][] = $t;
     }
-    $cases = all("SELECT * FROM cases WHERE status = 'ativo' OR id IN (SELECT case_id FROM tasks WHERE status = 'aberta' AND (owner_id = ? OR owner_id IS NULL))", [$u['id']]);
+    $cases = all("SELECT * FROM cases WHERE " . SQL_EXECUTION . " AND (status = 'ativo' OR id IN (SELECT case_id FROM tasks WHERE status = 'aberta' AND (owner_id = ? OR owner_id IS NULL)))", [$u['id']]);
     foreach ($cases as $c) {
         $tasks = $tasksByCase[(int) $c['id']] ?? [];
         $item = ['case' => $c, 'tasks' => $tasks, 'step' => null, 'reason' => null];

@@ -328,13 +328,194 @@ CREATE INDEX idx_login_attempts ON login_attempts(bucket, at);
 SQL,
     ];
 
+    // Versão 2 — reforma do atendimento inicial (operador único, coleta por chatbot,
+    // reunião e kit). Somente acréscimos: nenhuma tabela ou coluna antiga é removida.
+    $migrations[2] = <<<SQL
+CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT,
+    updated_at TEXT
+);
+CREATE TABLE client_accounts (
+    id INTEGER PRIMARY KEY,
+    name TEXT,
+    phone TEXT,
+    email TEXT,
+    pass_hash TEXT,
+    created_at TEXT NOT NULL,
+    last_login_at TEXT
+);
+ALTER TABLE cases ADD COLUMN workflow_version TEXT NOT NULL DEFAULT 'legacy';
+ALTER TABLE cases ADD COLUMN initial_status TEXT;
+ALTER TABLE cases ADD COLUMN operator_id INTEGER REFERENCES users(id);
+ALTER TABLE cases ADD COLUMN account_id INTEGER REFERENCES client_accounts(id);
+ALTER TABLE cases ADD COLUMN previous_case_id INTEGER REFERENCES cases(id);
+ALTER TABLE cases ADD COLUMN duplicate_of INTEGER REFERENCES cases(id);
+ALTER TABLE cases ADD COLUMN row_version INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE cases ADD COLUMN chat_mode TEXT NOT NULL DEFAULT 'bot';
+ALTER TABLE cases ADD COLUMN intake_edit TEXT;
+ALTER TABLE cases ADD COLUMN intake_done_at TEXT;
+ALTER TABLE cases ADD COLUMN urgency_signal TEXT;
+ALTER TABLE cases ADD COLUMN urgency_reason TEXT;
+ALTER TABLE cases ADD COLUMN urgency_date TEXT;
+ALTER TABLE cases ADD COLUMN urgency_reviewed_at TEXT;
+ALTER TABLE cases ADD COLUMN urgency_opinion TEXT;
+ALTER TABLE cases ADD COLUMN review_flag TEXT;
+ALTER TABLE cases ADD COLUMN sufficiency_at TEXT;
+ALTER TABLE cases ADD COLUMN sufficiency_note TEXT;
+ALTER TABLE cases ADD COLUMN urgent_scope TEXT;
+ALTER TABLE cases ADD COLUMN preparation_at TEXT;
+ALTER TABLE cases ADD COLUMN decision TEXT NOT NULL DEFAULT 'pendente';
+ALTER TABLE cases ADD COLUMN decision_at TEXT;
+ALTER TABLE cases ADD COLUMN decision_note TEXT;
+ALTER TABLE cases ADD COLUMN contract_state TEXT NOT NULL DEFAULT 'nao_preparado';
+ALTER TABLE cases ADD COLUMN contract_signed_at TEXT;
+ALTER TABLE cases ADD COLUMN contract_file_id INTEGER;
+ALTER TABLE cases ADD COLUMN contract_verified_at TEXT;
+ALTER TABLE cases ADD COLUMN initial_completed_at TEXT;
+ALTER TABLE cases ADD COLUMN closure_reason TEXT;
+ALTER TABLE cases ADD COLUMN closure_communicated_at TEXT;
+ALTER TABLE cases ADD COLUMN closure_channel TEXT;
+ALTER TABLE cases ADD COLUMN access_expires_at TEXT;
+ALTER TABLE cases ADD COLUMN return_requested_at TEXT;
+ALTER TABLE cases ADD COLUMN activity_at TEXT;
+ALTER TABLE cases ADD COLUMN activity_seen_at TEXT;
+ALTER TABLE cases ADD COLUMN execution_started_at TEXT;
+ALTER TABLE cases ADD COLUMN migrated_from_stage TEXT;
+CREATE INDEX idx_cases_initial ON cases(workflow_version, initial_status);
+CREATE INDEX idx_cases_account ON cases(account_id);
+
+ALTER TABLE files ADD COLUMN client_key TEXT;
+ALTER TABLE files ADD COLUMN kind TEXT;
+ALTER TABLE files ADD COLUMN internal INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE files ADD COLUMN replaced_at TEXT;
+CREATE UNIQUE INDEX idx_files_key ON files(case_id, client_key) WHERE client_key IS NOT NULL;
+ALTER TABLE documents ADD COLUMN reject_reason TEXT;
+ALTER TABLE documents ADD COLUMN origin TEXT;
+
+CREATE TABLE case_fields (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    field TEXT NOT NULL,
+    value TEXT,
+    state TEXT NOT NULL DEFAULT 'informado',
+    source TEXT NOT NULL DEFAULT 'cliente',
+    document_id INTEGER REFERENCES documents(id) ON DELETE SET NULL,
+    updated_at TEXT NOT NULL,
+    updated_by INTEGER REFERENCES users(id),
+    UNIQUE(case_id, field)
+);
+
+CREATE TABLE case_pending_items (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    ref TEXT,
+    description TEXT NOT NULL,
+    criticality TEXT NOT NULL DEFAULT 'pontual',
+    status TEXT NOT NULL DEFAULT 'aberta',
+    note TEXT,
+    created_at TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    resolved_at TEXT
+);
+CREATE INDEX idx_pending_case ON case_pending_items(case_id, status);
+
+CREATE TABLE chat_messages (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    author TEXT NOT NULL,
+    user_id INTEGER REFERENCES users(id),
+    body TEXT NOT NULL,
+    question TEXT,
+    client_key TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_chat_case ON chat_messages(case_id, id);
+CREATE UNIQUE INDEX idx_chat_key ON chat_messages(case_id, client_key) WHERE client_key IS NOT NULL;
+
+CREATE TABLE case_meetings (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'confirmada',
+    channel TEXT NOT NULL,
+    starts_at TEXT NOT NULL,
+    duration_min INTEGER NOT NULL DEFAULT 30,
+    url TEXT,
+    phone TEXT,
+    note TEXT,
+    confirmed_at TEXT NOT NULL,
+    confirmed_by INTEGER REFERENCES users(id),
+    held_at TEXT,
+    effective_channel TEXT,
+    summary TEXT,
+    corrections TEXT,
+    guidance TEXT,
+    risks TEXT,
+    pending_left TEXT,
+    proposal_version_id INTEGER,
+    reaction TEXT,
+    no_show_reason TEXT,
+    replaced_by INTEGER REFERENCES case_meetings(id),
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_meetings_case ON case_meetings(case_id, status);
+
+CREATE TABLE doc_templates (
+    key TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    approved_at TEXT,
+    approved_by INTEGER REFERENCES users(id),
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE case_artifact_versions (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    template_version INTEGER,
+    data_hash TEXT,
+    data_snapshot TEXT,
+    content TEXT,
+    missing TEXT NOT NULL DEFAULT '[]',
+    status TEXT NOT NULL DEFAULT 'minuta',
+    created_at TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id),
+    reviewed_at TEXT,
+    published_at TEXT,
+    signed_file_id INTEGER REFERENCES files(id),
+    UNIQUE(case_id, kind, version)
+);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();
             $pdo->exec($sql);
+            if ($v === 2) {
+                migrate_portal_accounts($pdo);
+            }
             $pdo->exec('PRAGMA user_version = ' . $v);
             $pdo->commit();
         }
+    }
+}
+
+/**
+ * Migração 2: cada senha de área do cliente que existia por caso vira uma conta,
+ * ligada apenas ao próprio caso. Nada é mesclado por telefone, nome ou CPF.
+ */
+function migrate_portal_accounts(PDO $pdo): void
+{
+    $rows = $pdo->query('SELECT id, client_name, client_phone, client_email, portal_pass_hash, created_at FROM cases WHERE portal_pass_hash IS NOT NULL')->fetchAll();
+    $ins = $pdo->prepare('INSERT INTO client_accounts (name, phone, email, pass_hash, created_at) VALUES (?,?,?,?,?)');
+    $link = $pdo->prepare('UPDATE cases SET account_id = ? WHERE id = ?');
+    foreach ($rows as $r) {
+        $ins->execute([$r['client_name'], $r['client_phone'], $r['client_email'], $r['portal_pass_hash'], $r['created_at']]);
+        $link->execute([(int) $pdo->lastInsertId(), $r['id']]);
     }
 }
 
