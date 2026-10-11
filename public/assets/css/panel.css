@@ -514,3 +514,5 @@ details.more summary { cursor: pointer; color: var(--teal); font-weight: 600; fo
   .at-track li { flex-basis: 45%; }
   .box { padding: 14px; }
 }
+
+.src-ia { background: #EDE6F7; color: #5B3F8C; }

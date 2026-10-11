@@ -19,8 +19,8 @@ $src = function (string $k) use ($fields): string {
     if (!$r) {
         return '<span class="src src-none">sem resposta</span>';
     }
-    $cls = ['cliente' => 'src-cli', 'contrato' => 'src-ctr', 'sidney' => 'src-sid', 'migracao' => 'src-mig', 'anterior' => 'src-mig'][$r['source']] ?? '';
-    return '<span class="src ' . $cls . '" title="' . e(FIELD_SOURCES[$r['source']] ?? $r['source']) . '">' . e(['cliente' => 'cliente', 'contrato' => 'contrato', 'sidney' => 'Sidney', 'migracao' => 'cadastro antigo', 'anterior' => 'confirmar'][$r['source']] ?? $r['source']) . '</span>';
+    $cls = ['cliente' => 'src-cli', 'contrato' => 'src-ctr', 'sidney' => 'src-sid', 'migracao' => 'src-mig', 'anterior' => 'src-mig', 'ia' => 'src-ia'][$r['source']] ?? '';
+    return '<span class="src ' . $cls . '" title="' . e(FIELD_SOURCES[$r['source']] ?? $r['source']) . '">' . e(['cliente' => 'cliente', 'contrato' => 'contrato', 'sidney' => 'Sidney', 'migracao' => 'cadastro antigo', 'anterior' => 'confirmar', 'ia' => 'IA · conferir'][$r['source']] ?? $r['source']) . '</span>';
 };
 $input = function (string $k, bool $withState = true) use ($fields): string {
     $def = field_def($k);
@@ -159,6 +159,9 @@ if ($P && $N) {
           <div><dt><?= e(field_def($k)['label']) ?></dt><dd><?= e($val($k)) ?> <?= $src($k) ?></dd></div>
         <?php endforeach ?>
       </dl>
+      <?php $iaKeys = array_filter($keys, fn($k) => ($fields[$k]['source'] ?? '') === 'ia'); if ($iaKeys): ?>
+        <?= $form('ia_conferir', 'g-' . $g, false, 'inline-form') ?><input type="hidden" name="group" value="<?= e($g) ?>"><button class="b b-xs" type="submit">Conferi no documento: confirmar <?= count($iaKeys) ?> dado(s) da IA</button></form>
+      <?php endif ?>
       <details class="at-edit">
         <summary>Corrigir ou completar</summary>
         <?= $form('dados', 'g-' . $g) ?>
@@ -191,6 +194,9 @@ if ($P && $N) {
           <td><strong><?= e($d['label']) ?></strong><br><span class="tag <?= $d['essential'] ? 'tag-red' : 'tag-gray' ?>"><?= $d['essential'] ? 'essencial' : 'pontual' ?></span><?= $d['origin'] && !in_array($d['origin'], ['checklist'], true) ? ' <small>' . e($d['origin']) . '</small>' : '' ?></td>
           <td><span class="tag tag-<?= ['ok' => 'green', 'warn' => 'amber', 'info' => 'blue', 'muted' => 'gray'][$tone] ?? 'gray' ?>"><?= e(DOC_STATUS[$d['status']]['label'] ?? $d['status']) ?></span><?= $d['reject_reason'] ? '<br><small>' . e($d['reject_reason']) . '</small>' : '' ?></td>
           <td><?php foreach ($filesByDoc[(int) $d['id']] ?? [] as $f): ?><a class="file-line" href="<?= e(url('arquivo/' . $f['id'])) ?>" target="_blank" rel="noopener"><?= e($f['original_name']) ?></a><small><?= $f['uploaded_by_client'] ? 'cliente' : 'Sidney' ?> · <?= e(fmt_date($f['uploaded_at'])) ?></small><br><?php endforeach ?>
+            <?php if (llm_enabled() && !empty($filesByDoc[(int) $d['id']])): ?>
+              <?= $form('ia_extrair', '', false, 'inline-form') ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><button class="b b-xs" type="submit">Ler com IA</button></form>
+            <?php endif ?>
             <details><summary class="small">Registrar arquivo obtido</summary>
               <?= $form('doc_upload', '', true) ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" required><input name="origin" placeholder="Origem (ex.: enviado pelo banco)"><button class="b b-xs" type="submit">Registrar</button></form>
             </details>

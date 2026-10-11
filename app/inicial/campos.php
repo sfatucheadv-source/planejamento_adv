@@ -325,6 +325,7 @@ const FIELD_SOURCES = [
     'sidney'   => 'corrigido por Sidney',
     'migracao' => 'trazido do cadastro anterior',
     'anterior' => 'trazido do atendimento anterior (confirmar atualidade)',
+    'ia'       => 'extraído do documento pela IA (conferir)',
 ];
 
 /**

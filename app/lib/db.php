@@ -491,6 +491,23 @@ CREATE TABLE case_artifact_versions (
 );
 SQL;
 
+    // Versão 3 — registro das chamadas à IA (OpenRouter): custo e erros visíveis a Sidney.
+    $migrations[3] = <<<SQL
+CREATE TABLE llm_log (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    model TEXT,
+    ok INTEGER NOT NULL DEFAULT 0,
+    error TEXT,
+    prompt_tokens INTEGER,
+    completion_tokens INTEGER,
+    cost REAL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_llm_log_case ON llm_log(case_id, created_at);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();

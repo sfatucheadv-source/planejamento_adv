@@ -114,12 +114,23 @@ function bot_summary_sentence(int $id): string
 function bot_questions(int $id): array
 {
     $out = [];
-    foreach (bot_script() as $q) {
+    $script = bot_script();
+    if (llm_enabled()) {
+        // Com IA: pede os documentos logo depois do objetivo. O que estiver
+        // nos documentos é lido e não é perguntado de novo ao cliente.
+        $docs = array_values(array_filter($script, fn($q) => $q['kind'] === 'docs'));
+        $rest = array_values(array_filter($script, fn($q) => $q['kind'] !== 'docs'));
+        $at = array_search('resumo_confirmado', array_column($rest, 'key'), true);
+        array_splice($rest, $at + 1, 0, $docs);
+        $script = $rest;
+    }
+    foreach ($script as $q) {
         if (isset($q['when']) && !($q['when'])($id)) {
             continue;
         }
         if ($q['kind'] === 'docs') {
-            foreach (all("SELECT * FROM documents WHERE case_id = ? AND status <> 'dispensado' ORDER BY essential DESC, id", [$id]) as $d) {
+            $order = llm_enabled() ? "CASE kind WHEN 'contrato' THEN 0 WHEN 'identidade' THEN 1 WHEN 'residencia' THEN 2 WHEN 'historico' THEN 3 ELSE 4 END, id" : 'essential DESC, id';
+            foreach (all("SELECT * FROM documents WHERE case_id = ? AND status <> 'dispensado' ORDER BY $order", [$id]) as $d) {
                 $out[] = ['key' => 'doc_' . $d['kind'], 'block' => 'B06', 'kind' => 'doc', 'doc' => $d,
                           'ask' => doc_question_text($d)];
             }
@@ -148,6 +159,9 @@ function doc_question_text(array $d): string
     if ($cat) {
         $t .= ' ' . $cat['why'] . ' ' . $cat['how'];
     }
+    if (llm_enabled() && in_array($d['kind'], ['contrato', 'identidade', 'residencia', 'historico'], true)) {
+        $t .= ' Com o arquivo, eu mesmo leio os dados e você não precisa digitar.';
+    }
     return $t;
 }
 
@@ -156,7 +170,7 @@ function bot_answered(int $id, array $q): bool
     switch ($q['kind']) {
         case 'group':
             foreach ($q['fields'] as $f) {
-                if (!field_answered($id, $f)) {
+                if (!field_answered($id, $f) && !in_array($f, $q['optional'] ?? [], true)) {
                     return false;
                 }
             }
@@ -386,6 +400,12 @@ function bot_doc_answer(array $c, int $docId, string $choice, array $files, stri
         chat_post($id, 'bot', $ask, 'doc_' . $d['kind']);
         chat_post($id, 'client', 'Enviei ' . plural($saved, 'arquivo', 'arquivos') . ': ' . $d['label'], 'doc_' . $d['kind'], $sendKey ?: null);
         chat_post($id, 'bot', BOT_RECEIVED);
+        if (llm_enabled()) {
+            $r = ia_extract_document($id, $docId);
+            if ($m = ia_extract_message($d, $r)) {
+                chat_post($id, 'bot', $m);
+            }
+        }
         add_event($id, 'documento', 'Recebemos: ' . $d['label'], 'Sidney confere se está completo e legível.', true, $byClient ? 'cliente' : 'equipe');
         mark_client_activity($id);
         $c2 = find_case($id);

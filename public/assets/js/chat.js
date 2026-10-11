@@ -36,7 +36,18 @@
     form.addEventListener('submit', function () {
       var box = form.closest('.cv-q') || form;
       var msg = box.querySelector('[data-saving]');
-      if (msg) { msg.hidden = false; }
+      var file = form.querySelector('input[type=file]');
+      var reading = form.getAttribute('data-reading');
+      if (!msg && reading) {
+        msg = document.createElement('p');
+        msg.className = 'cv-saving';
+        msg.setAttribute('aria-live', 'polite');
+        form.appendChild(msg);
+      }
+      if (msg) {
+        if (reading && file && file.files && file.files.length) { msg.textContent = reading; }
+        msg.hidden = false;
+      }
       // Desabilita depois do envio para não perder o botão clicado nem duplicar o envio.
       setTimeout(function () {
         form.querySelectorAll('button').forEach(function (b) { b.disabled = true; });

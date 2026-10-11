@@ -527,6 +527,28 @@ function initial_panel_action(array $c, string $op): string
             flash('ok', 'Novo atendimento ' . $n['protocol'] . ' aberto e vinculado. Os dados trazidos precisam de confirmação de atualidade.');
             redirect('painel/atendimento/' . $n['id']);
 
+        case 'ia_extrair':
+            $doc = one('SELECT * FROM documents WHERE id = ? AND case_id = ?', [(int) input('doc_id'), $id]);
+            if (!$doc || !llm_enabled()) {
+                flash('error', 'IA não configurada (Configurações) ou documento inválido.');
+                return 'documentos';
+            }
+            $r = ia_extract_document($id, (int) $doc['id']);
+            flash($r ? 'ok' : 'error', $r ? 'IA leu o documento: ' . count($r['filled']) . ' campo(s) preenchido(s)' . ($r['divergent'] ? ', ' . count($r['divergent']) . ' divergência(s) no histórico' : '') . '.' : 'A IA não conseguiu ler este documento. Veja o histórico.');
+            return 'doc-' . $doc['id'];
+
+        case 'ia_conferir':
+            $g = (string) input('group');
+            $keys = array_keys(array_filter(field_defs(), fn($d) => $d['g'] === $g));
+            if ($keys) {
+                $in = implode(',', array_fill(0, count($keys), '?'));
+                $n = q("UPDATE case_fields SET source = 'contrato', updated_by = ?, updated_at = ? WHERE case_id = ? AND source = 'ia' AND field IN ($in)", array_merge([current_user()['id'], now_str(), $id], $keys))->rowCount();
+                case_fields($id, true);
+                add_event($id, 'campo', 'Dados extraídos pela IA conferidos por Sidney', FIELD_GROUPS[$g] . ': ' . $n . ' campo(s).');
+                flash('ok', 'Dados confirmados como conferidos no documento.');
+            }
+            return 'g-' . $g;
+
         case 'codigo_portal':
             $code = random_code(8, '0123456789');
             bump_case($id, ['portal_code_hash' => password_hash($code, PASSWORD_DEFAULT), 'portal_code_expires' => now()->modify('+7 days')->format('Y-m-d H:i:s')]);
@@ -587,7 +609,7 @@ $router->post('/painel/modelos-documentos', function () {
 
 $router->get('/painel/configuracoes', function () {
     $u = require_user();
-    view('panel/configuracoes', ['meta_title' => 'Configurações · Painel', 'users' => users_list(), 'u' => $u], 'panel');
+    view('panel/configuracoes', ['meta_title' => 'Configurações · Painel', 'users' => users_list(), 'u' => $u, 'models' => input('modelos') === '1' ? llm_models_list() : [], 'usage' => llm_usage_summary()], 'panel');
 });
 
 $router->post('/painel/configuracoes', function () {
@@ -603,6 +625,31 @@ $router->post('/painel/configuracoes', function () {
     set_setting('operator_user_id', $op ? (string) $op : null);
     set_setting('intake_workflow', input('intake_workflow') === 'legacy' ? 'legacy' : 'simple_v1');
     set_setting('office_address', trim(mb_substr((string) input('office_address'), 0, 300)) ?: null);
+    // IA (OpenRouter): a chave só é trocada quando um valor novo é digitado; nunca volta para a tela.
+    set_setting('llm_enabled', input('llm_enabled') === '1' ? '1' : '0');
+    $model = trim((string) input('llm_model'));
+    if ($model !== '' && preg_match('#^[a-z0-9._-]+/[A-Za-z0-9._:-]+$#', $model)) {
+        set_setting('llm_model', $model);
+    } elseif ($model !== '') {
+        flash('error', 'Modelo inválido. Use o identificador do OpenRouter, por exemplo google/gemini-2.5-flash.');
+    }
+    $key = trim((string) ($_POST['llm_api_key'] ?? ''));
+    if (input('llm_remove_key') === '1') {
+        set_setting('llm_api_key', null);
+        audit('ia_chave_removida');
+    } elseif ($key !== '') {
+        if (!preg_match('/^sk-or-[A-Za-z0-9_-]{10,}$/', $key)) {
+            flash('error', 'A chave do OpenRouter começa com “sk-or-”. Confira e cole de novo.');
+        } else {
+            set_setting('llm_api_key', $key);
+            audit('ia_chave_alterada', null, 'final ' . substr($key, -4));
+        }
+    }
+    if (input('llm_test') === '1') {
+        setting('__reset');
+        [$okTest, $msgTest] = llm_test();
+        flash($okTest ? 'ok' : 'error', 'Teste da IA: ' . $msgTest);
+    }
     if ($op) {
         q("UPDATE cases SET operator_id = ? WHERE workflow_version = 'simple_v1' AND operator_id IS NULL", [$op]);
     }

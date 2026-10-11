@@ -27,6 +27,18 @@ Implementa o *Plano de reforma do site* (10/10/2026). Todo novo atendimento pert
 - **Acesso por atendimento**: conta do cliente separada do caso (`client_accounts`). Contratados continuam acessíveis; encerrado sem contratação fica disponível por 72 horas a partir da comunicação registrada, negado pela data em cada requisição (portal, chat e download). Retorno: o cliente pede, Sidney abre novo atendimento vinculado, sem revelar o histórico expirado.
 - **Execução**: ao formalizar, o caso segue para Negociação ou Preparação judicial nas ferramentas existentes (`Execução`, `Casos contratados`). O operador executa todas as funções; não há matriz de papéis.
 
+### Assistente com IA (OpenRouter)
+
+Opcional. Em **Configurações › Inteligência artificial**: ligue o uso de IA, escolha o modelo (identificador do OpenRouter; o padrão `google/gemini-2.5-flash` lê PDF e foto) e cole a chave `sk-or-…`. A chave fica só no servidor (tabela `settings`) e a tela mostra apenas o final dela; “Testar a conexão ao salvar” faz uma chamada mínima.
+
+Com a IA ligada:
+- o assistente pede os documentos logo depois do objetivo (contrato, identidade, comprovante de residência, extrato) e a IA lê os dados; o que estiver nos documentos não é perguntado ao cliente;
+- os valores lidos entram na ficha com a marca “IA · conferir” (Sidney confirma por grupo ou corrige); nada sobrescreve o que o cliente, Sidney ou outro documento já informou: a diferença vira aviso no histórico;
+- mensagens livres do cliente recebem resposta curta da IA, sem orientação jurídica, e os dados ditos ali vão para a ficha (só campos do cliente, validados);
+- toda chamada fica em `llm_log` (modelo, erro, tokens e custo); o resumo dos 30 dias aparece em Configurações.
+
+Sem chave, com a IA desligada ou se a chamada falhar, o roteiro determinístico continua funcionando. O código está em `app/inicial/ia.php`; o teste `php tests/assistente_ia.php` usa um simulador local da API (`tests/mock_openrouter.php`).
+
 ### Configuração e implantação
 
 1. Faça backup do banco (com WAL ativo, copie `fatuche.sqlite`, `-wal` e `-shm` juntos, com o site parado, ou use `sqlite3 fatuche.sqlite ".backup copia.sqlite"`).
@@ -85,6 +97,7 @@ Teste de ponta a ponta (percorre as 14 etapas pela interface, do formulário ao 
 ```bash
 php tests/fluxo_completo.php        # execução e modo de equipe (14 etapas)
 php tests/atendimento_inicial.php   # atendimento inicial (seção 16 do plano de reforma)
+php tests/assistente_ia.php         # assistente com IA (simulador local do OpenRouter)
 ```
 
 ## Publicar na Hostinger
@@ -145,4 +158,4 @@ tests/          teste de ponta a ponta
 - Envio automático de WhatsApp ou e-mail. O painel prepara a mensagem, abre o WhatsApp com o texto e registra o envio; a confirmação de envio continua humana.
 - Agenda e cobrança online (Asaas, Google Agenda). O fluxo de contratação está no painel; integrações de pagamento precisam de credenciais e teste próprio.
 - Leitura automática de documentos por IA (prevista como etapa futura no PRD).
-- Integrações opcionais do plano de reforma: criação automática de link do Meet ou agenda, envio automático por WhatsApp, assinatura eletrônica integrada, OCR e geração de DOCX. Hoje o link do Meet é criado por Sidney, o instrumento assinado é anexado e os documentos saem em texto selecionável para imprimir/PDF ou baixar em HTML (abre no Word).
+- Integrações opcionais do plano de reforma: criação automática de link do Meet ou agenda, envio automático por WhatsApp, assinatura eletrônica integrada, e geração de DOCX. Hoje o link do Meet é criado por Sidney, o instrumento assinado é anexado e os documentos saem em texto selecionável para imprimir/PDF ou baixar em HTML (abre no Word).

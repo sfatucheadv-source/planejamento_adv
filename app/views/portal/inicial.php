@@ -121,7 +121,7 @@ $choiceButtons = function (array $q) {
         <div class="cv-q" id="pergunta">
           <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual<?= !empty($q['editing']) ? ' · corrigindo' : '' ?></span><div class="cv-text"><?= nl2br(e((string) $q['ask'])) ?></div></div></div>
           <?php if ($q['kind'] === 'doc'): $d = $q['doc']; ?>
-            <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" data-save>
+            <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" data-save<?= llm_enabled() ? ' data-reading="Enviando e lendo o documento. Pode levar até um minuto; não feche a página."' : '' ?>>
               <?= csrf_field() ?><input type="hidden" name="k" value="<?= e($form_key) ?>">
               <label class="field"><span>Arquivo (PDF ou foto, até <?= (int) config('upload_max_mb') ?> MB)</span><input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" multiple data-preview></label>
               <div class="cv-preview" data-preview-box></div>
@@ -223,7 +223,7 @@ $choiceButtons = function (array $q) {
             <?php if ($cat && $isOpen): ?><p class="muted small"><?= e($cat['why']) ?> <?= e($cat['how']) ?></p><?php endif ?>
             <?php foreach ($filesByDoc[(int) $d['id']] ?? [] as $f): ?><a class="files-mini" href="<?= e(url('arquivo/' . $f['id'])) ?>" target="_blank" rel="noopener"><?= e($f['original_name']) ?></a> <small class="muted"><?= e(fmt_date($f['uploaded_at'])) ?></small><br><?php endforeach ?>
             <?php if ($isOpen && !$completed): ?>
-              <form method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" class="cv-doc-form" data-save>
+              <form method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" class="cv-doc-form" data-save<?= llm_enabled() ? ' data-reading="Enviando e lendo o documento. Pode levar até um minuto."' : '' ?>>
                 <?= csrf_field() ?><input type="hidden" name="k" value="<?= e(bin2hex(random_bytes(8))) ?>"><input type="hidden" name="volta" value="documentos">
                 <input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" multiple aria-label="Arquivo de <?= e($d['label']) ?>" data-preview>
                 <div class="cv-preview" data-preview-box></div>

@@ -191,7 +191,7 @@ $router->post('/cliente/conversa/mensagem', function () {
     if ($new) {
         mark_client_activity($id);
         if ($c['chat_mode'] === 'bot') {
-            chat_post($id, 'bot', BOT_OFFSCRIPT);
+            chat_post($id, 'bot', ia_reply(find_case($id), $text) ?? BOT_OFFSCRIPT);
         }
     }
     if (input('ajax') === '1') {

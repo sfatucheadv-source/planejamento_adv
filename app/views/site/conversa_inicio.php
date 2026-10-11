@@ -8,7 +8,7 @@ $open = is_open();
     <div class="triage-main">
       <p class="kicker">Atendimento inicial</p>
       <h1>Conte seu caso pelo assistente</h1>
-      <p class="lead">Você pode enviar o que tiver e continuar depois. O assistente organiza suas informações e documentos; Sidney analisa o caso e conversa com você sobre as opções.</p>
+      <p class="lead">Você pode enviar o que tiver e continuar depois.<?= llm_enabled() ? ' Com os documentos em mãos, o assistente lê os dados por você e pergunta só o que faltar.' : '' ?> O assistente organiza suas informações e documentos; Sidney analisa o caso e conversa com você sobre as opções.</p>
 
       <div class="cv-log cv-intro" aria-label="Conversa">
         <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text"><?= e(BOT_GREETING) ?></div></div></div>
@@ -29,7 +29,7 @@ $open = is_open();
         <label class="field"><span>E-mail <small>(opcional)</small></span><input type="email" name="email" value="<?= $v('email') ?>" autocomplete="email" <?= isset($errors['email']) ? 'aria-invalid="true" aria-describedby="err-email"' : '' ?>></label>
         <?= $err('email') ?>
         <label class="field"><span>Precisa de alguma adaptação para conversar? <small>(opcional)</small></span><input type="text" name="adaptacao" value="<?= $v('adaptacao') ?>" placeholder="Ex.: prefiro áudio, tenho baixa visão"></label>
-        <label class="check"><input type="checkbox" name="consent" value="1" required <?= isset($errors['consent']) ? 'aria-invalid="true"' : '' ?>> <span>Autorizo o uso destes dados para o meu atendimento, conforme a <a href="<?= e(url('privacidade')) ?>" target="_blank">política de privacidade</a>.</span></label>
+        <label class="check"><input type="checkbox" name="consent" value="1" required <?= isset($errors['consent']) ? 'aria-invalid="true"' : '' ?>> <span>Autorizo o uso destes dados para o meu atendimento, conforme a <a href="<?= e(url('privacidade')) ?>" target="_blank">política de privacidade</a>.<?php if (llm_enabled()): ?> Os documentos e mensagens podem ser lidos por um serviço de inteligência artificial, só para organizar as informações; Sidney confere tudo.<?php endif ?></span></label>
         <?= $err('consent') ?>
         <button type="submit" class="btn btn-gold btn-block">Vamos começar</button>
         <p class="t-help">Começar não significa contratar. Primeiro organizamos as informações; depois Sidney analisa e conversa com você.</p>
