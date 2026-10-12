@@ -360,6 +360,21 @@ $cli4->post('/cliente/conversa/mensagem', ['message' => '', 'k' => 'au2'], true,
 ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND body = '🎙️ Áudio enviado'", [$id4]) && str_contains((string) c($id4)['next_action'], 'Ouvir o áudio'), 'áudio anexado como arquivo também vale; sem transcrição, Sidney é avisado para ouvir');
 ok((int) scalar("SELECT COUNT(*) FROM files WHERE case_id = ? AND kind = 'audio'", [$id4]) === 2 && !scalar("SELECT 1 FROM documents WHERE case_id = ? AND status = 'recebido'", [$id4]), 'áudio não é confundido com documento');
 
+echo "\nA8b. Insistir em falar com Sidney: duas vezes a IA pede o que falta; na terceira, a agenda marca\n";
+$asks = 0;
+foreach (['Quero falar com o Sidney', 'Prefiro falar com uma pessoa', 'Já pedi duas vezes: quero falar com o advogado'] as $i => $t) {
+    $cli4->post('/cliente/conversa/mensagem', ['message' => $t, 'k' => 'hs' . $i, 'ajax' => '1', 'depois' => '0']);
+    $asks++;
+    if ($asks < 3) {
+        ok(!current_meeting($id4) && str_contains((string) file_get_contents($mockLog), '"pedido":' . $asks), $asks . 'º pedido: a IA recebe a instrução de pedir o que falta; nada é marcado');
+    }
+}
+$m4 = current_meeting($id4);
+ok($m4 && $m4['origin'] === 'assistente' && (int) $m4['duration_min'] === 30, '3º pedido: conversa de 30 minutos marcada');
+ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND author = 'bot' AND body LIKE 'Combinado: marquei uma conversa de 30 minutos com Sidney%'", [$id4]), 'o cliente recebe o horário no chat');
+$cli4->get('/cliente?area=conversa');
+ok(!str_contains($cli4->html, 'Quero falar com Sidney'), 'o chat não mostra botão para falar com Sidney');
+
 echo "\nA9. Desligado\n";
 $sid->get('/painel/assistente');
 $sid->post('/painel/assistente', ['agent_enabled' => '', 'campos' => $campos, 'documentos' => ['identidade']]);

@@ -274,7 +274,15 @@ $router->post('/cliente/conversa/mensagem', function () {
         if ($text !== '') {
             chat_post($id, 'client', $text, null, ($key !== '' ? $key . '-msg' : null));
             mark_client_activity($id);
+            // Pedido para falar com Sidney: nos dois primeiros, a IA pede o que falta; no terceiro, a agenda marca a conversa.
+            $ask = human_ask_handle(find_case($id), $text);
+            if (!empty($ask['reply'])) {
+                $ajax ? json_out(chat_ajax_payload(find_case($id), $after)) : portal_back('conversa', 'fim');
+            }
             $event[] = ($event ? 'Junto, a pessoa escreveu: ' : 'Mensagem nova do cliente: ') . mb_substr($text, 0, 2000);
+            if ($ask) {
+                $event[] = $ask['instruction'];
+            }
         }
         if ($event) {
             agent_turn(find_case($id), implode("\n", $event));
@@ -288,7 +296,12 @@ $router->post('/cliente/conversa/mensagem', function () {
     if ($new) {
         mark_client_activity($id);
         if ($c['chat_mode'] === 'bot') {
-            chat_post($id, 'bot', ia_reply(find_case($id), $text) ?? BOT_OFFSCRIPT);
+            $ask = human_ask_handle(find_case($id), $text);
+            if (!$ask) {
+                chat_post($id, 'bot', ia_reply(find_case($id), $text) ?? BOT_OFFSCRIPT);
+            } elseif (empty($ask['reply'])) {
+                chat_post($id, 'bot', human_ask_reply($id, (int) $ask['n']));
+            }
         }
     }
     if (input('ajax') === '1') {

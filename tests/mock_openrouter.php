@@ -65,7 +65,7 @@ if ($gemini) {
 if (count($req['messages'] ?? []) === 1 || (!$system && $gemini)) {
     $system = '';
 }
-file_put_contents($log, json_encode(['provider' => $gemini ? 'gemini' : 'openrouter', 'model' => $model, 'parts' => $parts, 'json' => $jsonMode, 'text' => mb_substr($text, 0, 80)]) . "\n", FILE_APPEND);
+file_put_contents($log, json_encode(['provider' => $gemini ? 'gemini' : 'openrouter', 'model' => $model, 'parts' => $parts, 'json' => $jsonMode, 'text' => mb_substr($text, 0, 80), 'pedido' => preg_match('/PEDIDO PARA FALAR COM SIDNEY \((\d)/u', $text, $pm) ? (int) $pm[1] : 0]) . "\n", FILE_APPEND);
 
 $out = ['ok' => true];
 if (str_contains($system, 'extrai dados')) {

@@ -587,6 +587,7 @@ a.card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-co
 /* Chat de atendimento (IA): compositor, sugestões, áudio */
 .cv-panel .cv-log { min-height: 260px; }
 .cv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
+.cv-chips:empty { display: none; }
 .cv-chip { border: 1px solid var(--teal, #1E7C78); background: var(--white, #fff); color: var(--teal, #1E7C78); border-radius: 999px; padding: 6px 12px; font: inherit; font-size: .9rem; cursor: pointer; line-height: 1.2; }
 .cv-chip:hover, .cv-chip:focus-visible { background: var(--teal-soft, #E1F0EC); }
 .cv-chip-ghost { border-color: var(--line); color: var(--muted); }

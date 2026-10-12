@@ -231,7 +231,6 @@ $choiceButtons = function (array $q) {
           <label class="field"><span><?= $c['chat_mode'] === 'human' ? 'Escreva para Sidney' : 'Tem uma dúvida ou algo fora das perguntas? Escreva aqui' ?></span><textarea name="message" rows="2" required></textarea></label>
           <div class="cv-btns">
             <button class="btn <?= $c['chat_mode'] === 'human' ? 'btn-gold' : 'btn-ghost' ?>" type="submit">Enviar mensagem</button>
-            <?php if ($c['chat_mode'] === 'bot' && !$completed): ?><button class="btn btn-ghost btn-small" type="submit" name="message" value="Quero falar com Sidney." formnovalidate>Quero falar com Sidney</button><?php endif ?>
           </div>
         </form>
         <?php if (agent_enabled() && $c['chat_mode'] === 'bot' && !$completed && case_data($c, 'agent_off')): ?>

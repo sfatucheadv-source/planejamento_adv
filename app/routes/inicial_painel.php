@@ -933,6 +933,7 @@ const CONFIG_SECTIONS = [
     'ia' => 'Inteligência artificial',
     'email' => 'E-mails de aviso',
     'asaas' => 'Asaas (cobranças)',
+    'agenda' => 'Agenda (Google)',
     'precos' => 'Preços e negociação',
 ];
 
@@ -1094,6 +1095,53 @@ function config_save_asaas(): void
     }
 }
 
+/** Agenda: conta do Google (app OAuth do escritório), expediente e regras do horário marcado pelo assistente. */
+function config_save_agenda(): void
+{
+    $id = trim((string) input('google_client_id'));
+    if ($id !== '' && !preg_match('/^[\w.-]+\.apps\.googleusercontent\.com$/', $id)) {
+        flash('error', 'O ID do cliente do Google termina em “.apps.googleusercontent.com”. Copie de novo em Google Cloud › APIs e serviços › Credenciais.');
+    } elseif ($id !== google_client_id()) {
+        set_setting('google_client_id', $id ?: null);
+        foreach (['google_refresh_token', 'google_access_token', 'google_access_expires', 'google_account_email'] as $k) {
+            set_setting($k, null); // outro app: a autorização antiga não vale
+        }
+        audit('google_cliente_alterado');
+    }
+    $secret = trim((string) ($_POST['google_client_secret'] ?? ''));
+    if ($secret !== '') {
+        set_setting('google_client_secret', $secret);
+        audit('google_segredo_alterado', null, 'final ' . substr($secret, -4));
+    }
+    $cal = trim((string) input('google_calendar_id'));
+    set_setting('google_calendar_id', $cal !== '' && $cal !== 'primary' ? mb_substr($cal, 0, 200) : null);
+    if (input('google_desconectar') === '1') {
+        $tok = (string) setting('google_refresh_token', '');
+        if ($tok !== '') {
+            google_http('POST', GOOGLE_REVOKE_URL, ['token' => $tok], true);
+        }
+        foreach (['google_refresh_token', 'google_access_token', 'google_access_expires', 'google_account_email'] as $k) {
+            set_setting($k, null);
+        }
+        audit('google_desconectado');
+    }
+    $hm = fn(string $v) => preg_match('/^([01]?\d|2[0-3]):([0-5]\d)$/', $v, $x) ? (int) $x[1] * 60 + (int) $x[2] : null;
+    $ini = $hm((string) input('agenda_inicio'));
+    $fim = $hm((string) input('agenda_fim'));
+    if ($ini !== null && $fim !== null && $fim - $ini >= 30) {
+        set_setting('agenda_inicio', agenda_hhmm($ini));
+        set_setting('agenda_fim', agenda_hhmm($fim));
+    } else {
+        flash('error', 'Confira o expediente: o fim precisa ser pelo menos 30 minutos depois do início.');
+    }
+    foreach (['agenda_duracao' => [10, 120], 'agenda_antecedencia' => [0, 1440], 'agenda_intervalo' => [0, 480]] as $k => [$min, $max]) {
+        $v = input($k);
+        if (is_numeric($v) && (int) $v >= $min && (int) $v <= $max) {
+            set_setting($k, (string) (int) $v);
+        }
+    }
+}
+
 function config_save_email(): void
 {
     // E-mails de aviso: a senha SMTP só é trocada quando digitada e nunca volta para a tela.
@@ -1189,10 +1237,43 @@ $router->post('/painel/configuracoes', function () {
     if ($ok && $secao === 'precos') {
         config_save_precos();
     }
+    if ($ok && $secao === 'agenda') {
+        config_save_agenda();
+    }
     if ($ok) {
         flash('ok', $secao ? CONFIG_SECTIONS[$secao] . ': configurações salvas.' : 'Configurações salvas.');
     }
     redirect($secao ? 'painel/configuracoes/' . $secao : 'painel/configuracoes');
+});
+
+/* ---------- Google Agenda: autorização (OAuth) ---------- */
+
+$router->get('/painel/google/conectar', function () {
+    require_config_editor();
+    if (google_client_id() === '' || (string) setting('google_client_secret', '') === '') {
+        flash('error', 'Cadastre o ID do cliente e a chave secreta do Google antes de conectar.');
+        redirect('painel/configuracoes/agenda');
+    }
+    $_SESSION['google_state'] = bin2hex(random_bytes(16));
+    redirect(google_auth_url($_SESSION['google_state']));
+});
+
+$router->get('/painel/google/retorno', function () {
+    require_config_editor();
+    $state = (string) input('state');
+    $expected = (string) ($_SESSION['google_state'] ?? '');
+    unset($_SESSION['google_state']);
+    if ($expected === '' || !hash_equals($expected, $state)) {
+        flash('error', 'A autorização do Google expirou ou não veio deste painel. Clique em “Conectar” de novo.');
+    } elseif (input('error') !== '') {
+        flash('error', 'O Google não autorizou o acesso (' . mb_substr((string) input('error'), 0, 60) . ').');
+    } elseif ($err = google_exchange_code((string) input('code'))) {
+        flash('error', 'Não foi possível conectar o Google Agenda. ' . $err);
+    } else {
+        audit('google_conectado', null, (string) setting('google_account_email', ''));
+        flash('ok', 'Google Agenda conectado' . (setting('google_account_email') ? ' (' . setting('google_account_email') . ')' : '') . '. As conversas marcadas pelo assistente já vão para a sua agenda, com link do Meet.');
+    }
+    redirect('painel/configuracoes/agenda');
 });
 
 /* ---------- Migração dos casos existentes (seção 15.2) ---------- */

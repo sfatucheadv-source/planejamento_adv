@@ -634,6 +634,11 @@ SQL;
 CREATE INDEX IF NOT EXISTS idx_chat_case_author ON chat_messages(case_id, author, id);
 SQL;
 
+    // Versão 14 — conversa de 30 min marcada pelo assistente no Google Agenda (com Meet).
+    $migrations[14] = <<<SQL
+CREATE INDEX IF NOT EXISTS idx_meetings_status ON case_meetings(status, starts_at);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -658,6 +663,13 @@ SQL;
                 if (!in_array('archived_at', $cols, true)) {
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_at TEXT');
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_by INTEGER REFERENCES users(id)');
+                }
+            }
+            if ($v === 14) {
+                $cols = array_column($pdo->query('PRAGMA table_info(case_meetings)')->fetchAll(), 'name');
+                if (!in_array('google_event_id', $cols, true)) {
+                    $pdo->exec('ALTER TABLE case_meetings ADD COLUMN google_event_id TEXT');
+                    $pdo->exec('ALTER TABLE case_meetings ADD COLUMN origin TEXT');
                 }
             }
             if ($v === 13) {

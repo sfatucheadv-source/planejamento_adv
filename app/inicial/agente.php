@@ -246,6 +246,7 @@ function agent_system_prompt(): string
         . "- Observe com discrição as condições econômicas da pessoa e a capacidade de contratar o escritório (renda, ocupação, comprometimento com a parcela, bens, como fala de dinheiro). "
         . "Registre em \"capacidade\" o nível \"alta\" (tem condições de contratar), \"media\" ou \"baixa\", com uma observação de uma frase baseada só no que ela disse. "
         . "É uma anotação interna para Sidney: nunca pergunte diretamente sobre isso só para medir, nunca comente com a pessoa e não use gênero, origem ou aparência. Sem sinais suficientes, use null.\n"
+        . "- Não ofereça conversa com Sidney nem prometa ligação ou horário. Se a pessoa pedir para falar com Sidney, com o advogado ou com uma pessoa, marque \"falar_com_sidney\": true e, com gentileza, peça as informações ou os documentos que faltam: Sidney atende melhor quando já recebe o caso organizado. Quem marca o horário é o sistema.\n"
         . "- Toda escala usa alta, média e baixa, e \"alta\" é sempre a situação favorável.\n"
         . "- Respostas com no máximo 3 frases curtas, em português do Brasil, sem markdown.\n"
         . "- Em \"sugestoes\", ofereça de 2 a 4 respostas curtas (até 40 caracteres) que a pessoa possa tocar para responder à sua pergunta, escritas como ela falaria (ex.: \"Sim, está atrasado\", \"Não sei\", \"Vou mandar a foto\"). São só atalhos: ela continua livre para escrever, mandar áudio ou arquivos.\n\n"
@@ -296,6 +297,7 @@ function agent_context(int $id, string $event): string
         . "\nA pessoa prefere ser chamada de: " . (fv($id, 'nome') ?: ($c['client_name'] !== CLIENT_NAME_PENDING ? $c['client_name'] : 'ainda não se identificou'))
         . (($cap = case_data($c, 'capacidade')) ? "\nSua anotação interna de capacidade de contratação até aqui: " . $cap['nivel'] . ($cap['obs'] ? ' (' . $cap['obs'] . ')' : '') . '. Atualize se a conversa trouxer sinais novos.' : '')
         . ($c['urgency_signal'] ? "\nATENÇÃO: há sinal de urgência registrado; Sidney já foi avisado." : '')
+        . (($m = current_meeting($id)) ? "\nCONVERSA COM SIDNEY JÁ MARCADA: " . fmt_datetime($m['starts_at']) . ' (' . MEETING_CHANNELS[$m['channel']]['short'] . ($m['url'] ? ', ' . $m['url'] : '') . '). Não marque outra; continue a coleta para ele chegar preparado.' : '')
         . "\n\nDADOS JÁ REGISTRADOS (não pergunte de novo; confirme só se houver dúvida):\n" . ($known ? implode("\n", $known) : '- nenhum')
         . "\n\nDADOS MÍNIMOS QUE FALTAM (nesta ordem):\n" . ($missing ? ia_field_spec($missing) : '- nenhum')
         . "\n\nOUTROS DADOS QUE VOCÊ PODE REGISTRAR SE A PESSOA DISSER:\n" . ia_field_spec(array_keys($others))
@@ -350,9 +352,10 @@ function agent_turn(array $c, string $event): ?string
             $reply .= "\n\n" . agent_setting('agent_tech_reply');
         }
     }
-    if (!empty($json['falar_com_sidney'])) {
-        add_event($id, 'atendimento', 'Cliente pediu para falar com Sidney');
-        set_next($id, 'Cliente pediu para falar com Sidney', in_business_days(1));
+    // Pedido que a IA percebeu e o filtro de palavras não: conta igual (o 3º marca a conversa).
+    $book = false;
+    if (!empty($json['falar_com_sidney']) && !str_contains($event, HUMAN_ASK_MARK) && !current_meeting($id)) {
+        $book = human_ask_register($id) >= HUMAN_ASKS_TO_SCHEDULE;
     }
     if (!empty($json['urgente'])) {
         add_event($id, 'urgencia', 'Mensagem possivelmente urgente', mb_substr($event, 0, 500));
@@ -375,6 +378,9 @@ function agent_turn(array $c, string $event): ?string
         }
     }
     set_case_data($id, 'agent_suggestions', array_slice($sug, 0, 4));
+    if ($book) {
+        agenda_book(find_case($id));
+    }
     if (!empty($json['concluido'])) {
         agent_finish($id);
     }

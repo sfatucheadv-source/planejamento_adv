@@ -407,6 +407,7 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             ]);
             if ($prev) {
                 q("UPDATE case_meetings SET status = 'substituida', replaced_by = ? WHERE id = ?", [$mid, $prev['id']]);
+                google_cancel_meeting($prev);
                 add_event($id, 'reuniao', 'Reunião reagendada', MEETING_CHANNELS[$prev['channel']]['short'] . ' em ' . fmt_datetime($prev['starts_at']) . ' → ' . MEETING_CHANNELS[$channel]['short'] . ' em ' . fmt_datetime($start->format('Y-m-d H:i:s')) . '.', true);
             }
             $fields = ['initial_status' => 'meeting_scheduled'];
@@ -489,6 +490,7 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             }
             if ($m = current_meeting($id)) {
                 q("UPDATE case_meetings SET status = 'cancelada', no_show_reason = ? WHERE id = ?", ['Reanálise: ' . $note, $m['id']]);
+                google_cancel_meeting($m);
             }
             bump_case($id, ['initial_status' => 'analysis', 'preparation_at' => null, 'review_flag' => 'analise']);
             add_event($id, 'situacao', 'Voltou para análise', $note, true);
@@ -584,6 +586,7 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             }
             if ($m = current_meeting($id)) {
                 q("UPDATE case_meetings SET status = 'cancelada' WHERE id = ?", [$m['id']]);
+                google_cancel_meeting($m);
             }
             bump_case($id, ['initial_status' => 'completed', 'initial_completed_at' => now_str(), 'decision' => $d, 'decision_at' => now_str(), 'closure_reason' => $note, 'next_action' => 'Comunicar o encerramento ao cliente', 'next_action_due' => in_business_days(1)]);
             add_event($id, 'situacao', 'Atendimento inicial concluído', DECISIONS[$d] . '. ' . $note, true);
@@ -691,6 +694,7 @@ function case_close(array $c, string $reason, int $userId): ?string
     $id = (int) $c['id'];
     if ($m = current_meeting($id)) {
         q("UPDATE case_meetings SET status = 'cancelada' WHERE id = ?", [$m['id']]);
+        google_cancel_meeting($m);
     }
     bump_case($id, ['initial_status' => 'completed', 'initial_completed_at' => now_str(), 'closure_reason' => $reason, 'chat_mode' => 'human',
         'next_action' => null, 'next_action_due' => null]);
@@ -719,6 +723,7 @@ function case_delete(array $c, string $confirm, int $userId): ?string
         return 'Para excluir, digite o protocolo ' . $c['protocol'] . ' exatamente como aparece.';
     }
     $id = (int) $c['id'];
+    google_cancel_meeting(current_meeting($id));
     if ($c['execution_started_at'] || $c['contract_state'] === 'formalizado') {
         // Caso contratado também pode sair, mas fica explícito na auditoria.
         audit('atendimento_contratado_excluido', null, $c['protocol']);

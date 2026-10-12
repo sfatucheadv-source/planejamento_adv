@@ -96,6 +96,12 @@ No painel, cada atendimento é um item próprio; a ficha mostra os outros atendi
 
 A migração 11 zerou os atendimentos da base (com cópia do banco e dos arquivos em `backup-antes-de-zerar-atendimentos/` na pasta de dados); usuários, configurações e modelos ficaram. Teste: `php tests/limpeza.php`.
 
+### Agenda de Sidney (Google Agenda com Meet)
+
+O chat não tem botão para falar com Sidney: o cliente precisa chegar qualificado. Quando ele pede para falar com Sidney, com o advogado ou com uma pessoa (o sistema reconhece o pedido pelas palavras, e a IA também sinaliza), o assistente pede, nas duas primeiras vezes, as informações e os documentos que faltam. No 3º pedido, `app/inicial/agenda.php` marca uma conversa de 30 minutos no primeiro horário livre: dias úteis, dentro do expediente, no mínimo 90 minutos a partir de agora e 60 minutos depois do fim de qualquer compromisso; sem janela no dia, vale a mais próxima. Tudo ajustável em **Configurações › Agenda (Google)**.
+
+Com o Google conectado (app OAuth próprio do escritório, criado no Google Cloud; o passo a passo e a URL de retorno aparecem na tela), o sistema consulta o livre/ocupado da agenda, cria o compromisso com link do Meet e convite para o e-mail do cliente, e desmarca no Google quando a reunião é cancelada ou trocada. O ID, a chave secreta e a autorização ficam só no banco do servidor. Sem o Google (ou com ele fora do ar), o horário é reservado no sistema como ligação para o telefone do cliente e Sidney recebe o aviso na ficha. Teste: `php tests/agenda.php`.
+
 ### Painel de controles (Configurações)
 
 *Configurações* abre como painel de controles: quatro chaves para ligar e desligar na hora (atendimento online no site, inteligência artificial, IA conduzindo a conversa e avisos por e-mail), a lista do que precisa de atenção (operador, chave ou erro da IA, falha ou envio sem SMTP dos e-mails, modelos sem aprovação, Asaas sem chave) e um quadro por área com a situação em cores e o atalho para configurar. Atendimento e entrada, Inteligência artificial, E-mails de aviso e Asaas têm páginas próprias (`/painel/configuracoes/{area}`), e cada uma salva só a sua área.
@@ -176,6 +182,7 @@ php tests/assistente_conversa.php   # conversa conduzida pela IA
 php tests/conversas.php             # conversas do cliente, novidades e avisos por e-mail
 php tests/negociacao.php            # proposta em abas: simulador do Asaas, guia de preço e avaliação pela IA
 php tests/limpeza.php               # migração que zerou os atendimentos (cópia de segurança)
+php tests/agenda.php                # agenda de Sidney: regra do horário, 3 pedidos, Google simulado
 ```
 
 ## Publicar na Hostinger

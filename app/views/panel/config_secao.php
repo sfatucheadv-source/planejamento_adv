@@ -6,6 +6,7 @@ $intro = [
     'ia' => 'Fornecedor, modelo e chave da inteligência artificial usada no atendimento e na leitura dos documentos.',
     'email' => 'Como saem os e-mails que avisam o cliente de novidade na conversa.',
     'asaas' => 'Conta do Asaas para criar as cobranças do contrato assinado.',
+    'agenda' => 'Conversa de 30 minutos marcada pelo assistente, na sua agenda do Google, quando o cliente insiste em falar com você.',
     'precos' => 'Tabela da OAB (referência dos honorários), acréscimo para quem vem por indicação e taxas do Asaas usadas no simulador de vendas da proposta.',
 ][$secao];
 ?>
@@ -81,6 +82,44 @@ $intro = [
     <p class="small"><strong>Webhook</strong> (Integrações › Webhooks › Adicionar, eventos de cobrança): URL <code><?= e(asaas_webhook_url()) ?></code> · token de autenticação <code><?= e(asaas_webhook_token()) ?></code>. Com ele, pagamentos e vencimentos aparecem sozinhos no atendimento; sem ele, use “Atualizar situação” na proposta.</p>
   <?php endif ?>
   <label class="chk"><input type="checkbox" name="asaas_test" value="1"> Testar a conexão com o Asaas ao salvar</label>
+<?php elseif ($secao === 'agenda'): [$ini, $fim] = agenda_hours(); [$prox, $gerr] = agenda_next_slot(); ?>
+  <p class="hint">O chat não tem botão para falar com você: o cliente precisa chegar qualificado. Quando ele pede para falar com você ou com uma pessoa, o assistente pede, por duas vezes, as informações e os documentos que faltam. No <?= HUMAN_ASKS_TO_SCHEDULE ?>º pedido, marca uma conversa no primeiro horário livre, com link do Google Meet e convite no e-mail do cliente.</p>
+  <h3>Conta do Google</h3>
+  <?php if (google_connected()): ?>
+    <p class="ok-line">Conectado<?= setting('google_account_email') ? ' a <strong>' . e((string) setting('google_account_email')) . '</strong>' : '' ?> · agenda “<?= e(google_calendar_id()) ?>”.</p>
+  <?php else: ?>
+    <p class="small"><strong>Não conectado.</strong> Enquanto isso, o horário é calculado só com as reuniões do sistema e fica reservado como ligação para o telefone do cliente.</p>
+  <?php endif ?>
+  <details class="at-inline" <?= google_client_id() === '' ? 'open' : '' ?>>
+    <summary>Como criar o acesso no Google (uma vez)</summary>
+    <ol class="small">
+      <li>Em <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>, crie um projeto (ex.: “Atendimento Fatuche”).</li>
+      <li>Em APIs e serviços › Biblioteca, ative a <strong>Google Calendar API</strong>.</li>
+      <li>Em Tela de consentimento OAuth, escolha “Externo”, preencha nome e e-mail e, em “Usuários de teste”, inclua o seu Gmail. Depois clique em “Publicar app” para a autorização não expirar em 7 dias.</li>
+      <li>Em Credenciais › Criar credenciais › ID do cliente OAuth, tipo “Aplicativo da Web”. Em “URIs de redirecionamento autorizados”, cole: <code><?= e(google_redirect_uri()) ?></code></li>
+      <li>Copie o ID do cliente e a chave secreta para os campos abaixo, salve e clique em “Conectar ao Google Agenda”.</li>
+    </ol>
+  </details>
+  <label class="fld"><span>ID do cliente OAuth</span><input name="google_client_id" value="<?= e(google_client_id()) ?>" placeholder="123…apps.googleusercontent.com" spellcheck="false" autocomplete="off"></label>
+  <label class="fld"><span>Chave secreta do cliente <?= setting('google_client_secret') ? '<small>(configurada, termina em …' . e(substr((string) setting('google_client_secret'), -4)) . ')</small>' : '<small>(não configurada)</small>' ?></span>
+    <input type="password" name="google_client_secret" autocomplete="new-password" placeholder="<?= setting('google_client_secret') ? 'Deixe em branco para manter a chave atual' : 'GOCSPX-…' ?>" spellcheck="false">
+  </label>
+  <label class="fld"><span>Agenda</span><input name="google_calendar_id" value="<?= e(google_calendar_id()) ?>" spellcheck="false"></label>
+  <p class="hint">“primary” é a agenda principal da conta. Para usar outra, cole o ID dela (Configurações da agenda › Integrar agenda).</p>
+  <p class="cfg-acoes">
+    <?php if (google_client_id() !== '' && setting('google_client_secret')): ?><a class="b b-primary" href="<?= e(url('painel/google/conectar')) ?>"><?= google_connected() ? 'Conectar de novo' : 'Conectar ao Google Agenda' ?></a><?php endif ?>
+    <?php if (google_connected()): ?><label class="chk"><input type="checkbox" name="google_desconectar" value="1"> Desconectar ao salvar</label><?php endif ?>
+  </p>
+  <h3>Regras do horário</h3>
+  <div class="var-grid">
+    <label class="fld"><span>Expediente: início</span><input type="time" name="agenda_inicio" value="<?= e(agenda_hhmm($ini)) ?>" step="300"></label>
+    <label class="fld"><span>Expediente: fim</span><input type="time" name="agenda_fim" value="<?= e(agenda_hhmm($fim)) ?>" step="300"></label>
+    <label class="fld"><span>Duração da conversa (min)</span><input type="number" name="agenda_duracao" min="10" max="120" step="5" value="<?= agenda_int('agenda_duracao') ?>"></label>
+    <label class="fld"><span>Antecedência a partir de agora (min)</span><input type="number" name="agenda_antecedencia" min="0" max="1440" step="5" value="<?= agenda_int('agenda_antecedencia') ?>"></label>
+    <label class="fld"><span>Intervalo depois de um compromisso (min)</span><input type="number" name="agenda_intervalo" min="0" max="480" step="5" value="<?= agenda_int('agenda_intervalo') ?>"></label>
+  </div>
+  <p class="hint">Só dias úteis, sem feriados nacionais e do Paraná. Sem nada marcado, a conversa fica para daqui a <?= agenda_int('agenda_antecedencia') ?> minutos; depois de um compromisso, <?= agenda_int('agenda_intervalo') ?> minutos após o fim dele. Sem janela no dia, vale o próximo horário livre.</p>
+  <p class="small"><strong>Se um cliente pedisse agora:</strong> <?= $prox ? e(fmt_when($prox)) . ' (' . e(fmt_datetime($prox->format('Y-m-d H:i:s'))) . ')' : 'sem horário livre nos próximos ' . agenda_int('agenda_dias') . ' dias' ?>.<?= $gerr ? ' <span class="err-line">Google: ' . e($gerr) . '</span>' : '' ?></p>
 <?php elseif ($secao === 'precos'): $oab = oab_table(); $oab = array_merge($oab, array_fill(0, 3, ['key' => '', 'label' => '', 'valor' => null, 'nota' => ''])); $fees = asaas_fees(); ?>
   <h3>Tabela de honorários da OAB (referência)</h3>
   <p class="hint">Os valores mínimos da tabela da OAB/PR para os serviços que você oferece. Na proposta, você marca os serviços do caso e o painel soma o valor de referência. Consulte a tabela vigente em <a href="https://honorarios.oabpr.org.br/" target="_blank" rel="noopener">honorarios.oabpr.org.br</a>. Para incluir um serviço, use uma linha em branco; para tirar, apague o nome.</p>
