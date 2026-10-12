@@ -73,7 +73,7 @@ $flashes = take_flashes();
         <a class="nav-link<?= str_starts_with($path, '/' . $href) ? ' is-active' : '' ?>" href="<?= e(url($href)) ?>"><?= e($label) ?></a>
       <?php endforeach ?>
       <a class="nav-link nav-client" href="<?= e(url('cliente')) ?>">Área do cliente</a>
-      <a class="btn btn-gold nav-cta" href="<?= e(url('comecar')) ?>">Contar meu caso</a>
+      <a class="btn btn-gold nav-cta" href="<?= e(url('comecar')) ?>">Atendimento online</a>
     </nav>
   </div>
 </header>
@@ -134,10 +134,12 @@ $flashes = take_flashes();
   </div>
 </footer>
 
-<a class="wa-float" href="<?= e(whatsapp_link($waText)) ?>" target="_blank" rel="noopener" aria-label="Conversar pelo WhatsApp">
-  <svg viewBox="0 0 32 32" width="26" height="26" aria-hidden="true"><path fill="currentColor" d="M16 3C9 3 3.3 8.6 3.3 15.6c0 2.4.7 4.7 1.9 6.7L3 29l6.9-2.1c1.9 1 4 1.6 6.1 1.6 7 0 12.7-5.6 12.7-12.6S23 3 16 3Zm0 23.1c-1.9 0-3.8-.5-5.4-1.5l-.4-.2-4.1 1.2 1.2-4-.3-.4c-1.1-1.7-1.6-3.6-1.6-5.6C5.4 9.8 10.1 5.2 16 5.2s10.6 4.6 10.6 10.4S21.9 26.1 16 26.1Zm5.8-7.8c-.3-.2-1.9-.9-2.2-1s-.5-.2-.7.2-.8 1-1 1.2-.4.2-.7.1a8.6 8.6 0 0 1-4.3-3.7c-.3-.6.3-.5.9-1.7.1-.2 0-.4 0-.5l-1-2.4c-.3-.6-.5-.5-.7-.5h-.6a1.2 1.2 0 0 0-.9.4 3.6 3.6 0 0 0-1.1 2.7c0 1.6 1.2 3.1 1.3 3.3s2.3 3.5 5.6 4.9c2.1.9 2.9 1 4 .8.6-.1 1.9-.8 2.2-1.5s.3-1.4.2-1.5-.3-.2-.6-.3Z"/></svg>
-  <span>WhatsApp</span>
+<?php if (!str_starts_with(request_path(), '/comecar') && !str_starts_with(request_path(), '/cliente')): ?>
+<a class="chat-float" href="<?= e(url('comecar', ['origem' => request_path()])) ?>" aria-label="Iniciar o atendimento online">
+  <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM8 9h8M8 13h5"/></svg>
+  <span><strong>Atendimento online</strong><small>Converse agora pelo chat</small></span>
 </a>
+<?php endif ?>
 
 <script src="<?= e(asset('js/site.js')) ?>" defer></script>
 <script src="<?= e(asset('js/chat.js')) ?>" defer></script>

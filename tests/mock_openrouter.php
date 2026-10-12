@@ -83,6 +83,15 @@ if (str_contains($system, 'extrai dados')) {
         $out = ['legivel' => false, 'tipo_confere' => false, 'observacao' => 'Imagem desfocada'];
     }
     $content = "```json\n" . json_encode($out, JSON_UNESCAPED_UNICODE) . "\n```";
+} elseif (str_contains($system, 'transcreve áudios')) {
+    $audio = '';
+    foreach (is_array($user) ? $user : [] as $p) {
+        $audio .= (string) ($p['input_audio']['data'] ?? '');
+    }
+    foreach ($gparts ?? [] as $p) {
+        $audio .= (string) ($p['inline_data']['data'] ?? '');
+    }
+    $content = json_encode(['transcricao' => strlen($audio) > 2000 ? 'Meu contrato é do Banco Aymoré e tenho duas parcelas atrasadas' : ''], JSON_UNESCAPED_UNICODE);
 } elseif (str_contains($system, 'classifica documentos')) {
     $content = json_encode(['tipo' => 'identidade']);
 } elseif (str_contains($system, 'Você conduz o acolhimento')) {
@@ -91,6 +100,7 @@ if (str_contains($system, 'extrai dados')) {
     $r = ['resposta' => 'Certo, anotado. Vamos seguir.', 'campos' => (object) []];
     if (str_contains($now, 'início da conversa')) {
         $r['resposta'] = 'Olá! Que bom ter você aqui. Primeiro: você recebeu algum aviso do banco ou da Justiça, ou o veículo já foi apreendido?';
+        $r['sugestoes'] = ['Não recebi nada disso', 'O carro foi apreendido', 'Recebi carta do banco', 'Uma sugestão longa demais para caber num atalho de resposta rápida'];
     } elseif (str_contains($now, 'quebrar')) {
         $content = 'isto não é JSON';
     } elseif (str_contains($now, 'nada disso')) {

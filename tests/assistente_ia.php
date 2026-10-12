@@ -171,6 +171,7 @@ $sid->get('/painel/instalar');
 $code = trim((string) file_get_contents($codeFile));
 $sid->post('/painel/instalar', ['code' => $code, 'name' => 'Sidney Teste', 'email' => 'sidney@teste.local', 'password' => 'senha-do-sidney-1', 'password2' => 'senha-do-sidney-1']);
 set_setting('llm_endpoint', "http://127.0.0.1:$mockPort/api/v1");
+set_setting('agent_enabled', '0'); // este teste cobre o roteiro com botões + leitura pela IA; a conversa com IA está em assistente_conversa.php
 for ($i = 0; $i < 30 && !@file_get_contents("http://127.0.0.1:$mockPort/api/v1/models"); $i++) {
     usleep(100000);
 }
@@ -199,7 +200,7 @@ $cli->get('/comecar');
 ok(str_contains($cli->html, 'inteligência artificial'), 'aviso de uso de IA no consentimento');
 preg_match('/name="form_key" value="([^"]+)"/', $cli->html, $fk);
 sleep(3);
-$cli->post('/comecar', ['nome' => 'Maria', 'telefone' => '(41) 98888-1111', 'email' => '', 'consent' => '1', 'website' => '', 'form_key' => $fk[1]]);
+$cli->post('/comecar', ['nome' => 'Maria Souza', 'telefone' => '(41) 98888-1111', 'email' => 'maria@teste.local', 'consent' => '1', 'website' => '', 'form_key' => $fk[1]]);
 $id = (int) scalar('SELECT MAX(id) FROM cases');
 $asked = [];
 $answers = [
@@ -287,7 +288,7 @@ $cliG = new Browser($base);
 $cliG->get('/comecar');
 preg_match('/name="form_key" value="([^"]+)"/', $cliG->html, $fk);
 sleep(3);
-$cliG->post('/comecar', ['nome' => 'Rita', 'telefone' => '(41) 96666-1111', 'email' => '', 'consent' => '1', 'website' => '', 'form_key' => $fk[1], 'aviso' => 'nenhum']);
+$cliG->post('/comecar', ['nome' => 'Rita Souza', 'telefone' => '(41) 96666-1111', 'email' => 'rita@teste.local', 'consent' => '1', 'website' => '', 'form_key' => $fk[1], 'aviso' => 'nenhum']);
 $idG = (int) scalar('SELECT MAX(id) FROM cases');
 $docG = (int) scalar("SELECT id FROM documents WHERE case_id = ? AND kind = 'contrato'", [$idG]);
 $cliG->post('/cliente/conversa/documento/' . $docG, ['choice' => 'enviar', 'k' => 'g1'], true, ['arquivo[]' => [$pdf, 'application/pdf']]);
@@ -306,7 +307,7 @@ $cli2 = new Browser($base);
 $cli2->get('/comecar');
 preg_match('/name="form_key" value="([^"]+)"/', $cli2->html, $fk);
 sleep(3);
-$cli2->post('/comecar', ['nome' => 'João', 'telefone' => '(41) 97777-1111', 'email' => '', 'consent' => '1', 'website' => '', 'form_key' => $fk[1], 'aviso' => 'nenhum']);
+$cli2->post('/comecar', ['nome' => 'João Souza', 'telefone' => '(41) 97777-1111', 'email' => 'joao@teste.local', 'consent' => '1', 'website' => '', 'form_key' => $fk[1], 'aviso' => 'nenhum']);
 $cli2->post('/cliente/conversa/mensagem', ['message' => 'Oi, posso falar com alguém?', 'k' => 'x1']);
 $id2 = (int) scalar('SELECT MAX(id) FROM cases');
 ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND body LIKE 'Obrigado. Sua mensagem foi registrada%'", [$id2]), 'falha da IA usa a resposta padrão; o cliente não fica sem retorno');

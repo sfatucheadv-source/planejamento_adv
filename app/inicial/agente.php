@@ -98,7 +98,8 @@ function agent_required_docs(): array
 /** Liga a conversa conduzida pela IA (precisa da IA configurada em Configurações). */
 function agent_enabled(): bool
 {
-    return setting('agent_enabled') === '1' && llm_enabled();
+    // Ligado por padrão: o atendimento do site começa pelo chat com a IA assim que ela estiver configurada.
+    return setting('agent_enabled', '1') === '1' && llm_enabled();
 }
 
 /** A IA conduz a conversa deste atendimento agora? */
@@ -180,7 +181,8 @@ function agent_system_prompt(): string
     $list = fn(array $l) => implode("\n", array_map(fn($x) => '- ' . ltrim($x, "-• \t"), $l));
     return 'Você conduz o acolhimento e a qualificação no chat do site do escritório Sidney Fatuche Advocacia, que atende pessoas com financiamento de veículo '
         . '(revisão de juros, atraso de parcelas, busca e apreensão). Você se apresenta como "' . agent_setting('agent_name') . '". '
-        . "Seu objetivo é reunir, com agilidade, os dados e documentos de que o advogado Sidney precisa para analisar o caso.\n\n"
+        . "Você é o atendimento online do escritório: a pessoa conversa com você como num chat de atendimento, escrevendo, mandando áudio, fotos ou PDFs. "
+        . "Seu objetivo é conduzir a pessoa, com naturalidade e agilidade, até ela estar qualificada: com os dados e os documentos de que o advogado Sidney precisa para analisar o caso e começar a negociar.\n\n"
         . "TOM DE VOZ\n" . agent_setting('agent_tone') . "\n\n"
         . "O QUE VOCÊ FAZ\n" . $list(agent_lines(agent_setting('agent_skills'))) . "\n\n"
         . "O QUE VOCÊ NUNCA FAZ\n" . $list(agent_lines(agent_setting('agent_forbidden'))) . "\n\n"
@@ -191,11 +193,12 @@ function agent_system_prompt(): string
         . "- Peça os documentos mínimos que faltam; explique em uma frase para que servem. Com o documento, você não precisa perguntar o que já estiver nele.\n"
         . "- Quando a pessoa não souber ou preferir informar depois, registre e siga em frente, sem insistir.\n"
         . "- Quando não faltar nada, faça um resumo curto do que foi registrado e pergunte se está correto. Só marque \"concluido\": true quando a pessoa confirmar.\n"
-        . "- Respostas com no máximo 5 frases curtas, em português do Brasil, sem markdown.\n\n"
+        . "- Respostas com no máximo 5 frases curtas, em português do Brasil, sem markdown.\n"
+        . "- Em \"sugestoes\", ofereça de 2 a 4 respostas curtas (até 40 caracteres) que a pessoa possa tocar para responder à sua pergunta, escritas como ela falaria (ex.: \"Sim, está atrasado\", \"Não sei\", \"Vou mandar a foto\"). São só atalhos: ela continua livre para escrever, mandar áudio ou arquivos.\n\n"
         . "RESPOSTA: SOMENTE um objeto JSON com as chaves:\n"
         . '{"resposta": "texto para o cliente", "campos": {"chave": "valor"}, "nao_sabe": ["chave"], "depois": ["chave"], '
         . '"documento_pedido": "tipo do documento que você está pedindo agora ou null", "documentos_nao_tem": ["tipo"], "documentos_depois": ["tipo"], '
-        . '"duvida_tecnica": false, "duvida": "a dúvida técnica, com as palavras da pessoa", "urgente": false, "falar_com_sidney": false, "concluido": false}' . "\n"
+        . '"duvida_tecnica": false, "duvida": "a dúvida técnica, com as palavras da pessoa", "urgente": false, "falar_com_sidney": false, "concluido": false, "sugestoes": ["resposta curta"]}' . "\n"
         . 'Em "campos" use só as chaves listadas no contexto, com o formato indicado.';
 }
 
@@ -277,6 +280,7 @@ function agent_turn(array $c, string $event): ?string
     $reply = trim((string) ($json['resposta'] ?? ''));
     if (!$json || $reply === '') {
         set_case_data($id, 'agent_off', 'falha');
+        set_case_data($id, 'agent_suggestions', []);
         add_event($id, 'ia', 'Assistente com IA indisponível: conversa seguiu com perguntas', $res['error'] ?? 'Resposta fora do formato esperado.');
         chat_post($id, 'bot', 'Desculpe, tive uma instabilidade agora. Para não atrasar seu atendimento, sigo com perguntas rápidas logo abaixo.');
         return null;
@@ -306,6 +310,15 @@ function agent_turn(array $c, string $event): ?string
     }
     $reply = mb_substr($reply, 0, 1500);
     chat_post($id, 'bot', $reply);
+    // Respostas sugeridas: atalhos tocáveis; o cliente continua livre para escrever.
+    $sug = [];
+    foreach ((array) ($json['sugestoes'] ?? []) as $x) {
+        $x = trim(preg_replace('/\s+/u', ' ', (string) (is_scalar($x) ? $x : '')));
+        if ($x !== '' && mb_strlen($x) <= 60 && agent_privacy_ok($id, $x) && !in_array($x, $sug, true)) {
+            $sug[] = $x;
+        }
+    }
+    set_case_data($id, 'agent_suggestions', array_slice($sug, 0, 4));
     if (!empty($json['concluido'])) {
         agent_finish($id);
     }
@@ -379,6 +392,7 @@ function agent_finish(int $id): bool
         return false;
     }
     bump_case($id, ['intake_done_at' => now_str(), 'intake_edit' => null, 'activity_at' => now_str()]);
+    set_case_data($id, 'agent_suggestions', []);
     chat_post($id, 'bot', agent_setting('agent_done'));
     add_event($id, 'coleta', 'Coleta organizada pelo assistente', 'Sidney vai conferir os documentos e preparar a conversa.', true, 'cliente');
     if (!scalar("SELECT 1 FROM tasks WHERE case_id = ? AND kind = 'conferir_coleta' AND status = 'aberta'", [$id])) {
@@ -522,6 +536,36 @@ function agent_receive_files(array $c, array $files, string $docChoice, string $
         add_event($id, 'revisao', 'Análise/kit precisa de revisão', 'Novo arquivo de “' . $doc['label'] . '” depois da análise aprovada.');
     }
     return [$desc, null];
+}
+
+/**
+ * Áudio enviado pela conversa: grava, transcreve e devolve o texto para o
+ * turno da IA. Sem transcrição, Sidney é avisado para ouvir. Retorna [descrição, erro].
+ */
+function agent_receive_audio(array $c, array $file, string $sendKey): array
+{
+    $id = (int) $c['id'];
+    $key = $sendKey !== '' ? $sendKey . '-audio' : null;
+    if ($key !== null && scalar('SELECT 1 FROM files WHERE case_id = ? AND client_key = ?', [$id, $key])) {
+        return [null, null];
+    }
+    $fid = store_upload($file, $id, null, true, true);
+    if (is_string($fid)) {
+        return [null, $fid];
+    }
+    q("UPDATE files SET client_key = ?, kind = 'audio' WHERE id = ?", [$key, $fid]);
+    $row = one('SELECT * FROM files WHERE id = ?', [$fid]);
+    $text = ia_transcribe_audio($id, $row);
+    mark_client_activity($id);
+    if ($text === null) {
+        chat_post($id, 'client', '🎙️ Áudio enviado', null, $sendKey ?: null);
+        add_event($id, 'audio', 'Áudio do cliente sem transcrição', 'Ouça o arquivo “' . $row['original_name'] . '” em Arquivos.');
+        set_next($id, 'Ouvir o áudio enviado pelo cliente', in_business_days(1));
+        return ['A pessoa mandou um áudio que não pôde ser transcrito. Agradeça, diga que Sidney vai ouvir e peça, com gentileza, que ela escreva ou grave de novo o principal para seguirmos agora.', null];
+    }
+    chat_post($id, 'client', '🎙️ Áudio: “' . $text . '”', null, $sendKey ?: null);
+    add_event($id, 'audio', 'Áudio do cliente transcrito pela IA', mb_substr($text, 0, 1000));
+    return ['Mensagem de áudio do cliente (transcrição automática): ' . $text, null];
 }
 
 /**

@@ -117,33 +117,27 @@ $choiceButtons = function (array $q) {
         <?php partial('chat_msgs', ['msgs' => $chat, 'operator' => false, 'c' => $c]) ?>
       </div>
 
-      <?php if (agent_active($c)): $prog = agent_progress($id); ?>
-        <?php if (!$c['intake_done_at']): ?>
-          <div class="cv-progress" id="pergunta">
-            <?php if ($prog['campos'] || $prog['docs']): ?>
-              <p class="small muted">Para Sidney analisar, ainda falta<?= $prog['campos'] ? ': ' . e(implode(', ', array_map('lcfirst_pt', array_slice($prog['campos'], 0, 3)))) . (count($prog['campos']) > 3 ? ' e mais ' . plural(count($prog['campos']) - 3, 'informação', 'informações') : '') : '' ?><?= $prog['docs'] ? ($prog['campos'] ? '; e ' : ': ') . plural(count($prog['docs']), 'documento', 'documentos') . ' (' . e(implode(', ', array_map('lcfirst_pt', $prog['docs']))) . ')' : '' ?>.</p>
-            <?php else: ?>
-              <form method="post" action="<?= e(url('cliente/conversa/concluir')) ?>" class="cv-btns"><?= csrf_field() ?><button class="btn btn-gold" type="submit">Está tudo certo, pode enviar para Sidney</button></form>
-            <?php endif ?>
-          </div>
-        <?php endif ?>
-        <form class="cv-free cv-agent" method="post" action="<?= e(url('cliente/conversa/mensagem')) ?>" enctype="multipart/form-data" id="fim" data-save data-reading="Enviando e lendo o documento. Pode levar até um minuto; não feche a página.">
-          <?= csrf_field() ?><input type="hidden" name="k" value="<?= e(bin2hex(random_bytes(8))) ?>">
-          <label class="field"><span class="sr">Sua mensagem</span><textarea name="message" rows="2" placeholder="Escreva sua mensagem…"></textarea></label>
-          <div class="cv-attach">
-            <label class="field"><span>Anexar foto ou PDF <small>(até <?= (int) config('upload_max_mb') ?> MB)</small></span><input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" multiple data-preview></label>
-            <?php $docOpts = array_filter($docs, fn($d) => $d['status'] !== 'dispensado'); if ($docOpts): ?>
-              <label class="field"><span>O arquivo é</span>
-                <select name="doc"><option value="">O assistente identifica</option><?php foreach ($docOpts as $d): ?><option value="<?= (int) $d['id'] ?>" <?= selected($d['kind'], (string) case_data($c, 'agent_doc')) ?>><?= e($d['label']) ?></option><?php endforeach ?></select>
-              </label>
-            <?php endif ?>
-          </div>
+      <?php if (agent_active($c)): $docOpts = array_filter($docs, fn($d) => $d['status'] !== 'dispensado'); ?>
+        <div data-agent-bar><?php partial('cv_agent_bar', ['c' => $c]) ?></div>
+        <form class="cv-composer" method="post" action="<?= e(url('cliente/conversa/mensagem')) ?>" enctype="multipart/form-data" id="fim" data-chat-form data-reading="Enviando e lendo o arquivo…">
+          <?= csrf_field() ?><input type="hidden" name="k" value="<?= e(bin2hex(random_bytes(8))) ?>" data-key>
           <div class="cv-preview" data-preview-box></div>
-          <div class="cv-btns">
-            <button class="btn btn-gold" type="submit">Enviar</button>
-            <button class="btn btn-ghost btn-small" type="submit" name="message" value="Quero falar com Sidney." formnovalidate>Quero falar com Sidney</button>
+          <?php if ($docOpts): ?>
+            <label class="cv-doc-choice" data-doc-choice><span>O arquivo é</span>
+              <select name="doc"><option value="">o assistente identifica</option><?php foreach ($docOpts as $d): ?><option value="<?= (int) $d['id'] ?>" <?= selected($d['kind'], (string) case_data($c, 'agent_doc')) ?>><?= e($d['label']) ?></option><?php endforeach ?></select>
+            </label>
+          <?php endif ?>
+          <div class="cv-rec" data-rec-bar hidden><span class="cv-rec-dot" aria-hidden="true"></span> Gravando <span data-rec-time>0:00</span><button type="button" class="btn btn-gold btn-small" data-rec-stop>Enviar áudio</button><button type="button" class="link-btn" data-rec-cancel>Cancelar</button></div>
+          <div class="cv-composer-row">
+            <label class="cv-icon-btn" title="Anexar foto, PDF ou áudio"><span class="sr">Anexar foto, PDF ou áudio</span>
+              <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5"/></svg>
+              <input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png,image/webp,image/heic,audio/*" multiple data-preview>
+            </label>
+            <label class="cv-input"><span class="sr">Sua mensagem</span><textarea name="message" rows="1" placeholder="Escreva sua mensagem…" data-chat-input></textarea></label>
+            <button type="button" class="cv-icon-btn" data-rec hidden title="Gravar áudio" aria-label="Gravar áudio"><svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></svg></button>
+            <button type="submit" class="cv-send" aria-label="Enviar"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M3 20.5 21 12 3 3.5l.01 6.6L15 12 3.01 13.9z"/></svg></button>
           </div>
-          <p class="cv-saving" data-saving hidden aria-live="polite">O assistente está respondendo…</p>
+          <p class="cv-hint muted small">Escreva do seu jeito, toque numa sugestão, grave um áudio ou anexe fotos e PDFs. Sidney confere tudo.</p>
         </form>
         <form method="post" action="<?= e(url('cliente/conversa/modo')) ?>" class="cv-modo"><?= csrf_field() ?><button class="link-btn" type="submit" name="modo" value="botoes">Prefiro responder com perguntas e botões</button></form>
       <?php else: ?>

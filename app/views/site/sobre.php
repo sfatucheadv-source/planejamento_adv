@@ -12,7 +12,7 @@ $working = photo_url('sidney-trabalhando');
       <blockquote class="quote">“Minha atuação em financiamento de veículos concentra a análise da dívida, da venda e da prestação de contas. Examino os documentos, respondo às dúvidas e oriento a forma de enfrentar o caso. O atendimento é digital, para clientes de todo o Brasil.”</blockquote>
       <p>Na prática, isso quer dizer que você sabe o que está acontecendo, quanto custa cada caminho e qual é o próximo passo. Quando a revisão não compensa, isso é dito com clareza. E o caso só termina quando o resultado é conferido na sua vida, não apenas no papel.</p>
       <div class="actions">
-        <a class="btn btn-gold" href="<?= e(url('comecar', ['origem' => 'sobre'])) ?>">Contar meu caso</a>
+        <a class="btn btn-gold" href="<?= e(url('comecar', ['origem' => 'sobre'])) ?>">Iniciar o atendimento online</a>
         <a class="btn btn-ghost" href="<?= e(office('oab_lookup_url')) ?>" target="_blank" rel="noopener">Conferir a inscrição na OAB</a>
       </div>
     </div>

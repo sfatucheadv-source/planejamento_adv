@@ -166,7 +166,7 @@ $cli->get('/comecar?aviso=apreendido&origem=home');
 ok($cli->status === 200 && str_contains($cli->html, 'assistente virtual da Fatuche Advocacia'), 'entrada conversacional abre com a apresentação do assistente');
 preg_match('/name="form_key" value="([^"]+)"/', $cli->html, $fk);
 sleep(3);
-$entry = ['nome' => 'Maria Teste', 'telefone' => '(41) 98888-1111', 'email' => 'maria@teste.local', 'adaptacao' => '', 'consent' => '1', 'website' => '', 'origin' => 'home', 'aviso' => 'apreendido', 'form_key' => $fk[1] ?? ''];
+$entry = ['nome' => 'Maria da Silva Teste', 'telefone' => '(41) 98888-1111', 'email' => 'maria@teste.local', 'adaptacao' => '', 'consent' => '1', 'website' => '', 'origin' => 'home', 'aviso' => 'apreendido', 'form_key' => $fk[1] ?? ''];
 $cli->post('/comecar', $entry);
 $id = (int) scalar('SELECT MAX(id) FROM cases');
 $c = c($id);
@@ -271,7 +271,7 @@ ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND author = 'bo
 
 echo "\nP2. Ficha do operador e suficiência (T07, T08, T11, T12, S09, S11)\n";
 $sid->get('/painel/atendimentos');
-ok(str_contains($sid->html, 'Maria Teste') && str_contains($sid->html, 'Possível urgência') && str_contains($sid->html, 'novo'), 'lista mostra urgência e mensagem nova');
+ok(str_contains($sid->html, 'Maria da Silva Teste') && str_contains($sid->html, 'Possível urgência') && str_contains($sid->html, 'novo'), 'lista mostra urgência e mensagem nova');
 $sid->get('/painel/atendimento/' . $id);
 ok($sid->status === 200 && str_contains($sid->html, '1 · Dados e contexto') && str_contains($sid->html, '5 · Kit e decisão') && str_contains($sid->html, 'Conversa'), 'uma ficha com cinco blocos e a conversa');
 ok(!str_contains($sid->html, '<script>alert(1)</script>') && str_contains($sid->html, '&lt;script&gt;'), 'S11: texto do chat aparece escapado');
@@ -428,7 +428,7 @@ $cli2 = new Browser($base);
 $cli2->get('/comecar');
 preg_match('/name="form_key" value="([^"]+)"/', $cli2->html, $fk2);
 sleep(3);
-$cli2->post('/comecar', ['nome' => 'João Desistente', 'telefone' => '41966665555', 'email' => '', 'consent' => '1', 'website' => '', 'form_key' => $fk2[1]]);
+$cli2->post('/comecar', ['nome' => 'João Desistente', 'telefone' => '41966665555', 'email' => 'joao.d@teste.local', 'consent' => '1', 'website' => '', 'form_key' => $fk2[1]]);
 $id2 = (int) scalar('SELECT MAX(id) FROM cases');
 $cli2->get('/cliente?area=inicio');
 $cli2->post('/cliente/criar-senha', ['password' => 'senha-joao-123', 'password2' => 'senha-joao-123']);

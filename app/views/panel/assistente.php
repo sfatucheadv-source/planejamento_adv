@@ -33,7 +33,7 @@ $conditional = ['aviso_data' => 'só se houver aviso', 'atraso' => 'se o contrat
   <?= csrf_field() ?>
   <section class="box">
     <div class="box-head"><h2>Funcionamento</h2></div>
-    <label class="chk"><input type="checkbox" name="agent_enabled" value="1" <?= checked(setting('agent_enabled') === '1') ?>> A IA conduz a conversa do site (acolhimento, qualificação, documentos)</label>
+    <label class="chk"><input type="checkbox" name="agent_enabled" value="1" <?= checked(setting('agent_enabled', '1') === '1') ?>> A IA conduz a conversa do site (acolhimento, qualificação, documentos)</label>
     <p class="hint">Ligado: o cliente conversa livremente, manda fotos e PDFs no próprio chat, e a IA lê os documentos e preenche a ficha. Desligado, ou se a IA falhar: o roteiro com perguntas e botões continua de onde parou. O cliente também pode escolher os botões a qualquer momento.</p>
     <div class="var-grid">
       <label class="fld"><span>Nome com que se apresenta</span><input name="agent_name" maxlength="120" value="<?= e($txt('agent_name')) ?>"></label>

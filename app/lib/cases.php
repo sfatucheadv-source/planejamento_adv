@@ -497,10 +497,23 @@ const ALLOWED_MIME = [
     'image/heif' => 'heif',
 ];
 
+/** Áudios aceitos só na conversa do atendimento (gravados no navegador ou enviados como arquivo). */
+const ALLOWED_AUDIO_MIME = [
+    'audio/wav' => 'wav', 'audio/x-wav' => 'wav', 'audio/wave' => 'wav', 'audio/vnd.wave' => 'wav',
+    'audio/mpeg' => 'mp3', 'audio/mp3' => 'mp3', 'audio/ogg' => 'ogg', 'audio/webm' => 'webm', 'video/webm' => 'webm',
+    'audio/mp4' => 'm4a', 'audio/x-m4a' => 'm4a', 'audio/aac' => 'aac', 'audio/x-hx-aac-adts' => 'aac', 'audio/flac' => 'flac', 'audio/x-flac' => 'flac',
+];
+
+/** Tipo real do arquivo enviado (não o informado pelo navegador). */
+function upload_mime(array $file): string
+{
+    return is_file((string) ($file['tmp_name'] ?? '')) ? ((new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']) ?: '') : '';
+}
+
 /**
  * Grava um arquivo enviado. Retorna o id ou uma mensagem de erro.
  */
-function store_upload(array $file, int $caseId, ?int $documentId, bool $byClient): int|string
+function store_upload(array $file, int $caseId, ?int $documentId, bool $byClient, bool $allowAudio = false): int|string
 {
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK) {
         return match ($file['error'] ?? 0) {
@@ -513,14 +526,15 @@ function store_upload(array $file, int $caseId, ?int $documentId, bool $byClient
         return 'O arquivo é maior que o limite de ' . config('upload_max_mb') . ' MB.';
     }
     $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']) ?: '';
-    if (!isset(ALLOWED_MIME[$mime])) {
-        return 'Aceitamos PDF ou fotos (JPG, PNG, WEBP, HEIC).';
+    $types = ALLOWED_MIME + ($allowAudio ? ALLOWED_AUDIO_MIME : []);
+    if (!isset($types[$mime])) {
+        return $allowAudio ? 'Aceitamos PDF, fotos (JPG, PNG, WEBP, HEIC) ou áudio.' : 'Aceitamos PDF ou fotos (JPG, PNG, WEBP, HEIC).';
     }
     $dir = config('storage_dir') . '/uploads/' . $caseId;
     if (!is_dir($dir)) {
         mkdir($dir, 0700, true);
     }
-    $stored = bin2hex(random_bytes(16)) . '.' . ALLOWED_MIME[$mime];
+    $stored = bin2hex(random_bytes(16)) . '.' . $types[$mime];
     $ok = is_uploaded_file($file['tmp_name'])
         ? move_uploaded_file($file['tmp_name'], $dir . '/' . $stored)
         : rename($file['tmp_name'], $dir . '/' . $stored);

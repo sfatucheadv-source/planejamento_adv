@@ -172,7 +172,7 @@ function start_client(Browser $b, string $nome, string $tel): int
     $b->get('/comecar');
     preg_match('/name="form_key" value="([^"]+)"/', $b->html, $fk);
     sleep(3);
-    $b->post('/comecar', ['nome' => $nome, 'telefone' => $tel, 'email' => '', 'consent' => '1', 'website' => '', 'form_key' => $fk[1]]);
+    $b->post('/comecar', ['nome' => $nome, 'telefone' => $tel, 'email' => mb_strtolower(strtok($nome, ' ')) . '@teste.local', 'consent' => '1', 'website' => '', 'form_key' => $fk[1]]);
     return (int) scalar('SELECT MAX(id) FROM cases');
 }
 
@@ -203,7 +203,7 @@ $sid->get('/painel/configuracoes');
 $sid->post('/painel/configuracoes', ['operator_user_id' => (string) scalar('SELECT id FROM users LIMIT 1'), 'intake_workflow' => 'simple_v1', 'llm_enabled' => '1', 'llm_provider' => 'openrouter',
     'llm_model' => 'google/gemini-2.5-flash', 'llm_api_key' => 'sk-or-v1-teste-valido-0000']);
 setting('__reset');
-ok(llm_enabled() && !agent_enabled(), 'IA configurada; a conversa com IA começa desligada');
+ok(llm_enabled() && agent_enabled(), 'com a IA configurada, o atendimento do site já começa pela conversa com a IA');
 $sid->get('/painel/assistente');
 ok(str_contains($sid->html, '<h1>Assistente com IA</h1>') && str_contains($sid->html, 'Regras fixas') && str_contains($sid->html, 'Variáveis mínimas') && str_contains($sid->html, 'painel/assistente"'), 'painel próprio do assistente, com regras fixas e variáveis mínimas, no menu');
 $campos = ['aviso', 'objetivo_prioridade', 'situacao_contrato', 'atraso', 'atraso_qtd', 'nome_completo', 'cpf', 'obs_juridicas'];
@@ -220,11 +220,11 @@ ok(str_contains($sid->html, 'Encaminharia como dúvida técnica') && str_contain
 
 echo "\nA2. Acolhimento conduzido pela IA\n";
 $cli = new Browser($base);
-$id = start_client($cli, 'Ana', '(41) 98888-1111');
+$id = start_client($cli, 'Ana Lima', '(41) 98888-1111');
 $msgs = array_column(all('SELECT author, body FROM chat_messages WHERE case_id = ? ORDER BY id', [$id]), 'body');
 ok(($msgs[0] ?? '') === 'Oi! Sou o assistente do escritório e vou te ajudar a organizar tudo.' && str_contains(last_bot($id), 'Que bom ter você aqui'), 'saudação do painel e primeira pergunta feita pela IA');
 $cli->get('/cliente?area=conversa');
-ok(str_contains($cli->html, 'cv-agent') && !preg_match('#id="pergunta".*?name="q" value=#s', $cli->html) && str_contains($cli->html, 'ainda falta'), 'conversa livre com anexo, sem o roteiro de botões, e lista do que falta');
+ok(str_contains($cli->html, 'data-chat-form') && !preg_match('#id="pergunta".*?name="q" value=#s', $cli->html) && str_contains($cli->html, 'ainda falta'), 'conversa livre com anexo, sem o roteiro de botões, e lista do que falta');
 say($cli, 'Não recebi nada disso, quero uma parcela que caiba no bolso');
 ok(fv($id, 'aviso') === 'nenhum' && fv($id, 'objetivo_prioridade') === 'reduzir_parcela' && str_contains(last_bot($id), 'O que você precisa resolver'), 'dados entendidos na conversa vão para a ficha');
 say($cli, 'O contrato está ativo e tenho 2 parcelas atrasadas no Banco Aymoré, não sei a taxa');
@@ -254,7 +254,7 @@ echo "\nA5. Documento enviado no chat\n";
 say($cli, '', ['arquivo[]' => [$jpg, 'image/jpeg']], ['doc' => '']);
 $docId = (int) scalar("SELECT id FROM documents WHERE case_id = ? AND kind = 'identidade'", [$id]);
 ok(scalar('SELECT status FROM documents WHERE id = ?', [$docId]) === 'recebido' && (int) scalar('SELECT COUNT(*) FROM files WHERE document_id = ?', [$docId]) === 1, 'arquivo sem indicação é identificado pela IA (identidade) e anexado');
-ok(fv($id, 'nome_completo') === 'Maria da Silva Teste' && field($id, 'cpf')['source'] === 'ia', 'dados lidos do documento preenchem a ficha');
+ok(fv($id, 'nome_completo') === 'Ana Lima' && field($id, 'cpf')['source'] === 'ia' && (bool) scalar("SELECT 1 FROM events WHERE case_id = ? AND body LIKE '%Divergências%Maria da Silva Teste%'", [$id]), 'dados lidos do documento preenchem a ficha; nome diferente do informado vira aviso de divergência');
 ok(str_contains(last_bot($id), 'Obrigado pelo documento') && case_data(c($id), 'agent_doc') === 'residencia', 'a IA comenta a leitura e pede o próximo documento');
 $cli->get('/cliente?area=conversa');
 ok(preg_match('#<option value="\d+"\s+selected>Comprovante de residência#', $cli->html) === 1, 'o próximo anexo já vem indicado como o documento pedido');
@@ -270,7 +270,7 @@ ok((bool) c($id)['intake_done_at'] && last_bot($id) === 'Coleta concluída, obri
 
 echo "\nA7. Urgência, queda para os botões e alternância\n";
 $cli2 = new Browser($base);
-$id2 = start_client($cli2, 'Bruno', '(41) 97777-3333');
+$id2 = start_client($cli2, 'Bruno Costa', '(41) 97777-3333');
 say($cli2, 'Meu carro foi apreendido ontem');
 ok(c($id2)['urgency_signal'] !== null && fv($id2, 'aviso') === 'apreendido', 'apreensão relatada na conversa vira sinal de urgência');
 $cli2->get('/cliente?area=conversa');
@@ -279,16 +279,62 @@ say($cli2, 'vou quebrar a IA');
 $cli2->get('/cliente?area=conversa');
 ok(case_data(c($id2), 'agent_off') === 'falha' && preg_match('#id="pergunta".*?name="q" value=#s', $cli2->html) && str_contains($cli2->html, 'Voltar a conversar livremente'), 'falha da IA: conversa segue com as perguntas de botões, de onde parou');
 $cli2->post('/cliente/conversa/modo', ['modo' => 'ia']);
-ok(!case_data(c($id2), 'agent_off') && str_contains($cli2->html, 'cv-agent'), 'cliente volta a conversar com a IA');
+ok(!case_data(c($id2), 'agent_off') && str_contains($cli2->html, 'data-chat-form'), 'cliente volta a conversar com a IA');
 $cli2->post('/cliente/conversa/modo', ['modo' => 'botoes']);
 ok(case_data(c($id2), 'agent_off') === 'cliente' && preg_match('#id="pergunta".*?name="q" value=#s', $cli2->html), 'cliente pode preferir os botões');
 
-echo "\nA8. Desligado\n";
+echo "\nA8. Chat de atendimento: formulário, sugestões, envio sem recarregar e áudio\n";
+$home = new Browser($base);
+$home->get('/');
+ok(str_contains($home->html, 'class="chat-float"') && str_contains($home->html, 'Atendimento online') && !str_contains($home->html, 'class="wa-float"'), 'site: botão flutuante de atendimento online no lugar do WhatsApp');
+$hdr = (string) shell_exec('curl -sI ' . escapeshellarg($base . '/'));
+ok(str_contains($hdr, 'microphone=(self)'), 'o site permite o microfone para gravar áudio no chat');
+$f = new Browser($base);
+$f->get('/comecar');
+ok(str_contains($f->html, 'Nome completo') && str_contains($f->html, 'name="email"') && !str_contains($f->html, 'name="adaptacao"'), 'formulário inicial: nome completo, e-mail e telefone');
+preg_match('/name="form_key" value="([^"]+)"/', $f->html, $fk);
+sleep(3);
+$f->post('/comecar', ['nome' => 'Davi', 'telefone' => '(41) 95555-1111', 'email' => '', 'consent' => '1', 'website' => '', 'form_key' => $fk[1]]);
+ok(str_contains($f->html, 'nome completo (nome e sobrenome)') && str_contains($f->html, 'Informe um e-mail válido'), 'nome sem sobrenome e e-mail em branco são recusados');
+$cli4 = new Browser($base);
+$id4 = start_client($cli4, 'Elisa Rocha', '(41) 94444-1111');
+ok(fv($id4, 'nome_completo') === 'Elisa Rocha' && fv($id4, 'email') === 'elisa@teste.local' && (string) c($id4)['client_phone'] === '41944441111', 'nome completo, e-mail e telefone registrados na ficha');
+$cli4->get('/cliente?area=conversa');
+ok(str_contains($cli4->html, 'class="cv-chip" type="submit" form="fim" name="message" value="Não recebi nada disso"') && !str_contains($cli4->html, 'longa demais'), 'respostas sugeridas pela IA viram atalhos (as longas demais são descartadas)');
+ok(str_contains($cli4->html, 'data-rec') && str_contains($cli4->html, 'audio/*') && str_contains($cli4->html, 'data-chat-form'), 'compositor com anexo, microfone e envio sem recarregar');
+$last = (int) scalar('SELECT MAX(id) FROM chat_messages WHERE case_id = ?', [$id4]);
+$cli4->post('/cliente/conversa/mensagem', ['message' => 'Não recebi nada disso', 'k' => 'aj1', 'ajax' => '1', 'depois' => (string) $last]);
+$j = json_decode($cli4->html, true) ?: [];
+ok(($j['ok'] ?? false) && str_contains($j['html'] ?? '', 'Não recebi nada disso') && str_contains($j['html'] ?? '', 'O que você precisa resolver') && (int) $j['last'] > $last && isset($j['bar']), 'envio sem recarregar devolve a mensagem, a resposta da IA e a barra atualizada');
+$cli4->post('/cliente/conversa/mensagem', ['message' => 'Não recebi nada disso', 'k' => 'aj1', 'ajax' => '1', 'depois' => (string) $last]);
+ok((int) scalar("SELECT COUNT(*) FROM chat_messages WHERE case_id = ? AND body = 'Não recebi nada disso'", [$id4]) === 1, 'reenvio da mesma mensagem (rede instável) não duplica');
+// Áudio de 1 segundo, como o gravado pelo navegador (WAV 16 kHz mono)
+$wav = function (float $secs): string {
+    $n = (int) (16000 * $secs);
+    $pcm = '';
+    for ($i = 0; $i < $n; $i++) {
+        $pcm .= pack('v', (int) (8000 * sin($i / 10)) & 0xFFFF);
+    }
+    $file = tempnam(sys_get_temp_dir(), 'aud') . '.wav';
+    file_put_contents($file, 'RIFF' . pack('V', 36 + strlen($pcm)) . 'WAVEfmt ' . pack('VvvVVvv', 16, 1, 1, 16000, 32000, 2, 16) . 'data' . pack('V', strlen($pcm)) . $pcm);
+    return $file;
+};
+$cli4->post('/cliente/conversa/mensagem', ['message' => '', 'k' => 'au1', 'ajax' => '1', 'depois' => '0'], true, ['audio' => [$wav(1.0), 'audio/wav']]);
+foreach ([$id4] as $x) { case_fields($x, true); }
+$aud = one("SELECT * FROM files WHERE case_id = ? AND kind = 'audio'", [$id4]);
+ok($aud && $aud['mime'] === 'audio/x-wav' || ($aud && $aud['mime'] === 'audio/wav'), 'áudio gravado é guardado no atendimento');
+ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND author = 'client' AND body = '🎙️ Áudio: “Meu contrato é do Banco Aymoré e tenho duas parcelas atrasadas”'", [$id4]), 'áudio transcrito aparece na conversa');
+ok(fv($id4, 'atraso') === 'sim' && fv($id4, 'banco') === 'Banco Aymoré', 'a IA entende o áudio e preenche a ficha');
+$cli4->post('/cliente/conversa/mensagem', ['message' => '', 'k' => 'au2'], true, ['arquivo[]' => [$wav(0.01), 'audio/wav']]);
+ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND body = '🎙️ Áudio enviado'", [$id4]) && str_contains((string) c($id4)['next_action'], 'Ouvir o áudio'), 'áudio anexado como arquivo também vale; sem transcrição, Sidney é avisado para ouvir');
+ok((int) scalar("SELECT COUNT(*) FROM files WHERE case_id = ? AND kind = 'audio'", [$id4]) === 2 && !scalar("SELECT 1 FROM documents WHERE case_id = ? AND status = 'recebido'", [$id4]), 'áudio não é confundido com documento');
+
+echo "\nA9. Desligado\n";
 $sid->get('/painel/assistente');
 $sid->post('/painel/assistente', ['agent_enabled' => '', 'campos' => $campos, 'documentos' => ['identidade']]);
 setting('__reset');
 $cli3 = new Browser($base);
-$id3 = start_client($cli3, 'Carla', '(41) 96666-4444');
+$id3 = start_client($cli3, 'Carla Dias', '(41) 96666-4444');
 $cli3->get('/cliente?area=conversa');
 ok(!agent_enabled() && str_contains($cli3->html, BOT_GREETING) && preg_match('#id="pergunta".*?name="q" value="aviso"#s', $cli3->html), 'com a IA da conversa desligada, volta o roteiro com botões');
 

@@ -22,7 +22,7 @@ $open = is_open();
         </div>
         <p class="fq-foot">
           <span class="availability <?= $open ? 'is-open' : '' ?>"><span class="dot" aria-hidden="true"></span><?= $open ? 'Sidney em atendimento agora' : 'Fora do horário · retornamos ' . e(fmt_when(next_opening())) ?></span>
-          <a href="<?= e(whatsapp_link('Olá! Vim pelo site e gostaria de falar sobre meu financiamento de veículo.')) ?>" target="_blank" rel="noopener">Prefere conversar direto? Chame no WhatsApp</a>
+          <a href="<?= e(url('comecar', ['origem' => 'home'])) ?>">Prefere contar do seu jeito? Inicie o atendimento online</a>
         </p>
       </div>
     </div>

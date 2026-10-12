@@ -10,9 +10,9 @@ $startQuery = ['prioridade' => $s['priority'], 'origem' => $slug] + ($s['notice'
       <h1><?= e($s['title']) ?></h1>
       <p class="lead"><?= e($s['lead']) ?></p>
       <div class="actions">
-        <a class="btn btn-gold btn-lg" href="<?= e(url('comecar', $startQuery)) ?>">Contar meu caso</a>
+        <a class="btn btn-gold btn-lg" href="<?= e(url('comecar', $startQuery)) ?>">Iniciar o atendimento online</a>
         <?php if ($urgent): ?>
-          <a class="btn btn-light btn-lg" href="<?= e(whatsapp_link('Olá, meu veículo foi apreendido (ou recebi um documento sobre busca e apreensão) e preciso de orientação urgente.')) ?>" target="_blank" rel="noopener">É urgente: chamar no WhatsApp</a>
+          <a class="btn btn-light btn-lg" href="<?= e(url('comecar', ['aviso' => 'apreendido'] + $startQuery)) ?>">É urgente: atendimento online agora</a>
         <?php endif ?>
       </div>
     </div>

@@ -56,15 +56,16 @@ function intake_start_post(): never
         redirect('cliente?area=conversa#pergunta');
     }
     $errors = [];
-    if (mb_strlen($a['nome']) < 2) {
-        $errors['nome'] = 'Como podemos te chamar?';
+    $a['nome'] = preg_replace('/\s+/u', ' ', $a['nome']);
+    if (mb_strlen($a['nome']) < 5 || !str_contains($a['nome'], ' ')) {
+        $errors['nome'] = 'Informe seu nome completo (nome e sobrenome).';
     }
     $digits = only_digits($a['telefone']);
     if (strlen($digits) < 10 || strlen($digits) > 13) {
         $errors['telefone'] = 'Informe um WhatsApp ou telefone com DDD.';
     }
-    if ($a['email'] !== '' && !filter_var($a['email'], FILTER_VALIDATE_EMAIL)) {
-        $errors['email'] = 'Confira o e-mail ou deixe em branco.';
+    if (!filter_var($a['email'], FILTER_VALIDATE_EMAIL)) {
+        $errors['email'] = 'Informe um e-mail válido: é por ele que enviamos os avisos do atendimento.';
     }
     if (input('consent') !== '1') {
         $errors['consent'] = 'Precisamos da sua autorização para usar esses dados no atendimento.';
@@ -93,7 +94,8 @@ function intake_start_post(): never
     }
     unset($_SESSION['intake_form_key']);
     chat_post($id, 'bot', bot_greeting());
-    chat_post($id, 'client', 'Sou ' . $a['nome'] . '. Meu contato é ' . format_phone($digits) . ($a['email'] ? ' e ' . mb_strtolower($a['email']) : '') . '.');
+    chat_post($id, 'client', 'Sou ' . $a['nome'] . '. Meu contato é ' . format_phone($digits) . ' e ' . mb_strtolower($a['email']) . '.');
+    set_field($id, 'nome_completo', $a['nome']);
     if (isset(NOTICE_OPTIONS[$a['aviso']])) {
         // Reaproveita a seleção feita na página inicial (B02).
         set_field($id, 'aviso', $a['aviso']);
@@ -103,7 +105,7 @@ function intake_start_post(): never
     if (agent_enabled()) {
         // A IA conduz: cumprimenta pelo nome e faz a primeira pergunta.
         set_case_data($id, 'agent_started', now_str());
-        agent_turn(find_case($id), 'Início da conversa: a pessoa acabou de se identificar no site. Cumprimente pelo nome, diga em uma frase como funciona e faça a primeira pergunta.');
+        agent_turn(find_case($id), 'Início da conversa: a pessoa acabou de se identificar no site (nome completo, e-mail e telefone já registrados). Cumprimente pelo primeiro nome, diga em uma frase como funciona (ela pode escrever, mandar áudio, fotos ou PDFs) e faça a primeira pergunta.');
     }
     session_regenerate_id(true);
     $_SESSION['intake_case'] = $id;
@@ -188,36 +190,63 @@ $router->post('/cliente/conversa/corrigir', function () {
 $router->post('/cliente/conversa/mensagem', function () {
     $c = require_portal();
     $id = (int) $c['id'];
+    $ajax = input('ajax') === '1';
+    $after = (int) input('depois');
     $text = trim((string) input('message'));
-    $files = uploaded_files('arquivo');
     $agent = agent_active($c);
-    if ($text === '' && !($agent && $files)) {
-        flash('error', 'Escreva a mensagem.');
-        portal_back('conversa', 'mensagem');
+    // Áudio gravado no navegador ou arquivo de áudio anexado; o resto são documentos.
+    $audios = $agent ? uploaded_files('audio') : [];
+    $files = [];
+    foreach (uploaded_files('arquivo') as $f) {
+        if ($agent && isset(ALLOWED_AUDIO_MIME[upload_mime($f)])) {
+            $audios[] = $f;
+        } else {
+            $files[] = $f;
+        }
+    }
+    $fail = function (string $msg, string $anchor = 'fim') use ($ajax) {
+        if ($ajax) {
+            json_out(['ok' => false, 'error' => $msg], 422);
+        }
+        flash('error', $msg);
+        portal_back('conversa', $anchor);
+    };
+    if ($text === '' && !($agent && ($files || $audios))) {
+        $fail('Escreva a mensagem, grave um áudio ou anexe um arquivo.', 'mensagem');
     }
     $key = (string) input('k');
     if ($key !== '' && scalar('SELECT 1 FROM chat_messages WHERE case_id = ? AND client_key IN (?, ?)', [$id, $key, $key . '-msg'])) {
-        portal_back('conversa', 'fim'); // retentativa: já gravado
+        $ajax ? json_out(chat_ajax_payload(find_case($id), $after)) : portal_back('conversa', 'fim'); // retentativa: já gravado
     }
     if ($agent) {
-        @set_time_limit(240);
-        $event = '';
+        @set_time_limit(300);
+        $event = [];
+        foreach ($audios as $i => $f) {
+            [$desc, $err] = agent_receive_audio($c, $f, $key !== '' ? $key . '-a' . $i : '');
+            if ($err) {
+                $fail($err);
+            }
+            if ($desc) {
+                $event[] = $desc;
+            }
+        }
         if ($files) {
             [$desc, $err] = agent_receive_files($c, $files, (string) input('doc'), $key);
             if ($err) {
-                flash('error', $err);
-                portal_back('conversa', 'fim');
+                $fail($err);
             }
-            $event = $desc;
+            $event[] = $desc;
         }
         if ($text !== '') {
             chat_post($id, 'client', $text, null, ($key !== '' ? $key . '-msg' : null));
             mark_client_activity($id);
-            $event .= ($event !== '' ? "\nJunto, a pessoa escreveu: " : 'Mensagem nova do cliente: ') . mb_substr($text, 0, 2000);
+            $event[] = ($event ? 'Junto, a pessoa escreveu: ' : 'Mensagem nova do cliente: ') . mb_substr($text, 0, 2000);
         }
-        agent_turn(find_case($id), $event);
-        if (input('ajax') === '1') {
-            json_out(['ok' => true]);
+        if ($event) {
+            agent_turn(find_case($id), implode("\n", $event));
+        }
+        if ($ajax) {
+            json_out(chat_ajax_payload(find_case($id), $after));
         }
         portal_back('conversa', 'fim');
     }
@@ -260,6 +289,19 @@ $router->post('/cliente/conversa/modo', function () {
     }
     portal_back('conversa', 'fim');
 });
+
+/** Resposta do envio sem recarregar: mensagens novas, atalhos e o que falta. */
+function chat_ajax_payload(array $c, int $after): array
+{
+    $msgs = all('SELECT * FROM chat_messages WHERE case_id = ? AND id > ? ORDER BY id', [$c['id'], $after]);
+    return [
+        'ok' => true,
+        'html' => render('partials/chat_msgs', ['msgs' => $msgs, 'operator' => false, 'c' => $c]),
+        'last' => $msgs ? (int) end($msgs)['id'] : $after,
+        'bar' => agent_active($c) ? render('partials/cv_agent_bar', ['c' => $c]) : null,
+        'reload' => !agent_active($c),
+    ];
+}
 
 /** Consulta periódica do chat ativo (sem WebSocket). */
 $router->get('/cliente/conversa/novas', function () {
