@@ -9,10 +9,18 @@ $auto = proposal_auto_texts($d);
 $prev = proposal_clause_preview($id, $d);
 $ckd = fn(bool $b) => $b ? 'checked' : '';
 $maisAberto = $d['custos'] || $d['deslocamento']['repassa'] || !$d['despesas']['repassa'] || $d['validade'];
+$g = proposal_guide($id);
+$pp = guide_prices($g);
+$hist = negotiation_history($id, 6);
+$ev = $hist[0] ?? null;
+$opt = sales_sim_options([], $d);
+$perfil = negotiation_profile($id);
+$efeito = ['aumenta' => ['↑', 'up'], 'reduz' => ['↓', 'down'], 'neutro' => ['→', 'flat']];
+$formaLabel = ['pix' => 'PIX à vista', 'boleto' => 'boleto à vista', 'cartao' => 'cartão de crédito', 'parcelado_proprio' => 'parcelado próprio (boleto ou PIX)'];
 ?>
 <div class="page-head">
   <div>
-    <h1>Proposta · <?= e($c['client_name']) ?></h1>
+    <h1>Negociação · <?= e($c['client_name']) ?></h1>
     <p class="sub">Atendimento <?= e($c['protocol']) ?> · <a href="<?= e(url('painel/atendimento/' . $id)) ?>#kit">ficha e kit</a><?= $pr ? ' · salva em ' . e(fmt_datetime($pr['updated_at'])) : ' · ainda não salva' ?></p>
   </div>
   <a class="b" href="<?= e(url('painel/propostas')) ?>">Todas as propostas</a>
@@ -21,6 +29,69 @@ $maisAberto = $d['custos'] || $d['deslocamento']['repassa'] || !$d['despesas']['
 <?php if ($errors): ?>
   <div class="flash flash-error" role="alert">Nada foi salvo. Confira: <?= e(implode(' ', $errors)) ?></div>
 <?php endif ?>
+
+<section class="neg-kpis" data-kpis aria-label="Resumo da negociação"><?= render('panel/_proposta_kpis', ['c' => $c, 'd' => $d, 'g' => $g, 'ev' => $ev, 'opt' => $opt]) ?></section>
+
+<div class="neg-painel">
+<aside class="neg-guia stack" aria-label="Guia interno de preço">
+  <section class="box neg-perfil">
+    <div class="box-head"><h2>Cliente</h2><a class="hint" href="<?= e(url('painel/atendimento/' . $id)) ?>">ficha completa ›</a></div>
+    <?php if ($perfil): ?>
+      <dl class="neg-dl"><?php foreach ($perfil as $k => $v): ?><div><dt><?= e($k) ?></dt><dd><?= e(mb_strimwidth($v, 0, 140, '…')) ?></dd></div><?php endforeach ?></dl>
+    <?php else: ?><p class="hint">A ficha ainda não tem dados de renda, contrato e situação. Quanto mais completa, melhor a avaliação.</p><?php endif ?>
+  </section>
+
+  <form class="box form neg-guia-form" id="guia" method="post" action="<?= e(url('painel/propostas/' . $id . '/guia')) ?>">
+    <?= csrf_field() ?>
+    <div class="box-head"><h2>Guia de preço</h2><span class="neg-interno">interno</span></div>
+    <fieldset class="neg-servicos"><legend class="lbl">Serviços (tabela da OAB)</legend>
+      <?php foreach (oab_table() as $it): ?>
+        <label class="chk"><input type="checkbox" name="servicos[]" value="<?= e($it['key']) ?>" <?= $ckd(in_array($it['key'], $g['servicos'], true)) ?>> <?= e($it['label']) ?> <small class="muted"><?= (int) ($it['valor'] ?? 0) ? e(brl((int) $it['valor'])) : 'sem valor' ?></small></label>
+      <?php endforeach ?>
+    </fieldset>
+    <?php if ($pp['sem_valor'] || !oab_table_filled()): ?><p class="hint t-warn">Há serviço sem valor da OAB. <a href="<?= e(url('painel/configuracoes/precos')) ?>">Preencher a tabela</a> ou informe o piso abaixo.</p><?php endif ?>
+    <label class="fld"><span>Piso da OAB para este caso <small>(opcional, substitui a soma)</small></span><input name="base_manual" inputmode="decimal" placeholder="<?= e($pp['base'] && !$pp['manual'] ? cents_input($pp['base']) : '0,00') ?>" value="<?= e($pp['manual'] ? cents_input($pp['base']) : '') ?>"></label>
+    <fieldset class="neg-ind"><legend class="lbl">Como chegou</legend>
+      <label class="chk"><input type="radio" name="indicacao" value="nao" <?= $ckd($g['indicacao'] === false) ?>> Sem indicação <small class="muted">(piso da OAB)</small></label>
+      <label class="chk"><input type="radio" name="indicacao" value="sim" <?= $ckd($g['indicacao'] === true) ?>> Por indicação <small class="muted">(+<?= e(fmt_pct(indicacao_pct())) ?>)</small></label>
+    </fieldset>
+    <label class="fld"><span>Quem indicou <small>(opcional)</small></span><input name="indicado_por" maxlength="120" value="<?= e($g['indicado_por']) ?>"></label>
+    <label class="fld"><span>Suas notas para a negociação</span><textarea name="notas" rows="3" maxlength="2000" placeholder="ex.: comparou com outro escritório; prefere pagar no cartão"><?= e($g['notas']) ?></textarea></label>
+    <div class="neg-ref"><span>Referência</span><strong><?= $pp['referencia'] ? e(brl($pp['referencia'])) : '—' ?></strong><?php if ($pp['referencia'] && $pp['pct']): ?><small>piso <?= e(brl($pp['base'])) ?> + <?= e(fmt_pct($pp['pct'])) ?></small><?php endif ?></div>
+    <div class="inline-form">
+      <button class="b" type="submit">Salvar guia</button>
+      <button class="b b-primary" type="submit" formaction="<?= e(url('painel/propostas/' . $id . '/avaliar')) ?>" data-avaliar <?= llm_enabled() ? '' : 'disabled title="Ligue a IA em Configurações"' ?>>Pedir avaliação à IA</button>
+    </div>
+    <p class="hint" data-avaliando hidden aria-live="polite">A IA está lendo o perfil do cliente. Leva até um minuto.</p>
+  </form>
+
+  <section class="box neg-avaliacao" id="avaliacao">
+    <div class="box-head"><h2>Avaliação da IA</h2><?php if ($ev): ?><span class="hint"><?= e(fmt_datetime($ev['created_at'])) ?> · confiança <?= e($ev['result']['confianca'] ?? 'media') ?></span><?php endif ?></div>
+    <?php if (!$ev): ?>
+      <p class="hint">Marque os serviços e se o cliente veio por indicação, depois peça a avaliação. A IA lê só os dados deste atendimento (ficha, documentos e mensagens) e sugere preço, forma e prazo. É um guia para você: nada vai para o cliente.</p>
+    <?php else: $r = $ev['result']; $pg = $r['pagamento']; ?>
+      <div class="neg-sugestao">
+        <div><span>Preço sugerido</span><strong><?= e(brl((int) $r['preco_sugerido'])) ?></strong><small><?= ($r['ajuste_percentual'] >= 0 ? '+' : '') . e(fmt_pct((float) $r['ajuste_percentual'])) ?> sobre a referência de <?= e(brl((int) $r['referencia'])) ?></small></div>
+        <div><span>Faixa para negociar</span><strong><?= e(brl((int) $r['faixa']['minimo'])) ?> a <?= e(brl((int) $r['faixa']['maximo'])) ?></strong><small>piso da OAB: <?= e(brl((int) $r['piso'])) ?></small></div>
+      </div>
+      <p class="neg-pag"><strong>Pagamento:</strong> <?= e($formaLabel[$pg['forma']] ?? $pg['forma']) ?><?= $pg['entrada'] ? ', entrada de ' . e(brl((int) $pg['entrada'])) : '' ?><?= $pg['parcelas'] > 1 ? ', ' . (int) $pg['parcelas'] . ' parcelas' . ($pg['valor_parcela'] ? ' de cerca de ' . e(brl((int) $pg['valor_parcela'])) : '') : '' ?>.<?= $pg['justificativa'] ? ' ' . e($pg['justificativa']) : '' ?></p>
+      <?php if ($r['resumo']): ?><p class="neg-resumo"><?= e($r['resumo']) ?></p><?php endif ?>
+      <button type="button" class="b b-sm" data-aplicar-ia data-valor="<?= e(cents_input((int) $r['preco_sugerido'])) ?>" data-tipo="<?= e($pg['forma'] === 'cartao' ? 'cartao' : ($pg['forma'] === 'parcelado_proprio' ? 'proprio' : 'avista')) ?>" data-parcelas="<?= (int) $pg['parcelas'] ?>" data-entrada="<?= $pg['entrada'] ? e(cents_input((int) $pg['entrada'])) : '' ?>" data-forma="<?= e(in_array($pg['forma'], ['pix', 'boleto'], true) ? $pg['forma'] : '') ?>">Aplicar à proposta</button>
+      <span class="hint">preenche os campos; confira e salve</span>
+      <?php if ($r['perfil_consumo']): ?><h3>Perfil de consumo</h3><p><?= e($r['perfil_consumo']) ?></p><?php endif ?>
+      <?php if ($r['capacidade_pagamento']): ?><h3>Capacidade de pagamento</h3><p><?= e($r['capacidade_pagamento']) ?></p><?php endif ?>
+      <?php if ($r['sinais']): ?><h3>Sinais considerados</h3><ul class="neg-sinais"><?php foreach ($r['sinais'] as $si): [$ar, $cl] = $efeito[$si['efeito']]; ?><li class="neg-<?= $cl ?>"><span aria-label="<?= e($si['efeito']) ?>"><?= $ar ?></span> <?= e($si['sinal']) ?> <small class="muted">peso <?= e($si['peso'] === 'medio' ? 'médio' : $si['peso']) ?></small></li><?php endforeach ?></ul><?php endif ?>
+      <?php if ($r['argumentos']): ?><h3>Argumentos para a conversa</h3><ul><?php foreach ($r['argumentos'] as $x): ?><li><?= e($x) ?></li><?php endforeach ?></ul><?php endif ?>
+      <?php if ($r['concessoes']): ?><h3>O que ceder, nesta ordem</h3><ol><?php foreach ($r['concessoes'] as $x): ?><li><?= e($x) ?></li><?php endforeach ?></ol><?php endif ?>
+      <?php if ($r['exito_percentual'] !== null): ?><p><strong>Êxito sugerido:</strong> <?= e(fmt_pct((float) $r['exito_percentual'])) ?></p><?php endif ?>
+      <?php if ($r['alertas']): ?><h3>Atenção</h3><ul class="neg-alertas"><?php foreach ($r['alertas'] as $x): ?><li><?= e($x) ?></li><?php endforeach ?></ul><?php endif ?>
+      <?php if ($r['faltam_dados']): ?><h3>Faltam dados</h3><ul class="muted"><?php foreach ($r['faltam_dados'] as $x): ?><li><?= e($x) ?></li><?php endforeach ?></ul><?php endif ?>
+      <?php if (count($hist) > 1): ?>
+        <details class="neg-hist"><summary>Avaliações anteriores</summary><ul><?php foreach (array_slice($hist, 1) as $h): ?><li><?= e(fmt_datetime($h['created_at'])) ?> · <?= e(brl((int) ($h['result']['preco_sugerido'] ?? 0))) ?><?= $h['user_name'] ? ' · ' . e($h['user_name']) : '' ?></li><?php endforeach ?></ul></details>
+      <?php endif ?>
+    <?php endif ?>
+  </section>
+</aside>
 
 <form class="form prop-form prop-layout" id="prop-form" method="post" action="<?= e(url('painel/propostas/' . $id)) ?>" data-proposta data-previa="<?= e(url('painel/propostas/' . $id . '/previa')) ?>">
   <?= csrf_field() ?>
@@ -112,6 +183,21 @@ $maisAberto = $d['custos'] || $d['deslocamento']['repassa'] || !$d['despesas']['
       <div class="box-head"><h2>Simulação</h2></div>
       <div data-sim><?= render('panel/_proposta_simulacao', ['d' => $d]) ?></div>
     </section>
+    <section class="box neg-vendas" id="simulador">
+      <div class="box-head"><h2>Simulador de vendas</h2><span class="hint">taxas do Asaas</span></div>
+      <div class="neg-sim-ctl">
+        <label class="fld"><span>Valor a simular</span><input name="sim_valor" inputmode="decimal" placeholder="<?= e(cents_input(proposal_totals($d)['total']) ?: '0,00') ?>" aria-describedby="sim-dica"></label>
+        <label class="fld"><span>Desconto à vista (%)</span><input name="sim_desconto" inputmode="decimal" placeholder="0"></label>
+        <label class="fld"><span>Parcelado próprio</span><input type="number" name="sim_parcelas" min="2" max="60" value="<?= (int) $opt['parcelas_proprio'] ?>"></label>
+        <label class="chk"><input type="checkbox" name="sim_repasse" value="1" <?= $ckd($opt['repasse']) ?>> Taxa do cartão paga pelo cliente</label>
+      </div>
+      <p class="hint" id="sim-dica">Em branco, simula os honorários da proposta. “Usar” leva a condição para a proposta.</p>
+      <div data-vendas><?= render('panel/_proposta_vendas', ['d' => $d, 'opt' => $opt]) ?></div>
+      <?php if (asaas_enabled()): ?>
+        <div class="inline-form"><button type="button" class="b b-sm" data-asaas-sim="<?= e(url('painel/propostas/' . $id . '/asaas-simular')) ?>">Conferir no Asaas</button><span class="hint">consulta o simulador oficial da sua conta</span></div>
+        <div data-asaas-res aria-live="polite"></div>
+      <?php endif ?>
+    </section>
     <section class="box">
       <div class="box-head"><h2>Como fica no contrato</h2></div>
       <p class="hint">O texto em destaque é escrito pela proposta e pode ser ajustado aqui mesmo. O restante vem do modelo do contrato.</p>
@@ -137,6 +223,7 @@ $maisAberto = $d['custos'] || $d['deslocamento']['repassa'] || !$d['despesas']['
     </section>
   </aside>
 </form>
+</div>
 
 <?php
 $charges = asaas_charges($id);

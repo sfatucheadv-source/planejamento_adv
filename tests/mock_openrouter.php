@@ -92,6 +92,27 @@ if (str_contains($system, 'extrai dados')) {
         $audio .= (string) ($p['inline_data']['data'] ?? '');
     }
     $content = json_encode(['transcricao' => strlen($audio) > 2000 ? 'Meu contrato é do Banco Aymoré e tenho duas parcelas atrasadas' : ''], JSON_UNESCAPED_UNICODE);
+} elseif (str_contains($system, 'avalia o preço de honorários')) {
+    // Avaliação de preço: sugere a referência + 10%; com a nota "teste-abaixo", tenta furar o piso.
+    $ctx = json_decode($text, true) ?: [];
+    $ref = (float) ($ctx['guia']['preco_referencia'] ?? 0);
+    $abaixo = str_contains((string) ($ctx['guia']['notas_de_sidney'] ?? ''), 'teste-abaixo');
+    $content = json_encode([
+        'perfil_consumo' => 'Financiou em prazo longo e valoriza parcelas que caibam no mês.',
+        'sinais' => [['sinal' => 'Parcela do financiamento pesa na renda', 'efeito' => 'reduz', 'peso' => 'alto'], ['sinal' => 'Há urgência com aviso do banco', 'efeito' => 'aumenta', 'peso' => 'medio']],
+        'capacidade_pagamento' => 'Paga melhor em parcelas pequenas no cartão.',
+        'ajuste_percentual' => $abaixo ? -90 : 10,
+        'preco_sugerido' => $abaixo ? 100 : round($ref * 1.1, 2),
+        'faixa' => ['minimo' => round($ref, 2), 'maximo' => round($ref * 1.2, 2)],
+        'pagamento' => ['forma' => 'cartao', 'entrada' => 0, 'parcelas' => 10, 'valor_parcela' => round($ref * 1.1 / 10, 2), 'justificativa' => 'Já está acostumado a parcelar.'],
+        'exito_percentual' => 20,
+        'argumentos' => ['O valor parte da tabela da OAB.'],
+        'concessoes' => ['Mais parcelas', 'Entrada menor'],
+        'alertas' => [],
+        'faltam_dados' => ['Renda confirmada'],
+        'confianca' => 'media',
+        'resumo' => 'Proponha a referência + 10% em 10x no cartão.',
+    ], JSON_UNESCAPED_UNICODE);
 } elseif (str_contains($system, 'classifica documentos')) {
     $content = json_encode(['tipo' => 'identidade']);
 } elseif (str_contains($system, 'Você conduz o acolhimento')) {

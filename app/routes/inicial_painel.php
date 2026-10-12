@@ -659,10 +659,43 @@ $router->post('/painel/propostas/{id}/previa', function (string $id) {
     [$d, $errors] = proposal_from_input($_POST);
     json_out([
         'simulacao' => render('panel/_proposta_simulacao', ['d' => $d]),
+        'vendas' => render('panel/_proposta_vendas', ['d' => $d, 'opt' => sales_sim_options($_POST, $d)]),
+        'kpis' => render('panel/_proposta_kpis', ['c' => $c, 'd' => $d, 'g' => proposal_guide((int) $c['id']), 'ev' => negotiation_history((int) $c['id'], 1)[0] ?? null, 'opt' => sales_sim_options($_POST, $d)]),
         'auto' => proposal_auto_texts($d),
         'clausulas' => proposal_clause_preview((int) $c['id'], $d),
         'erros' => $errors,
     ]);
+});
+
+/* Guia de preço (interno): serviços da tabela da OAB, indicação e notas. */
+$router->post('/painel/propostas/{id}/guia', function (string $id) {
+    $u = require_user();
+    $c = require_case_operator((int) $id);
+    proposal_guide_save((int) $c['id'], proposal_guide_from_input($_POST), (int) $u['id']);
+    flash('ok', 'Guia de preço salvo.');
+    redirect('painel/propostas/' . $c['id'] . '#guia');
+});
+
+/* Avaliação de preço pela IA a partir do guia, do perfil do cliente e da proposta atual. */
+$router->post('/painel/propostas/{id}/avaliar', function (string $id) {
+    $u = require_user();
+    $c = require_case_operator((int) $id);
+    @set_time_limit(180);
+    $g = proposal_guide_from_input($_POST);
+    proposal_guide_save((int) $c['id'], $g, (int) $u['id']);
+    $pr = proposal_get((int) $c['id']);
+    [$ok, $r] = negotiation_evaluate($c, $pr['data'] ?? proposal_defaults(), $g, (int) $u['id']);
+    flash($ok ? 'ok' : 'error', $ok ? 'Avaliação pronta: veja a sugestão no painel.' : $r);
+    redirect('painel/propostas/' . $c['id'] . '#avaliacao');
+});
+
+/* Conferência dos valores no simulador de vendas do próprio Asaas. */
+$router->post('/painel/propostas/{id}/asaas-simular', function (string $id) {
+    $c = require_case_operator((int) $id);
+    $valor = money_cents((string) input('valor')) ?? 0;
+    $n = max(1, min(21, (int) input('parcelas')));
+    $r = $valor > 0 ? asaas_simulate_api($valor, $n) : ['ok' => false, 'error' => 'Informe um valor para simular.', 'rows' => []];
+    json_out(['html' => render('panel/_proposta_asaas_api', ['r' => $r, 'valor' => $valor, 'n' => $n])]);
 });
 
 $router->post('/painel/propostas/{id}/asaas', function (string $id) {
@@ -799,6 +832,7 @@ const CONFIG_SECTIONS = [
     'ia' => 'Inteligência artificial',
     'email' => 'E-mails de aviso',
     'asaas' => 'Asaas (cobranças)',
+    'precos' => 'Preços e negociação',
 ];
 
 function config_view_data(array $u): array
@@ -991,6 +1025,39 @@ function config_save_email(): void
     }
 }
 
+function config_save_precos(): void
+{
+    $rows = [];
+    foreach ((array) ($_POST['oab_label'] ?? []) as $i => $label) {
+        $label = trim(mb_substr((string) $label, 0, 160));
+        if ($label === '') {
+            continue;
+        }
+        $key = preg_replace('/[^a-z0-9_]/', '', (string) ($_POST['oab_key'][$i] ?? '')) ?: 'item_' . substr(md5($label), 0, 8);
+        $rows[] = ['key' => $key, 'label' => $label, 'valor' => money_cents((string) ($_POST['oab_valor'][$i] ?? '')),
+            'nota' => trim(mb_substr((string) ($_POST['oab_nota'][$i] ?? ''), 0, 160))];
+    }
+    if ($rows) {
+        set_setting('oab_tabela', json_encode($rows, JSON_UNESCAPED_UNICODE));
+    }
+    $pct = parse_money(str_replace('%', '', (string) input('indicacao_pct')));
+    if ($pct !== null && $pct >= 0 && $pct <= 200) {
+        set_setting('indicacao_pct', rtrim(rtrim(number_format($pct, 2, '.', ''), '0'), '.'));
+    }
+    if (input('fees_padrao') === '1') {
+        set_setting('asaas_fees', null);
+        return;
+    }
+    $fees = [];
+    foreach (ASAAS_FEE_DEFAULTS as $k => $def) {
+        $v = parse_money(str_replace('%', '', (string) input('fee_' . $k)));
+        if ($v !== null && $v >= 0 && $v <= ($k === 'cartao_max' ? 21 : 100)) {
+            $fees[$k] = $k === 'cartao_max' ? (int) $v : round($v, 2);
+        }
+    }
+    set_setting('asaas_fees', array_diff_assoc($fees, ASAAS_FEE_DEFAULTS) ? json_encode($fees) : null);
+}
+
 $router->post('/painel/configuracoes', function () {
     require_config_editor();
     $secao = (string) input('secao');
@@ -1017,6 +1084,9 @@ $router->post('/painel/configuracoes', function () {
     }
     if ($ok && ($secao === '' || $secao === 'email')) {
         config_save_email();
+    }
+    if ($ok && $secao === 'precos') {
+        config_save_precos();
     }
     if ($ok) {
         flash('ok', $secao ? CONFIG_SECTIONS[$secao] . ': configurações salvas.' : 'Configurações salvas.');

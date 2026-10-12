@@ -594,6 +594,26 @@ UPDATE cases SET client_seen_msg_id = COALESCE((SELECT MAX(id) FROM chat_message
 UPDATE cases SET client_seen_at = updated_at;
 SQL;
 
+    // Versão 9 — painel de negociação: guia de preço (interno) e avaliações da IA.
+    $migrations[9] = <<<SQL
+CREATE TABLE proposal_guides (
+    case_id INTEGER PRIMARY KEY REFERENCES cases(id) ON DELETE CASCADE,
+    data TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    updated_by INTEGER REFERENCES users(id)
+);
+CREATE TABLE proposal_evaluations (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id),
+    input TEXT NOT NULL,
+    result TEXT NOT NULL,
+    model TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_prop_eval_case ON proposal_evaluations(case_id, id);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();

@@ -95,6 +95,16 @@ Quando uma novidade fica sem ser vista pelo tempo de espera (padrão 10 minutos)
 
 *Configurações* abre como painel de controles: quatro chaves para ligar e desligar na hora (atendimento online no site, inteligência artificial, IA conduzindo a conversa e avisos por e-mail), a lista do que precisa de atenção (operador, chave ou erro da IA, falha ou envio sem SMTP dos e-mails, modelos sem aprovação, Asaas sem chave) e um quadro por área com a situação em cores e o atalho para configurar. Atendimento e entrada, Inteligência artificial, E-mails de aviso e Asaas têm páginas próprias (`/painel/configuracoes/{area}`), e cada uma salva só a sua área.
 
+### Painel de negociação (proposta)
+
+A página da proposta é um painel para negociar. No topo ficam os indicadores: piso da OAB, referência, proposta atual (acima ou abaixo da referência), quanto o cliente paga, quanto você recebe e a sugestão da IA. À esquerda ficam o perfil do cliente (veículo, banco, parcela sobre a renda etc.), o **guia de preço** e a **avaliação da IA**. À direita ficam as condições, a simulação, o **simulador de vendas** e a prévia das cláusulas.
+
+- **Guia de preço (interno):** marque os serviços da tabela da OAB (piso) e se o cliente veio por indicação. Com indicação, a referência é o piso com o acréscimo configurado (30% por padrão). Os valores da tabela, o acréscimo e as taxas do Asaas ficam em *Configurações › Preços e negociação*.
+- **Avaliação pela IA:** recebe só os dados deste atendimento, sem CPF, nome, contato, endereço, placa, gênero ou estado civil, e lê o padrão de consumo (renda e parcela, prazo, atrasos, urgência, como o cliente se expressa). Sugere preço, faixa, forma e prazo, sinais, argumentos e concessões. O preço nunca fica abaixo do piso da OAB, e o ajuste fica entre −20% e +40% da referência. “Aplicar à proposta” preenche os campos. As avaliações ficam no histórico e não vão para o cliente nem para o contrato.
+- **Simulador de vendas:** para o valor da proposta ou outro digitado, mostra o que o cliente paga e o que você recebe em PIX, boleto, cartão de 1x ao máximo configurado e parcelamento próprio. Inclui repasse da taxa do cartão, desconto à vista e antecipação. “Usar” leva a condição para a proposta, e “Conferir no Asaas” consulta o simulador oficial da conta (`POST /payments/simulate`).
+
+Teste: `php tests/negociacao.php`.
+
 ### Configuração e implantação
 
 1. Faça backup do banco (com WAL ativo, copie `fatuche.sqlite`, `-wal` e `-shm` juntos, com o site parado, ou use `sqlite3 fatuche.sqlite ".backup copia.sqlite"`).
@@ -159,6 +169,7 @@ php tests/documentos.php            # documentos no timbrado (.docx e HTML pagin
 php tests/propostas.php             # propostas, parcelamento e cláusulas condicionais
 php tests/assistente_conversa.php   # conversa conduzida pela IA
 php tests/conversas.php             # conversas do cliente, novidades e avisos por e-mail
+php tests/negociacao.php            # painel de negociação: simulador do Asaas, guia de preço e avaliação pela IA
 ```
 
 ## Publicar na Hostinger
