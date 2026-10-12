@@ -163,7 +163,7 @@ ok(!str_contains($sid->html, '>Equipe<'), 'menu do operador não mostra Equipe n
 echo "\nP2. Entrada pelo assistente e urgência imediata (T01, T03, T04)\n";
 $cli = new Browser($base);
 $cli->get('/comecar?aviso=apreendido&origem=home');
-ok($cli->status === 200 && str_contains($cli->html, 'assistente virtual da Fatuche Advocacia'), 'entrada conversacional abre com a apresentação do assistente');
+ok($cli->status === 200 && str_contains($cli->html, 'Sou o Sid-LEX, assistente virtual do escritório') && substr_count($cli->html, 'class="cv-msg cv-bot"') === 1, 'entrada conversacional abre com uma só mensagem de apresentação do Sid-LEX');
 preg_match('/name="form_key" value="([^"]+)"/', $cli->html, $fk);
 sleep(3);
 $entry = ['nome' => 'Maria da Silva Teste', 'telefone' => '(41) 98888-1111', 'email' => 'maria@teste.local', 'adaptacao' => '', 'consent' => '1', 'website' => '', 'origin' => 'home', 'aviso' => 'apreendido', 'form_key' => $fk[1] ?? ''];

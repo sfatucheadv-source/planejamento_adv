@@ -319,7 +319,7 @@ ok((case_data(c($idF), 'capacidade')['nivel'] ?? '') === 'media', 'nível fora d
 $sid->get('/painel/atendimento/' . $idF);
 ok(str_contains($sid->html, 'Capacidade de contratação') && str_contains($sid->html, 'at-cap-media') && str_contains($sid->html, 'Fábio Teste Lima'), 'painel mostra a anotação discreta de capacidade');
 $sp = agent_system_prompt();
-ok(str_contains($sp, 'ativo e resolutivo') && str_contains($sp, '"alta" é sempre a situação favorável') && str_contains($sp, 'nunca comente com a pessoa') && str_contains($sp, 'Não há formulário de entrada'), 'instruções: tom ativo e resolutivo, identificação na conversa, capacidade discreta e escala com alta favorável');
+ok(str_contains($sp, 'objetivo e resolutivo') && str_contains($sp, 'Não repita nem resuma de volta') && str_contains($sp, 'no máximo 3 frases') && str_contains($sp, '"alta" é sempre a situação favorável') && str_contains($sp, 'nunca comente com a pessoa') && str_contains($sp, 'Não há formulário de entrada'), 'instruções: tom objetivo e resolutivo, sem repetir o cliente, identificação na conversa, capacidade discreta e escala com alta favorável');
 
 $cli4 = new Browser($base);
 $id4 = start_client($cli4, 'Elisa Rocha', '(41) 94444-1111');

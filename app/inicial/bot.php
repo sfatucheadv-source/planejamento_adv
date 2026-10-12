@@ -8,7 +8,7 @@ declare(strict_types=1);
  * retoma do ponto certo, e só o que falta é perguntado de novo.
  */
 
-const BOT_GREETING = 'Olá! Sou o assistente virtual da Fatuche Advocacia. Vou organizar suas informações e documentos para a análise de Sidney. Você poderá conversar com ele depois. Vamos começar?';
+const BOT_GREETING = 'Olá! Sou o Sid-LEX, assistente virtual do escritório. Conte o que está acontecendo com o seu financiamento e eu organizo tudo para o Sidney.';
 const BOT_RECEIVED = 'Arquivo recebido. Sidney ainda vai conferir se está completo e legível.';
 const BOT_OFFSCRIPT = 'Obrigado. Sua mensagem foi registrada e Sidney vai conferir. Enquanto isso, podemos continuar organizando suas informações, ou você pode aguardar o contato dele.';
 const BOT_DONE = 'Suas informações foram organizadas. Sidney irá conferir os documentos e preparar a conversa. Veja abaixo se ficou algo pendente.';

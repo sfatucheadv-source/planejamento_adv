@@ -1,6 +1,6 @@
 <?php
 /** Mensagens da conversa: assistente, cliente e Sidney no mesmo histórico. */
-$who = ['bot' => 'Assistente virtual', 'client' => $operator ? first_name((string) $c['client_name']) : 'Você', 'operator' => 'Sidney'];
+$who = ['bot' => ASSISTANT_NAME, 'client' => $operator ? first_name((string) $c['client_name']) : 'Você', 'operator' => 'Sidney'];
 $editable = !$operator && ($c['chat_mode'] ?? '') === 'bot' && is_initial($c) && ($c['initial_status'] ?? '') !== 'completed';
 foreach ($msgs as $m): ?>
   <div class="cv-msg cv-<?= e($m['author']) ?>" data-id="<?= (int) $m['id'] ?>">

@@ -629,6 +629,11 @@ SQL;
 CREATE INDEX IF NOT EXISTS idx_cases_account_id ON cases(account_id, id);
 SQL;
 
+    // Versão 13 — assistente Sid-LEX mais objetivo: saudação, nome e tom padrão novos.
+    $migrations[13] = <<<SQL
+CREATE INDEX IF NOT EXISTS idx_chat_case_author ON chat_messages(case_id, author, id);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -654,6 +659,9 @@ SQL;
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_at TEXT');
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_by INTEGER REFERENCES users(id)');
                 }
+            }
+            if ($v === 13) {
+                migrate_agent_v3($pdo);
             }
             if ($v === 11) {
                 migrate_clear_cases($pdo);
@@ -843,4 +851,17 @@ function migrate_agent_defaults(PDO $pdo): void
 {
     $st = $pdo->prepare("DELETE FROM settings WHERE key = 'agent_tone' AND replace(value, char(13), '') = ?");
     $st->execute([AGENT_TONE_PREVIOUS]);
+}
+
+/** Quem não tinha mudado o tom, a saudação ou o nome do assistente passa a usar os novos padrões (Sid-LEX objetivo). */
+function migrate_agent_v3(PDO $pdo): void
+{
+    $del = $pdo->prepare("DELETE FROM settings WHERE key = ? AND replace(value, char(13), '') = ?");
+    foreach ([AGENT_TONE_PREVIOUS, AGENT_TONE_V2] as $old) {
+        $del->execute(['agent_tone', $old]);
+    }
+    foreach (AGENT_GREETINGS_PREVIOUS as $old) {
+        $del->execute(['agent_greeting', $old]);
+    }
+    $del->execute(['agent_name', AGENT_NAME_PREVIOUS]);
 }

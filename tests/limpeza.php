@@ -42,6 +42,7 @@ chat_post((int) $a['id'], 'client', 'oi');
 proposal_save((int) $a['id'], proposal_defaults(), $uid);
 insert('files', ['case_id' => $a['id'], 'original_name' => 'doc.pdf', 'stored_name' => 'doc.pdf', 'mime' => 'application/pdf', 'size' => 10, 'uploaded_at' => now_str()]);
 set_setting('agent_tone', AGENT_TONE_PREVIOUS);
+set_setting('agent_greeting', AGENT_GREETINGS_PREVIOUS[1]);
 set_setting('agent_name', 'Sid-LEX');
 db()->exec('PRAGMA user_version = 10');
 PHP);
@@ -59,15 +60,16 @@ echo json_encode([
     'users' => (int) scalar('SELECT COUNT(*) FROM users'),
     'tpl' => (int) scalar('SELECT COUNT(*) FROM doc_templates'),
     'tone' => setting('agent_tone'),
+    'greeting' => setting('agent_greeting'),
     'name' => setting('agent_name'),
     'audit' => scalar("SELECT detail FROM audit WHERE action = 'atendimentos_zerados'"),
     'novo' => (function () { $c = create_initial_case(['nome' => '', 'telefone' => '', 'email' => ''], 'site'); return [$c['client_name'], $c['protocol'] !== '']; })(),
 ]);
 PHP), true) ?: [];
-ok(($res['v'] ?? 0) === 12, 'banco atualizado (versão 12)');
+ok(($res['v'] ?? 0) === 13, 'banco atualizado (versão 13)');
 ok(($res['cases'] ?? 1) === 0 && ($res['acc'] ?? 1) === 0 && ($res['chat'] ?? 1) === 0 && ($res['prop'] ?? 1) === 0 && ($res['files'] ?? 1) === 0, 'atendimentos, contas, conversas, propostas e arquivos apagados (nenhum atendimento sobra)');
 ok(($res['users'] ?? 0) === 1 && ($res['tpl'] ?? 0) >= 3 && ($res['name'] ?? '') === 'Sid-LEX', 'usuários, modelos e configurações do assistente mantidos');
-ok(array_key_exists('tone', $res) && $res['tone'] === null, 'tom antigo padrão dá lugar ao novo (ativo e resolutivo)');
+ok(array_key_exists('tone', $res) && $res['tone'] === null && array_key_exists('greeting', $res) && $res['greeting'] === null, 'tom e saudação antigos padrão dão lugar aos novos (Sid-LEX objetivo)');
 ok(str_contains((string) ($res['audit'] ?? ''), '2 atendimento(s) apagado(s)'), 'limpeza registrada na auditoria');
 ok(($res['novo'] ?? []) === ['Novo contato', true], 'o sistema segue abrindo atendimentos normalmente');
 $bk = glob($tmp . '/backup-antes-de-zerar-atendimentos/fatuche-*.sqlite');

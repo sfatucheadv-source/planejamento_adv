@@ -8,11 +8,10 @@ $open = is_open();
     <div class="triage-main">
       <p class="kicker">Atendimento inicial</p>
       <h1>Atendimento online</h1>
-      <p class="lead">Sem formulário: comece contando o que está acontecendo. O assistente ouve, registra e organiza tudo para Sidney, que analisa o caso e conversa com você sobre as opções.</p>
+      <p class="lead">Sem formulário: conte o que está acontecendo e o Sid-LEX organiza tudo para Sidney analisar o seu caso.</p>
 
       <div class="cv-log cv-intro" aria-label="Conversa">
-        <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text"><?= e(bot_greeting()) ?></div></div></div>
-        <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text">O que está acontecendo? Escreva do seu jeito ou toque em uma opção. Eu peço seu nome e contato durante a conversa.</div></div></div>
+        <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who"><?= e(ASSISTANT_NAME) ?> · assistente virtual</span><div class="cv-text"><?= e(bot_greeting()) ?></div></div></div>
       </div>
 
       <?php if (!empty($errors['form'])): ?><p class="notice notice-urgent"><?= e($errors['form']) ?></p><?php endif ?>

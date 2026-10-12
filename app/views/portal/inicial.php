@@ -112,7 +112,7 @@ $choiceButtons = function (array $q) {
     <section class="app-chat" aria-labelledby="h-cv">
       <h2 id="h-cv" class="sr">Conversa</h2>
       <div class="cv-log" data-chat-log data-poll="<?= e(url('cliente/conversa/novas')) ?>" data-last="<?= $chat ? (int) end($chat)['id'] : 0 ?>" aria-live="polite">
-        <p class="cv-day-note">Assistente virtual e Sidney aparecem identificados. <?= $c['chat_mode'] === 'human' ? 'Agora é Sidney quem está conversando com você.' : 'O assistente organiza; Sidney confere tudo.' ?></p>
+        <p class="cv-day-note">O assistente <?= e(ASSISTANT_NAME) ?> e Sidney aparecem identificados. <?= $c['chat_mode'] === 'human' ? 'Agora é Sidney quem está conversando com você.' : 'O assistente organiza; Sidney confere tudo.' ?></p>
         <?php partial('chat_msgs', ['msgs' => $chat, 'operator' => false, 'c' => $c]) ?>
       </div>
       <div class="app-compose<?= agent_active($c) ? ' app-compose--ai' : '' ?>">
@@ -143,7 +143,7 @@ $choiceButtons = function (array $q) {
       <?php else: ?>
       <?php if ($q): ?>
           <div class="cv-q" id="pergunta">
-            <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual<?= !empty($q['editing']) ? ' · corrigindo' : '' ?></span><div class="cv-text"><?= nl2br(e((string) $q['ask'])) ?></div></div></div>
+            <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who"><?= e(ASSISTANT_NAME) ?><?= !empty($q['editing']) ? ' · corrigindo' : '' ?></span><div class="cv-text"><?= nl2br(e((string) $q['ask'])) ?></div></div></div>
             <?php if ($q['kind'] === 'doc'): $d = $q['doc']; ?>
               <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" data-save<?= llm_enabled() ? ' data-reading="Enviando e lendo o documento. Pode levar até um minuto; não feche a página."' : '' ?>>
                 <?= csrf_field() ?><input type="hidden" name="k" value="<?= e($form_key) ?>">

@@ -160,7 +160,7 @@ function start_chat_case(string $message, string $origin, string $aviso, ?int $a
     if (agent_enabled()) {
         set_case_data($id, 'agent_started', now_str());
         agent_turn(find_case($id), 'Início da conversa, sem formulário: a pessoa abriu o chat do site e escreveu a primeira mensagem abaixo. '
-            . 'Mostre que entendeu o problema em uma frase, registre o que ela contou e faça a próxima pergunta. '
+            . 'Registre o que ela contou, sem repetir de volta, e faça a próxima pergunta. '
             . 'Logo no começo, peça o nome completo e, em seguida, o WhatsApp e o e-mail para os avisos.'
             . "\nPrimeira mensagem: " . mb_substr($message, 0, 2000));
     } else {
