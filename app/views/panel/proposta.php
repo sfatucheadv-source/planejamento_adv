@@ -8,13 +8,16 @@ $custos = array_merge($d['custos'], array_fill(0, max(1, 3 - count($d['custos'])
 $auto = proposal_auto_texts($d);
 $prev = proposal_clause_preview($id, $d);
 $ckd = fn(bool $b) => $b ? 'checked' : '';
-$maisAberto = $d['custos'] || $d['deslocamento']['repassa'] || !$d['despesas']['repassa'] || $d['validade'];
+$maisAberto = (bool) $d['custos'];
 $g = proposal_guide($id);
 $pp = guide_prices($g);
 $hist = negotiation_history($id, 6);
 $ev = $hist[0] ?? null;
 $opt = sales_sim_options([], $d);
 $perfil = negotiation_profile($id);
+$scan = negotiation_client_last($id);
+$nivel = ['baixa' => 'baixa', 'media' => 'média', 'alta' => 'alta', 'indefinida' => 'sem estimativa', 'ativa' => 'ativa', 'moderada' => 'moderada', 'discreta' => 'discreta', 'nao_encontrada' => 'não encontrada'];
+$fonteLabel = ['ficha' => 'ficha', 'documento' => 'documento', 'reuniao' => 'reunião', 'conversa' => 'conversa'];
 $efeito = ['aumenta' => ['↑', 'up'], 'reduz' => ['↓', 'down'], 'neutro' => ['→', 'flat']];
 $formaLabel = ['pix' => 'PIX à vista', 'boleto' => 'boleto à vista', 'cartao' => 'cartão de crédito', 'parcelado_proprio' => 'parcelado próprio (boleto ou PIX)'];
 ?>
@@ -34,11 +37,42 @@ $formaLabel = ['pix' => 'PIX à vista', 'boleto' => 'boleto à vista', 'cartao' 
 
 <div class="neg-painel">
 <aside class="neg-guia stack" aria-label="Guia interno de preço">
-  <section class="box neg-perfil">
+  <section class="box neg-perfil" id="cliente">
     <div class="box-head"><h2>Cliente</h2><a class="hint" href="<?= e(url('painel/atendimento/' . $id)) ?>">ficha completa ›</a></div>
-    <?php if ($perfil): ?>
-      <dl class="neg-dl"><?php foreach ($perfil as $k => $v): ?><div><dt><?= e($k) ?></dt><dd><?= e(mb_strimwidth($v, 0, 140, '…')) ?></dd></div><?php endforeach ?></dl>
-    <?php else: ?><p class="hint">A ficha ainda não tem dados de renda, contrato e situação. Quanto mais completa, melhor a avaliação.</p><?php endif ?>
+    <?php if ($scan): $sr = $scan['result']; $net = $sr['internet'] ?? []; ?>
+      <div class="neg-ind-row">
+        <?php if (!isset($net['erro'])): ?>
+          <span class="neg-chip neg-<?= e($net['renda_estimada'] ?? 'indefinida') ?>">Renda estimada: <strong><?= e($nivel[$net['renda_estimada'] ?? 'indefinida']) ?></strong></span>
+          <span class="neg-chip">Vida social: <strong><?= e($nivel[$net['vida_social'] ?? 'nao_encontrada']) ?></strong></span>
+        <?php endif ?>
+        <span class="neg-chip">Sensível a preço: <strong><?= e($nivel[$sr['sensibilidade_preco'] ?? 'media']) ?></strong></span>
+        <span class="neg-chip">Urgência: <strong><?= e($nivel[$sr['urgencia'] ?? 'media']) ?></strong></span>
+      </div>
+      <?php if (!empty($net['links'])): ?>
+        <ul class="neg-links">
+          <?php foreach ($net['links'] as $l): ?><li><a href="<?= e($l['url']) ?>" target="_blank" rel="noopener noreferrer nofollow"><?= e($l['rede']) ?></a> <small class="muted">confere: <?= e($nivel[$l['confere']] ?? $l['confere']) ?><?= $l['citado'] ? '' : ' · não confirmado na pesquisa' ?></small></li><?php endforeach ?>
+        </ul>
+      <?php elseif (isset($net['erro'])): ?><p class="hint"><?= e($net['erro']) ?></p>
+      <?php else: ?><p class="hint">Nenhum perfil público encontrado com segurança.</p><?php endif ?>
+      <?php if (!empty($net['resumo'])): ?><p class="neg-resumo"><?= e($net['resumo']) ?></p><?php endif ?>
+      <?php if ($sr['pontos']): ?>
+        <h3>Para a negociação</h3>
+        <ul class="neg-pontos"><?php foreach ($sr['pontos'] as $pt): ?><li><?= e($pt['ponto']) ?> <small class="muted"><?= e($fonteLabel[$pt['fonte']] ?? $pt['fonte']) ?></small></li><?php endforeach ?></ul>
+      <?php endif ?>
+      <?php if ($sr['preferencia_pagamento']): ?><p><strong>Pagamento:</strong> <?= e($sr['preferencia_pagamento']) ?></p><?php endif ?>
+      <?php if ($sr['objecoes']): ?><p><strong>Objeções prováveis:</strong> <?= e(implode('; ', $sr['objecoes'])) ?>.</p><?php endif ?>
+      <p class="hint">Análise de <?= e(fmt_datetime($scan['created_at'])) ?>. Os perfis vêm de pesquisa pública: confira antes de considerar (pode haver homônimos).</p>
+    <?php endif ?>
+    <details class="neg-ficha" <?= $scan ? '' : 'open' ?>><summary>Dados da ficha</summary>
+      <?php if ($perfil): ?>
+        <dl class="neg-dl"><?php foreach ($perfil as $k => $v): ?><div><dt><?= e($k) ?></dt><dd><?= e(mb_strimwidth($v, 0, 140, '…')) ?></dd></div><?php endforeach ?></dl>
+      <?php else: ?><p class="hint">A ficha ainda não tem dados de renda, contrato e situação.</p><?php endif ?>
+    </details>
+    <form method="post" action="<?= e(url('painel/propostas/' . $id . '/cliente')) ?>" class="neg-scan" data-scan>
+      <?= csrf_field() ?>
+      <button class="b b-primary b-sm" type="submit" <?= llm_enabled() ? '' : 'disabled title="Ligue a IA em Configurações"' ?>><?= $scan ? 'Analisar de novo' : 'Analisar o cliente com a IA' ?></button>
+      <span class="hint" data-scan-msg>Lê a ficha, os documentos e a conversa, e procura a presença pública na internet.</span>
+    </form>
   </section>
 
   <form class="box form neg-guia-form" id="guia" method="post" action="<?= e(url('painel/propostas/' . $id . '/guia')) ?>">
@@ -49,15 +83,15 @@ $formaLabel = ['pix' => 'PIX à vista', 'boleto' => 'boleto à vista', 'cartao' 
         <label class="chk"><input type="checkbox" name="servicos[]" value="<?= e($it['key']) ?>" <?= $ckd(in_array($it['key'], $g['servicos'], true)) ?>> <?= e($it['label']) ?> <small class="muted"><?= (int) ($it['valor'] ?? 0) ? e(brl((int) $it['valor'])) : 'sem valor' ?></small></label>
       <?php endforeach ?>
     </fieldset>
-    <?php if ($pp['sem_valor'] || !oab_table_filled()): ?><p class="hint t-warn">Há serviço sem valor da OAB. <a href="<?= e(url('painel/configuracoes/precos')) ?>">Preencher a tabela</a> ou informe o piso abaixo.</p><?php endif ?>
-    <label class="fld"><span>Piso da OAB para este caso <small>(opcional, substitui a soma)</small></span><input name="base_manual" inputmode="decimal" placeholder="<?= e($pp['base'] && !$pp['manual'] ? cents_input($pp['base']) : '0,00') ?>" value="<?= e($pp['manual'] ? cents_input($pp['base']) : '') ?>"></label>
+    <?php if ($pp['sem_valor'] || !oab_table_filled()): ?><p class="hint t-warn">Há serviço sem valor da OAB. <a href="<?= e(url('painel/configuracoes/precos')) ?>">Preencher a tabela</a> ou informe o valor abaixo.</p><?php endif ?>
+    <label class="fld"><span>Valor da OAB para este caso <small>(opcional, substitui a soma)</small></span><input name="base_manual" inputmode="decimal" placeholder="<?= e($pp['base'] && !$pp['manual'] ? cents_input($pp['base']) : '0,00') ?>" value="<?= e($pp['manual'] ? cents_input($pp['base']) : '') ?>"></label>
     <fieldset class="neg-ind"><legend class="lbl">Como chegou</legend>
-      <label class="chk"><input type="radio" name="indicacao" value="nao" <?= $ckd($g['indicacao'] === false) ?>> Sem indicação <small class="muted">(piso da OAB)</small></label>
+      <label class="chk"><input type="radio" name="indicacao" value="nao" <?= $ckd($g['indicacao'] === false) ?>> Sem indicação <small class="muted">(valor da OAB)</small></label>
       <label class="chk"><input type="radio" name="indicacao" value="sim" <?= $ckd($g['indicacao'] === true) ?>> Por indicação <small class="muted">(+<?= e(fmt_pct(indicacao_pct())) ?>)</small></label>
     </fieldset>
     <label class="fld"><span>Quem indicou <small>(opcional)</small></span><input name="indicado_por" maxlength="120" value="<?= e($g['indicado_por']) ?>"></label>
     <label class="fld"><span>Suas notas para a negociação</span><textarea name="notas" rows="3" maxlength="2000" placeholder="ex.: comparou com outro escritório; prefere pagar no cartão"><?= e($g['notas']) ?></textarea></label>
-    <div class="neg-ref"><span>Referência</span><strong><?= $pp['referencia'] ? e(brl($pp['referencia'])) : '—' ?></strong><?php if ($pp['referencia'] && $pp['pct']): ?><small>piso <?= e(brl($pp['base'])) ?> + <?= e(fmt_pct($pp['pct'])) ?></small><?php endif ?></div>
+    <div class="neg-ref"><span>Referência</span><strong><?= $pp['referencia'] ? e(brl($pp['referencia'])) : '—' ?></strong><?php if ($pp['referencia'] && $pp['pct']): ?><small>OAB <?= e(brl($pp['base'])) ?> + <?= e(fmt_pct($pp['pct'])) ?></small><?php endif ?></div>
     <div class="inline-form">
       <button class="b" type="submit">Salvar guia</button>
       <button class="b b-primary" type="submit" formaction="<?= e(url('painel/propostas/' . $id . '/avaliar')) ?>" data-avaliar <?= llm_enabled() ? '' : 'disabled title="Ligue a IA em Configurações"' ?>>Pedir avaliação à IA</button>
@@ -68,11 +102,11 @@ $formaLabel = ['pix' => 'PIX à vista', 'boleto' => 'boleto à vista', 'cartao' 
   <section class="box neg-avaliacao" id="avaliacao">
     <div class="box-head"><h2>Avaliação da IA</h2><?php if ($ev): ?><span class="hint"><?= e(fmt_datetime($ev['created_at'])) ?> · confiança <?= e($ev['result']['confianca'] ?? 'media') ?></span><?php endif ?></div>
     <?php if (!$ev): ?>
-      <p class="hint">Marque os serviços e se o cliente veio por indicação, depois peça a avaliação. A IA lê só os dados deste atendimento (ficha, documentos e mensagens) e sugere preço, forma e prazo. É um guia para você: nada vai para o cliente.</p>
+      <p class="hint">Marque os serviços e se o cliente veio por indicação, depois peça a avaliação. A IA usa os dados deste atendimento e a análise do cliente, quando houver, e sugere preço, forma e prazo. É um guia para você: nada vai para o cliente.</p>
     <?php else: $r = $ev['result']; $pg = $r['pagamento']; ?>
       <div class="neg-sugestao">
-        <div><span>Preço sugerido</span><strong><?= e(brl((int) $r['preco_sugerido'])) ?></strong><small><?= ($r['ajuste_percentual'] >= 0 ? '+' : '') . e(fmt_pct((float) $r['ajuste_percentual'])) ?> sobre a referência de <?= e(brl((int) $r['referencia'])) ?></small></div>
-        <div><span>Faixa para negociar</span><strong><?= e(brl((int) $r['faixa']['minimo'])) ?> a <?= e(brl((int) $r['faixa']['maximo'])) ?></strong><small>piso da OAB: <?= e(brl((int) $r['piso'])) ?></small></div>
+        <div><span>Preço sugerido</span><strong><?= e(brl((int) $r['preco_sugerido'])) ?></strong><?php if ($r['referencia']): ?><small><?= ($r['ajuste_percentual'] >= 0 ? '+' : '') . e(fmt_pct((float) $r['ajuste_percentual'])) ?> em relação à referência de <?= e(brl((int) $r['referencia'])) ?></small><?php endif ?></div>
+        <div><span>Faixa para negociar</span><strong><?= e(brl((int) $r['faixa']['minimo'])) ?> a <?= e(brl((int) $r['faixa']['maximo'])) ?></strong><?php if ($r['piso']): ?><small>valor da OAB: <?= e(brl((int) $r['piso'])) ?></small><?php endif ?></div>
       </div>
       <p class="neg-pag"><strong>Pagamento:</strong> <?= e($formaLabel[$pg['forma']] ?? $pg['forma']) ?><?= $pg['entrada'] ? ', entrada de ' . e(brl((int) $pg['entrada'])) : '' ?><?= $pg['parcelas'] > 1 ? ', ' . (int) $pg['parcelas'] . ' parcelas' . ($pg['valor_parcela'] ? ' de cerca de ' . e(brl((int) $pg['valor_parcela'])) : '') : '' ?>.<?= $pg['justificativa'] ? ' ' . e($pg['justificativa']) : '' ?></p>
       <?php if ($r['resumo']): ?><p class="neg-resumo"><?= e($r['resumo']) ?></p><?php endif ?>
@@ -144,8 +178,8 @@ $formaLabel = ['pix' => 'PIX à vista', 'boleto' => 'boleto à vista', 'cartao' 
     </section>
 
     <details class="box prop-mais" <?= $maisAberto ? 'open' : '' ?>>
-      <summary><h2>Mais condições</h2><span class="hint">valores à parte, deslocamento, despesas, validade</span></summary>
-      <h3>Valores cobrados à parte <small class="muted">(não são honorários)</small></h3>
+      <summary><h2>Valores cobrados à parte</h2><span class="hint">taxas, emolumentos, custas, impostos</span></summary>
+      <p class="hint">Não são honorários.</p>
       <div class="prop-rows">
         <?php foreach ($custos as $x): ?>
           <div class="prop-row prop-row3">
@@ -157,24 +191,10 @@ $formaLabel = ['pix' => 'PIX à vista', 'boleto' => 'boleto à vista', 'cartao' 
           </div>
         <?php endforeach ?>
       </div>
-      <div class="var-grid">
-        <fieldset class="radios"><legend class="lbl">Deslocamento</legend>
-          <label class="chk"><input type="radio" name="deslocamento" value="nao" <?= $ckd(!$d['deslocamento']['repassa']) ?>> Incluído nos honorários</label>
-          <label class="chk"><input type="radio" name="deslocamento" value="sim" <?= $ckd($d['deslocamento']['repassa']) ?>> Repassar ao cliente</label>
-          <div class="prop-if-desloc">
-            <label class="chk"><input type="radio" name="deslocamento_criterio" value="comprovacao" <?= $ckd($d['deslocamento']['criterio'] !== 'km') ?>> Mediante comprovantes</label>
-            <label class="chk"><input type="radio" name="deslocamento_criterio" value="km" <?= $ckd($d['deslocamento']['criterio'] === 'km') ?>> Por km: <input class="prop-km" name="deslocamento_km" inputmode="decimal" placeholder="R$ 0,00" aria-label="Valor por km" value="<?= e(cents_input($d['deslocamento']['valor_km'])) ?>"></label>
-          </div>
-        </fieldset>
-        <fieldset class="radios"><legend class="lbl">Despesas antecipadas pelo escritório</legend>
-          <label class="chk"><input type="radio" name="despesas" value="sim" <?= $ckd($d['despesas']['repassa']) ?>> Reembolsar mediante comprovação</label>
-          <label class="chk"><input type="radio" name="despesas" value="nao" <?= $ckd(!$d['despesas']['repassa']) ?>> Não repassar</label>
-        </fieldset>
-      </div>
-      <label class="fld prop-validade"><span>Validade da proposta</span><input type="date" name="validade" value="<?= e((string) $d['validade']) ?>"></label>
       <?php if ($p['observacoes'] !== ''): ?><input type="hidden" name="pagamento_observacoes" value="<?= e($p['observacoes']) ?>"><?php endif ?>
     </details>
 
+    <p class="hint">Deslocamento e despesas antecipadas pelo escritório são sempre reembolsados pelo cliente, mediante comprovação.</p>
     <div class="inline-form"><button class="b b-primary" type="submit">Salvar proposta</button><span class="hint" data-erros aria-live="polite"></span></div>
   </div>
 

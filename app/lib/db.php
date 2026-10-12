@@ -614,6 +614,11 @@ CREATE TABLE proposal_evaluations (
 CREATE INDEX idx_prop_eval_case ON proposal_evaluations(case_id, id);
 SQL;
 
+    // Versão 10 — análise do cliente no painel de negociação; validade da proposta sai dos modelos.
+    $migrations[10] = <<<SQL
+ALTER TABLE proposal_evaluations ADD COLUMN kind TEXT NOT NULL DEFAULT 'preco';
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();
@@ -626,6 +631,9 @@ SQL;
             }
             if ($v === 6) {
                 migrate_document_models_v6($pdo);
+            }
+            if ($v === 10) {
+                migrate_remove_validade($pdo);
             }
             $pdo->exec('PRAGMA user_version = ' . $v);
             $pdo->commit();
@@ -721,5 +729,31 @@ function migrate_document_models_v6(PDO $pdo): void
         }
         $body = rtrim((string) file_get_contents(APP_DIR . '/inicial/modelos/' . $key . '.txt')) . "\n";
         $pdo->prepare('UPDATE doc_templates SET body = ?, version = version + 1, approved_at = NULL, approved_by = NULL, updated_at = ? WHERE key = ?')->execute([$body, $now, $key]);
+    }
+}
+
+/**
+ * Migração 10: a validade da proposta não aparece mais para o cliente. Tira o
+ * parágrafo do contrato e a linha da proposta, mesmo nos modelos já aprovados
+ * (a aprovação é mantida: só sai um trecho que não tem mais valor a mostrar).
+ */
+function migrate_remove_validade(PDO $pdo): void
+{
+    $now = (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d H:i:s');
+    $cuts = [
+        'honorarios' => "/\\*\\*Parágrafo #\\.\\*\\* A validade da proposta comercial[^\\n]*\\n\\n\\{\\{proposta\\.validade[^}]*\\}\\}\\n\\n[^\\n]*\\n\\n/u",
+        'proposta' => "/@dados\\nValidade desta proposta:[^\\n]*\\n\\n?/u",
+    ];
+    foreach ($cuts as $key => $re) {
+        $st = $pdo->prepare('SELECT body FROM doc_templates WHERE key = ?');
+        $st->execute([$key]);
+        $cur = $st->fetchColumn();
+        if ($cur === false) {
+            continue;
+        }
+        $body = preg_replace($re, '', str_replace("\r\n", "\n", (string) $cur));
+        if ($body !== null && $body !== $cur) {
+            $pdo->prepare('UPDATE doc_templates SET body = ?, version = version + 1, updated_at = ? WHERE key = ?')->execute([$body, $now, $key]);
+        }
     }
 }

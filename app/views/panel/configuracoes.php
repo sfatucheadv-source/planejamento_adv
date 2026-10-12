@@ -37,7 +37,7 @@ if ((int) $tpl['total'] > (int) $tpl['ok']) {
     $alerts[] = ['warn', ((int) $tpl['total'] - (int) $tpl['ok']) . ' modelo(s) de documento aguardando a sua aprovação.', 'painel/modelos-documentos', 'Revisar modelos'];
 }
 if (!oab_table_filled()) {
-    $alerts[] = ['warn', 'Preencha os valores da tabela da OAB: eles são o piso do guia de preço das propostas.', 'painel/configuracoes/precos', 'Preencher tabela'];
+    $alerts[] = ['warn', 'Preencha os valores da tabela da OAB: eles são a referência do guia de preço das propostas.', 'painel/configuracoes/precos', 'Preencher tabela'];
 }
 if (!asaas_enabled()) {
     $alerts[] = ['info', 'Asaas sem chave: as cobranças do contrato ainda não podem ser criadas pelo sistema.', 'painel/configuracoes/asaas', 'Conectar'];

@@ -53,7 +53,8 @@ function proposal_defaults(): array
         'atividades' => [],
         'exito' => ['ativo' => false, 'percentual' => '', 'base' => PROPOSAL_EXITO_BASE],
         'custos' => [],
-        'deslocamento' => ['repassa' => false, 'criterio' => 'comprovacao', 'valor_km' => null],
+        // Deslocamento e despesas antecipadas são sempre reembolsados, mediante comprovação.
+        'deslocamento' => ['repassa' => true, 'criterio' => 'comprovacao', 'valor_km' => null],
         'despesas' => ['repassa' => true],
         'pagamento' => ['formas' => ['pix'], 'condicao' => 'avista', 'vencimento' => null, 'entrada' => null, 'entrada_vencimento' => null,
             'parcelas' => 2, 'primeiro_vencimento' => null, 'modalidade' => 'proprio', 'cartao_parcelas' => 2, 'observacoes' => ''],
@@ -72,6 +73,10 @@ function proposal_get(int $caseId): ?array
         return null;
     }
     $r['data'] = array_replace_recursive(proposal_defaults(), json_decode((string) $r['data'], true) ?: []);
+    // Regras fixas também para propostas gravadas antes delas.
+    $r['data']['deslocamento'] = ['repassa' => true, 'criterio' => 'comprovacao', 'valor_km' => null];
+    $r['data']['despesas']['repassa'] = true;
+    $r['data']['validade'] = null;
     return $r;
 }
 
@@ -289,13 +294,9 @@ function proposal_from_input(array $in): array
         }
         $d['custos'][] = ['tipo' => $tipo, 'descricao' => $desc, 'valor' => $val];
     }
-    $d['deslocamento']['repassa'] = ($in['deslocamento'] ?? '') === 'sim';
-    $d['deslocamento']['criterio'] = ($in['deslocamento_criterio'] ?? '') === 'km' ? 'km' : 'comprovacao';
-    $d['deslocamento']['valor_km'] = money_cents($in['deslocamento_km'] ?? '');
-    if ($d['deslocamento']['repassa'] && $d['deslocamento']['criterio'] === 'km' && !$d['deslocamento']['valor_km']) {
-        $err[] = 'Informe o valor por quilômetro do deslocamento.';
-    }
-    $d['despesas']['repassa'] = ($in['despesas'] ?? 'sim') === 'sim';
+    // Deslocamento e despesas antecipadas: sempre reembolsados mediante comprovação.
+    $d['deslocamento'] = ['repassa' => true, 'criterio' => 'comprovacao', 'valor_km' => null];
+    $d['despesas']['repassa'] = true;
 
     $p = &$d['pagamento'];
     $p['formas'] = array_values(array_intersect(array_keys(PAYMENT_METHODS), (array) ($in['formas'] ?? [])));
@@ -318,7 +319,7 @@ function proposal_from_input(array $in): array
         $err[] = 'Informe o vencimento da primeira parcela.';
     }
     unset($p);
-    $d['validade'] = parse_br_date((string) ($in['validade'] ?? '')) ?: null;
+    $d['validade'] = null; // a validade não é exposta ao cliente
 
     $t = proposal_totals($d);
     if ($t['total'] === 0 && !$d['exito']['ativo']) {

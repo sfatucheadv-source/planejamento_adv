@@ -113,6 +113,17 @@ if (str_contains($system, 'extrai dados')) {
         'confianca' => 'media',
         'resumo' => 'Proponha a referência + 10% em 10x no cartão.',
     ], JSON_UNESCAPED_UNICODE);
+} elseif (str_contains($system, 'Você lê o atendimento de um cliente')) {
+    // Análise do cliente: registra o que recebeu para o teste conferir o sigilo.
+    file_put_contents($log . '.cliente', $text);
+    $content = json_encode(['pontos' => [['ponto' => 'Já paga parcela alta do financiamento e quer parcelar', 'fonte' => 'conversa'], ['ponto' => 'Motorista de aplicativo, renda variável', 'fonte' => 'ficha']],
+        'sensibilidade_preco' => 'alta', 'urgencia' => 'alta', 'preferencia_pagamento' => 'Cartão em várias parcelas.', 'objecoes' => ['Achar caro']], JSON_UNESCAPED_UNICODE);
+} elseif (str_contains($system, 'Pesquise na internet informações públicas')) {
+    file_put_contents($log . '.web', json_encode(['text' => $text, 'plugins' => $req['plugins'] ?? null, 'tools' => $req['tools'] ?? null]));
+    $content = json_encode(['vida_social' => 'ativa', 'renda_estimada' => 'media',
+        'links' => [['rede' => 'Instagram', 'url' => 'https://www.instagram.com/bruno.souza.teste', 'confere' => 'alta'], ['rede' => 'LinkedIn', 'url' => 'https://linkedin.com/in/bruno-souza', 'confere' => 'media'], ['rede' => 'Inválido', 'url' => 'javascript:alert(1)', 'confere' => 'alta']],
+        'resumo' => 'Publica viagens curtas e carro bem cuidado; consumo moderado.'], JSON_UNESCAPED_UNICODE);
+    $annotations = [['type' => 'url_citation', 'url_citation' => ['url' => 'https://instagram.com/bruno.souza.teste/', 'title' => 'Bruno']]];
 } elseif (str_contains($system, 'classifica documentos')) {
     $content = json_encode(['tipo' => 'identidade']);
 } elseif (str_contains($system, 'Você conduz o acolhimento')) {
@@ -157,6 +168,6 @@ if ($gemini) {
 }
 echo json_encode([
     'id' => 'gen-mock', 'model' => $model,
-    'choices' => [['message' => ['role' => 'assistant', 'content' => $content]]],
+    'choices' => [['message' => ['role' => 'assistant', 'content' => $content] + (isset($annotations) ? ['annotations' => $annotations] : [])]],
     'usage' => ['prompt_tokens' => 1200, 'completion_tokens' => 90, 'cost' => 0.0004],
 ]);

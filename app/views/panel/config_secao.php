@@ -6,7 +6,7 @@ $intro = [
     'ia' => 'Fornecedor, modelo e chave da inteligência artificial usada no atendimento e na leitura dos documentos.',
     'email' => 'Como saem os e-mails que avisam o cliente de novidade na conversa.',
     'asaas' => 'Conta do Asaas para criar as cobranças do contrato assinado.',
-    'precos' => 'Tabela da OAB (piso dos honorários), acréscimo para quem vem por indicação e taxas do Asaas usadas no simulador de vendas da proposta.',
+    'precos' => 'Tabela da OAB (referência dos honorários), acréscimo para quem vem por indicação e taxas do Asaas usadas no simulador de vendas da proposta.',
 ][$secao];
 ?>
 <nav class="cfg-crumbs" aria-label="Caminho"><a href="<?= e(url('painel/configuracoes')) ?>">‹ Painel de controles</a></nav>
@@ -82,8 +82,8 @@ $intro = [
   <?php endif ?>
   <label class="chk"><input type="checkbox" name="asaas_test" value="1"> Testar a conexão com o Asaas ao salvar</label>
 <?php elseif ($secao === 'precos'): $oab = oab_table(); $oab = array_merge($oab, array_fill(0, 3, ['key' => '', 'label' => '', 'valor' => null, 'nota' => ''])); $fees = asaas_fees(); ?>
-  <h3>Tabela de honorários da OAB (piso)</h3>
-  <p class="hint">Os valores mínimos da tabela da OAB/PR para os serviços que você oferece. Na proposta, você marca os serviços do caso e o painel soma o piso. Consulte a tabela vigente em <a href="https://honorarios.oabpr.org.br/" target="_blank" rel="noopener">honorarios.oabpr.org.br</a>. Para incluir um serviço, use uma linha em branco; para tirar, apague o nome.</p>
+  <h3>Tabela de honorários da OAB (referência)</h3>
+  <p class="hint">Os valores mínimos da tabela da OAB/PR para os serviços que você oferece. Na proposta, você marca os serviços do caso e o painel soma o valor de referência. Consulte a tabela vigente em <a href="https://honorarios.oabpr.org.br/" target="_blank" rel="noopener">honorarios.oabpr.org.br</a>. Para incluir um serviço, use uma linha em branco; para tirar, apague o nome.</p>
   <div class="cfg-oab">
     <div class="cfg-oab-head"><span>Serviço</span><span>Valor mínimo (R$)</span><span>Item da tabela / observação</span></div>
     <?php foreach ($oab as $i => $it): ?>
@@ -97,7 +97,7 @@ $intro = [
   </div>
   <h3>Indicação</h3>
   <label class="fld cfg-short"><span>Acréscimo para quem vem por indicação (%)</span><input name="indicacao_pct" inputmode="decimal" value="<?= e(str_replace('.', ',', (string) indicacao_pct())) ?>"></label>
-  <p class="hint">Quem chega indicado já conhece os seus resultados: a referência de preço é o piso da OAB com este acréscimo.</p>
+  <p class="hint">Quem chega indicado já conhece os seus resultados: a referência de preço é o valor da OAB com este acréscimo.</p>
   <h3>Taxas do Asaas <small class="muted"><?= asaas_fees_custom() ? '(personalizadas)' : '(padrão de referência)' ?></small></h3>
   <p class="hint">Usadas no simulador de vendas da proposta. Confira as da sua conta no Asaas, em Minha conta › Taxas, e ajuste aqui. Na proposta, o botão “Conferir no Asaas” consulta o simulador oficial da sua conta.</p>
   <div class="var-grid">

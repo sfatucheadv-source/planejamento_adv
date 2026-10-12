@@ -46,9 +46,6 @@ Os custos de deslocamento estão incluídos nos honorários.
 
 {{proposta.riscos}}
 
-@dados
-Validade desta proposta: {{proposta.validade|combinada na conversa}}
-
 @direita {{data.cidade}}, {{data.hoje}}.
 
 @assinatura {{escritorio.advogado}} | {{escritorio.advogado_oab}} | {{escritorio.nome}}

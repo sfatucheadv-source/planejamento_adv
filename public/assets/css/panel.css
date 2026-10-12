@@ -736,3 +736,14 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .neg-painel .prop-layout { grid-template-columns: minmax(0, 1fr); }
 .neg-painel .prop-previa { position: static; max-height: none; overflow: visible; }
 @media (min-width: 1750px) { .neg-painel .prop-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); } }
+.neg-ind-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.neg-chip { font-size: 12.5px; background: #F0ECE3; border-radius: 999px; padding: 4px 10px; color: var(--ink); }
+.neg-chip.neg-alta { background: #DFF0E5; }
+.neg-chip.neg-baixa { background: #F8E7E2; }
+.neg-links { list-style: none; padding: 0; margin: 6px 0; display: grid; gap: 4px; font-size: 14px; }
+.neg-links a { font-weight: 600; }
+.neg-pontos { padding-left: 18px; margin: 4px 0 8px; }
+.neg-pontos li { margin-bottom: 4px; }
+.neg-ficha { margin: 8px 0; font-size: 14px; }
+.neg-ficha summary { cursor: pointer; color: var(--teal); font-weight: 600; margin-bottom: 6px; }
+.neg-scan { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }

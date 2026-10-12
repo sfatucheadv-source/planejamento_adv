@@ -689,6 +689,16 @@ $router->post('/painel/propostas/{id}/avaliar', function (string $id) {
     redirect('painel/propostas/' . $c['id'] . '#avaliacao');
 });
 
+/* Análise do cliente pela IA: ficha, documentos, conversa e presença pública na internet. */
+$router->post('/painel/propostas/{id}/cliente', function (string $id) {
+    $u = require_user();
+    $c = require_case_operator((int) $id);
+    @set_time_limit(300);
+    [$ok, $r] = negotiation_client_scan($c, (int) $u['id']);
+    flash($ok ? 'ok' : 'error', $ok ? 'Análise do cliente pronta.' . (isset($r['internet']['erro']) ? ' A pesquisa na internet não respondeu desta vez.' : '') : $r);
+    redirect('painel/propostas/' . $c['id'] . '#cliente');
+});
+
 /* Conferência dos valores no simulador de vendas do próprio Asaas. */
 $router->post('/painel/propostas/{id}/asaas-simular', function (string $id) {
     $c = require_case_operator((int) $id);

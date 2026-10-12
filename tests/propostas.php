@@ -164,7 +164,7 @@ ok(str_contains($ct, 'Formas de pagamento aceitas: PIX, boleto bancário ou cart
 ok(str_contains($ct, 'O CONTRATANTE poderá antecipar parcelas, com abatimento proporcional dos juros.'), 'contrato: traz o ajuste feito na prévia');
 ok(str_contains($ct, 'juros simples de 1% (um por cento) ao mês e de atualização monetária pelo INPC/IBGE') && !str_contains($ct, 'operadora ou pela instituição emissora'), 'contrato: cláusula do parcelamento próprio incluída, a do cartão excluída');
 ok(str_contains($ct, '- Emolumentos de cartório — certidão de ônus do veículo: estimativa de R$ 85,00.') && str_contains($ct, '- Custas judiciais — custas iniciais: valor a apurar.'), 'contrato: valores cobrados à parte');
-ok(str_contains($ct, 'estão incluídos nos honorários e não serão repassados') && str_contains($ct, 'Despesas antecipadas pela CONTRATADA serão reembolsadas'), 'contrato: deslocamento não repassado; despesas reembolsadas');
+ok(str_contains($ct, 'serão reembolsadas pelo CONTRATANTE mediante apresentação dos comprovantes') && !str_contains($ct, 'estão incluídos nos honorários e não serão repassados') && str_contains($ct, 'Despesas antecipadas pela CONTRATADA serão reembolsadas'), 'contrato: deslocamento e despesas sempre reembolsados, mesmo pedindo o contrário');
 preg_match_all('/^### Cláusula (.+?) — /mu', $ct, $cl);
 ok(count($cl[1]) === 22 && $cl[1][0] === 'primeira' && $cl[1][21] === 'vigésima segunda' && !str_contains($ct, 'Cláusula #') && !str_contains($ct, 'Parágrafo #'), 'contrato: 22 cláusulas numeradas em sequência');
 ok(str_contains($ct, 'Quando expressamente previstos na Cláusula Quarta') && str_contains($ct, 'previstas na Cláusula Quinta para essa hipótese'), 'contrato: referências cruzadas resolvidas');
@@ -182,7 +182,7 @@ preg_match_all('/^### Cláusula (.+?) — (.+)$/mu', $ct2, $cl2);
 ok(count($cl2[1]) === 20 && !str_contains($ct2, 'dos honorários de êxito') && $cl2[1][5] === 'sexta' && str_starts_with($cl2[2][5], 'dos honorários sucumbenciais'), 'sem êxito: duas cláusulas a menos e a numeração continua sem salto');
 ok(str_contains($ct2, 'em até 6 (seis) parcelas no cartão de crédito, acrescidas da taxa de parcelamento') && str_contains($ct2, 'operadora ou pela instituição emissora') && !str_contains($ct2, 'INPC/IBGE'), 'cartão: cláusula da taxa da operadora incluída, a do parcelamento próprio excluída');
 ok(!str_contains($ct2, 'Quando utilizado PIX') && str_contains($ct2, 'boleto bancário ou cartão de crédito'), 'sem PIX: parágrafo da chave PIX excluído');
-ok(str_contains($ct2, 'à razão de R$ 1,50 por quilômetro rodado') && str_contains($ct2, 'Não serão repassadas ao CONTRATANTE despesas ordinárias'), 'deslocamento por km repassado; despesas não repassadas');
+ok(str_contains($ct2, 'mediante apresentação dos comprovantes') && !str_contains($ct2, 'por quilômetro rodado') && !str_contains($ct2, 'Não serão repassadas ao CONTRATANTE despesas ordinárias'), 'deslocamento e despesas reembolsados mediante comprovação (sem km nem “não repassar”)');
 ok(!str_contains($ct2, 'Honorários contratuais por atividade') && !str_contains($ct2, 'distribuição dos honorários por etapas'), 'sem atividades: parágrafo das etapas excluído');
 ok(str_contains($ct2, 'Não há valores previstos para cobrança à parte'), 'sem valores à parte: texto próprio');
 preg_match('/### Cláusula quarta — da remuneração contratada\n(.*?)\n### /su', $ct2, $c4);

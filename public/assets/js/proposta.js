@@ -109,6 +109,12 @@
         .then(function () { as.disabled = false; });
     }
   });
+  var scan = document.querySelector('[data-scan]');
+  if (scan) scan.addEventListener('submit', function () {
+    var m = scan.querySelector('[data-scan-msg]');
+    if (m) m.textContent = 'Analisando o atendimento e pesquisando na internet. Pode levar até dois minutos.';
+    setTimeout(function () { scan.querySelectorAll('button').forEach(function (b) { b.disabled = true; }); }, 0);
+  });
   var guia = document.getElementById('guia');
   if (guia) guia.addEventListener('submit', function (ev) {
     if (ev.submitter && ev.submitter.hasAttribute('data-avaliar')) {

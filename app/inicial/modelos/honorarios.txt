@@ -301,12 +301,6 @@ O presente contrato escrito de honorários constitui título executivo nos termo
 
 **Parágrafo #.** O instrumento poderá ser assinado física ou eletronicamente, com identificação das partes e preservação de sua integridade.
 
-**Parágrafo #.** A validade da proposta comercial que antecede este contrato é:
-
-{{proposta.validade}}
-
-Esse prazo refere-se à aceitação da proposta e não limita a vigência dos serviços após a celebração do contrato.
-
 **Parágrafo #.** O Anexo I registra a avaliação técnica disponível na data indicada. Sua conclusão não constitui promessa de resultado e poderá ser revista diante de novos documentos ou fatos.
 
 ### Cláusula # — do foro

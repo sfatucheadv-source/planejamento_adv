@@ -96,7 +96,11 @@ function llm_key_format_ok(string $provider, string $key): bool
  * Gemini elas são convertidas para generateContent.
  * Retorna ['ok' => bool, 'content' => string, 'error' => ?string, 'usage' => array].
  */
-function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 1200, int $timeout = 90): array
+/**
+ * $web: o modelo pode pesquisar na internet (OpenRouter: plugin "web";
+ * Gemini: busca do Google). As fontes consultadas voltam em 'sources'.
+ */
+function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 1200, int $timeout = 90, bool $web = false): array
 {
     $provider = llm_provider();
     $key = llm_key();
@@ -106,10 +110,18 @@ function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 
     $model = llm_model();
     if ($provider === 'gemini') {
         [$url, $headers, $payload] = gemini_request($model, $key, $messages, $maxTokens);
+        if ($web) {
+            // A busca do Google não convive com a resposta forçada em JSON.
+            $payload['tools'] = [['google_search' => (object) []]];
+            unset($payload['generationConfig']['responseMimeType']);
+        }
     } else {
         $url = llm_endpoint() . '/chat/completions';
         $headers = ['Authorization: Bearer ' . $key, 'Content-Type: application/json', 'HTTP-Referer: ' . office('base_url'), 'X-Title: Fatuche Atendimento'];
         $payload = ['model' => $model, 'messages' => $messages, 'temperature' => 0, 'max_tokens' => $maxTokens, 'usage' => ['include' => true]];
+        if ($web) {
+            $payload['plugins'] = [['id' => 'web', 'max_results' => 8]];
+        }
     }
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -131,10 +143,12 @@ function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 
         $usage = ['prompt_tokens' => $um['promptTokenCount'] ?? null, 'completion_tokens' => $um['candidatesTokenCount'] ?? null];
         $finish = (string) ($data['candidates'][0]['finishReason'] ?? '');
         $blocked = (string) ($data['promptFeedback']['blockReason'] ?? '');
+        $sources = array_values(array_filter(array_map(fn($ch) => (string) ($ch['web']['uri'] ?? ''), (array) ($data['candidates'][0]['groundingMetadata']['groundingChunks'] ?? []))));
     } else {
         $content = (string) ($data['choices'][0]['message']['content'] ?? '');
         $usage = (array) ($data['usage'] ?? []);
         $finish = $blocked = '';
+        $sources = array_values(array_filter(array_map(fn($a) => (string) ($a['url_citation']['url'] ?? ''), (array) ($data['choices'][0]['message']['annotations'] ?? []))));
     }
     $error = null;
     if ($raw === false) {
@@ -156,7 +170,7 @@ function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 
     if ($error) {
         error_log('[fatuche][ia] ' . $kind . ' caso ' . $caseId . ': ' . $error);
     }
-    return ['ok' => $error === null, 'content' => $content, 'error' => $error, 'usage' => $usage];
+    return ['ok' => $error === null, 'content' => $content, 'error' => $error, 'usage' => $usage, 'sources' => $sources ?? []];
 }
 
 /** Converte a conversa (formato OpenAI) para generateContent do Gemini. */
