@@ -43,6 +43,7 @@
 
 /* Dado ainda pendente: aparece na tela e impede a publicação */
 mark.pendente { background: #FFF1B8; color: inherit; padding: 0 .15em; }
+mark.marca { background: #FFF176; color: inherit; padding: 0; }
 
 /* Barra: links do servidor com o mesmo desenho dos botões do formatador */
 .barra a.doc-botao {

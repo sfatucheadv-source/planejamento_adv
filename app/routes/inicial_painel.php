@@ -620,6 +620,13 @@ $router->post('/painel/modelos-documentos', function () {
 
 /* ---------- Propostas (condições negociadas por atendimento) ---------- */
 
+/** Volta para a aba em que a proposta foi salva. */
+function proposal_tab_hash(): string
+{
+    $aba = (string) input('aba');
+    return in_array($aba, ['produto', 'simulacao', 'contrato'], true) ? '#' . $aba : '';
+}
+
 $router->get('/painel/propostas', function () {
     $u = require_user();
     $rows = all("SELECT p.*, c.protocol, c.client_name, c.initial_status FROM proposals p JOIN cases c ON c.id = p.case_id
@@ -645,12 +652,13 @@ $router->post('/painel/propostas/{id}', function (string $id) {
     $c = require_case_operator((int) $id);
     [$d, $errors] = proposal_from_input($_POST);
     if ($errors) {
-        view('panel/proposta', ['meta_title' => 'Proposta · ' . $c['protocol'], 'c' => $c, 'pr' => proposal_get((int) $c['id']), 'd' => $d, 'errors' => $errors], 'panel');
+        view('panel/proposta', ['meta_title' => 'Proposta · ' . $c['protocol'], 'c' => $c, 'pr' => proposal_get((int) $c['id']), 'd' => $d, 'errors' => $errors, 'g' => proposal_guide_from_input($_POST)], 'panel');
         return;
     }
     proposal_save((int) $c['id'], $d, (int) $u['id']);
+    proposal_guide_save((int) $c['id'], proposal_guide_from_input($_POST), (int) $u['id']);
     flash('ok', 'Proposta salva. Para o contrato usar estas condições, gere uma nova versão no kit do atendimento.');
-    redirect('painel/propostas/' . $c['id']);
+    redirect('painel/propostas/' . $c['id'] . proposal_tab_hash());
 });
 
 // Simulação e prévia das cláusulas, refeitas a cada alteração do formulário (nada é salvo).
@@ -660,43 +668,35 @@ $router->post('/painel/propostas/{id}/previa', function (string $id) {
     json_out([
         'simulacao' => render('panel/_proposta_simulacao', ['d' => $d]),
         'vendas' => render('panel/_proposta_vendas', ['d' => $d, 'opt' => sales_sim_options($_POST, $d)]),
-        'kpis' => render('panel/_proposta_kpis', ['c' => $c, 'd' => $d, 'g' => proposal_guide((int) $c['id']), 'ev' => negotiation_history((int) $c['id'], 1)[0] ?? null, 'opt' => sales_sim_options($_POST, $d)]),
-        'auto' => proposal_auto_texts($d),
+        'kpis' => render('panel/_proposta_kpis', ['c' => $c, 'd' => $d, 'g' => array_key_exists('base_manual', $_POST) ? proposal_guide_from_input($_POST) : proposal_guide((int) $c['id']), 'ev' => negotiation_history((int) $c['id'], 1)[0] ?? null, 'opt' => sales_sim_options($_POST, $d)]),
+        'auto' => $auto = proposal_auto_texts($d),
+        'auto_html' => array_map('proposal_editor_html', $auto),
         'clausulas' => proposal_clause_preview((int) $c['id'], $d),
         'erros' => $errors,
     ]);
 });
 
-/* Guia de preço (interno): serviços da tabela da OAB, indicação e notas. */
-$router->post('/painel/propostas/{id}/guia', function (string $id) {
-    $u = require_user();
-    $c = require_case_operator((int) $id);
-    proposal_guide_save((int) $c['id'], proposal_guide_from_input($_POST), (int) $u['id']);
-    flash('ok', 'Guia de preço salvo.');
-    redirect('painel/propostas/' . $c['id'] . '#guia');
-});
-
-/* Avaliação de preço pela IA a partir do guia, do perfil do cliente e da proposta atual. */
+/*
+ * Avaliação de preço pela IA a partir do produto, do perfil do cliente e da
+ * proposta na tela (salva junto, se estiver completa).
+ */
 $router->post('/painel/propostas/{id}/avaliar', function (string $id) {
     $u = require_user();
     $c = require_case_operator((int) $id);
     @set_time_limit(180);
     $g = proposal_guide_from_input($_POST);
     proposal_guide_save((int) $c['id'], $g, (int) $u['id']);
-    $pr = proposal_get((int) $c['id']);
-    [$ok, $r] = negotiation_evaluate($c, $pr['data'] ?? proposal_defaults(), $g, (int) $u['id']);
+    $d = null;
+    if (isset($_POST['pagamento_tipo'])) {
+        [$d, $errors] = proposal_from_input($_POST);
+        if (!$errors) {
+            proposal_save((int) $c['id'], $d, (int) $u['id']);
+        }
+    }
+    $d ??= proposal_get((int) $c['id'])['data'] ?? proposal_defaults();
+    [$ok, $r] = negotiation_evaluate($c, $d, $g, (int) $u['id']);
     flash($ok ? 'ok' : 'error', $ok ? 'Avaliação pronta: veja a sugestão no painel.' : $r);
     redirect('painel/propostas/' . $c['id'] . '#avaliacao');
-});
-
-/* Análise do cliente pela IA: ficha, documentos, conversa e presença pública na internet. */
-$router->post('/painel/propostas/{id}/cliente', function (string $id) {
-    $u = require_user();
-    $c = require_case_operator((int) $id);
-    @set_time_limit(300);
-    [$ok, $r] = negotiation_client_scan($c, (int) $u['id']);
-    flash($ok ? 'ok' : 'error', $ok ? 'Análise do cliente pronta.' . (isset($r['internet']['erro']) ? ' A pesquisa na internet não respondeu desta vez.' : '') : $r);
-    redirect('painel/propostas/' . $c['id'] . '#cliente');
 });
 
 /* Conferência dos valores no simulador de vendas do próprio Asaas. */

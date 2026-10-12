@@ -114,8 +114,14 @@ set_field($id, 'parcela', '125000', 'informado', 'contrato');
 set_field($id, 'renda_valor', '400000', 'informado', 'cliente');
 chat_post($id, 'client', 'Tenho pressa, o banco mandou notificação. Consigo pagar no cartão.');
 $h->get('/painel/propostas/' . $id);
-ok(str_contains($h->html, 'Negociação · ') && str_contains($h->html, 'data-kpis') && str_contains($h->html, 'Valor da OAB') && str_contains($h->html, 'Você recebe'), 'proposta abre como painel, com os indicadores no topo');
-ok(str_contains($h->html, 'Guia de preço') && str_contains($h->html, 'interno') && str_contains($h->html, 'Simulador de vendas') && str_contains($h->html, 'Parcela sobre a renda'), 'guia de preço, simulador de vendas e perfil do cliente (parcela sobre a renda)');
+ok(str_contains($h->html, 'Proposta · ') && str_contains($h->html, 'data-kpis') && str_contains($h->html, 'Valor da OAB') && str_contains($h->html, 'Você recebe'), 'proposta abre com os indicadores no topo');
+ok(str_contains($h->html, 'data-abas') && str_contains($h->html, 'data-aba-btn="produto"') && str_contains($h->html, 'data-aba-btn="simulacao"') && str_contains($h->html, 'data-aba-btn="contrato"')
+    && strpos($h->html, 'id="produto"') < strpos($h->html, 'id="simulacao"') && strpos($h->html, 'id="simulacao"') < strpos($h->html, 'id="contrato"'), 'três abas, nesta ordem: produto e honorários, simulação, contrato');
+$abaProduto = substr($h->html, strpos($h->html, 'id="produto"'), strpos($h->html, 'id="simulacao"') - strpos($h->html, 'id="produto"'));
+$abaSim = substr($h->html, strpos($h->html, 'id="simulacao"'), strpos($h->html, 'id="contrato"') - strpos($h->html, 'id="simulacao"'));
+ok(str_contains($abaProduto, 'name="servicos[]"') && str_contains($abaProduto, 'name="fixos_valor"') && str_contains($abaProduto, 'name="atividade_valor[]"') && str_contains($abaProduto, 'name="exito_ativo"') && str_contains($abaProduto, 'name="custo_tipo[]"') && !str_contains($abaProduto, 'name="pagamento_tipo"'), 'aba 1: produto (serviços da OAB) e todos os tipos de honorários');
+ok(str_contains($abaSim, 'name="pagamento_tipo"') && str_contains($abaSim, 'name="formas[]"') && str_contains($abaSim, 'Simulador de vendas') && str_contains($abaSim, 'data-sim'), 'aba 2: forma de pagamento, parcelas e simulador de vendas');
+ok(str_contains($abaProduto, 'interno') && str_contains($h->html, 'Parcela sobre a renda') && substr_count($h->html, '<form class="form prop-form"') === 1 && !str_contains($h->html, 'id="guia" method'), 'um só formulário; dados da ficha junto da avaliação da IA');
 ok(str_contains($h->html, 'Informe os honorários'), 'sem honorários, o simulador pede o valor');
 $h->post('/painel/propostas/' . $id, ['fixos_valor' => '3.000,00', 'formas' => ['pix', 'credito'], 'pagamento_tipo' => 'cartao', 'parcelas' => '10', 'despesas' => 'sim', 'deslocamento' => 'nao']);
 ok(str_contains($h->html, 'Proposta salva') && str_contains($h->html, 'Cartão em 10x <span class="neg-tag">na proposta</span>'), 'a linha da condição da proposta fica marcada no simulador');
@@ -128,12 +134,14 @@ ok(str_contains($j['kpis'], 'R$ 2.000,00'), 'e os indicadores com a proposta em 
 
 echo "\nN4. Guia de preço\n";
 $h->get('/painel/propostas/' . $id);
-$h->post('/painel/propostas/' . $id . '/guia', ['servicos' => ['extrajudicial', 'revisional'], 'indicacao' => 'sim', 'indicado_por' => 'Cliente antigo', 'notas' => 'Comparou com outro escritório.']);
+$prop = ['fixos_valor' => '3.000,00', 'formas' => ['pix', 'credito'], 'pagamento_tipo' => 'cartao', 'parcelas' => '10'];
+$h->post('/painel/propostas/' . $id, $prop + ['servicos' => ['extrajudicial', 'revisional'], 'indicacao' => 'sim', 'indicado_por' => 'Cliente antigo', 'notas' => 'Comparou com outro escritório.', 'aba' => 'simulacao']);
+ok(str_contains($h->html, 'Proposta salva') && proposal_guide($id)['notas'] === 'Comparou com outro escritório.', 'salvar a proposta grava também o produto e as notas');
 $g = proposal_guide($id);
 $pp = guide_prices($g);
 ok($pp['base'] === 450000 && $pp['referencia'] === 585000, 'valor da OAB = soma da tabela (R$ 4.500); com indicação, referência +30% (R$ 5.850)');
 ok(str_contains($h->html, 'R$ 5.850,00') && str_contains($h->html, 'com indicação (+30%)') && !str_contains($h->html, 'abaixo do piso'), 'indicadores mostram a referência, sem trava de piso');
-$h->post('/painel/propostas/' . $id . '/guia', ['servicos' => ['extrajudicial', 'revisional'], 'indicacao' => 'nao']);
+$h->post('/painel/propostas/' . $id, $prop + ['servicos' => ['extrajudicial', 'revisional'], 'indicacao' => 'nao']);
 ok(guide_prices(proposal_guide($id))['referencia'] === 450000, 'sem indicação, a referência é o piso da OAB');
 
 echo "\nN5. Avaliação pela IA\n";
@@ -161,31 +169,19 @@ ok(str_contains($anon->url, '/painel/entrar'), 'o painel de negociação exige l
 set_setting('llm_enabled', '0');
 $h->post('/painel/propostas/' . $id . '/avaliar', ['servicos' => ['revisional'], 'indicacao' => 'nao']);
 ok(str_contains($h->html, 'IA está desligada'), 'com a IA desligada, explica o motivo');
-$h->post('/painel/propostas/' . $id . '/guia', ['servicos' => [], 'indicacao' => 'nao']);
 set_setting('llm_enabled', '1');
 $h->post('/painel/propostas/' . $id . '/avaliar', ['servicos' => [], 'indicacao' => 'nao']);
 ok(count(negotiation_history($id, 10)) === 2 && str_contains($h->html, 'não chegou a um valor'), 'sem valor da OAB, a avaliação ainda é possível; sem valor sugerido, explica');
 
-echo "\nN5b. Análise do cliente (dados, documentos, conversa e internet)\n";
+echo "\nN5b. Sem análise do perfil do cliente pela IA\n";
 $h->get('/painel/propostas/' . $id);
-ok(str_contains($h->html, 'Analisar o cliente com a IA') && str_contains($h->html, 'Dados da ficha'), 'bloco Cliente com o botão de análise');
-@unlink($mockLog . '.cliente');
-@unlink($mockLog . '.web');
-$h->post('/painel/propostas/' . $id . '/cliente', []);
-$scan = negotiation_client_last($id);
-$net = $scan['result']['internet'] ?? [];
-ok($scan && $scan['result']['sensibilidade_preco'] === 'alta' && count($scan['result']['pontos']) === 2, 'lê ficha, documentos e conversa e traz pontos para a negociação');
-ok($net['renda_estimada'] === 'media' && $net['vida_social'] === 'ativa' && count($net['links']) === 2, 'indicador da internet: renda estimada, vida social e só links válidos');
-ok($net['links'][0]['citado'] === true && $net['links'][1]['citado'] === false, 'links conferidos com as fontes da pesquisa');
-ok(str_contains($h->html, 'Renda estimada: <strong>média</strong>') && str_contains($h->html, 'https://www.instagram.com/bruno.souza.teste') && str_contains($h->html, 'rel="noopener noreferrer nofollow"') && str_contains($h->html, 'não confirmado na pesquisa') && !str_contains($h->html, 'javascript:alert'), 'painel mostra o indicador, os links e o aviso de homônimos');
-$web = json_decode((string) @file_get_contents($mockLog . '.web'), true) ?: [];
-ok(($web['plugins'][0]['id'] ?? '') === 'web' && str_contains($web['text'] ?? '', 'Bruno Teste Souza') && str_contains($web['text'] ?? '', 'Curitiba'), 'a pesquisa na internet usa a busca do modelo com nome, cidade e profissão');
-ok(!str_contains($web['text'] ?? '', '529.982.247') && !str_contains($web['text'] ?? '', 'bruno@exemplo') && !str_contains($web['text'] ?? '', 'Tenho pressa'), 'para a internet não vão CPF, e-mail nem a conversa');
-$cli = (string) @file_get_contents($mockLog . '.cliente');
-ok(str_contains($cli, 'Tenho pressa') && str_contains($cli, 'motorista de aplicativo') && !str_contains($cli, '529.982.247-25') && !str_contains($cli, 'masculino'), 'a leitura do atendimento usa a conversa e a ficha, sem CPF nem gênero');
-$h->post('/painel/propostas/' . $id . '/avaliar', ['servicos' => ['revisional'], 'indicacao' => 'nao']);
+ok(!str_contains($h->html, 'Analisar o cliente') && !str_contains($h->html, 'Renda estimada') && !function_exists('negotiation_client_scan') && !function_exists('client_web_scan'), 'a análise do perfil e a pesquisa na internet saíram');
+$h->post('/painel/propostas/' . $id . '/cliente', ['_csrf' => 'x']);
+ok(!str_contains($h->html, 'Análise do cliente pronta'), 'a rota da análise do cliente não existe mais');
+$h->get('/painel/propostas/' . $id);
+$h->post('/painel/propostas/' . $id . '/avaliar', ['fixos_valor' => '4.200,00', 'formas' => ['pix'], 'pagamento_tipo' => 'avista', 'servicos' => ['revisional'], 'indicacao' => 'nao']);
 $ev = negotiation_history($id, 1)[0];
-ok(str_contains((string) $ev['input'], 'renda_estimada') && str_contains((string) $ev['input'], 'Já paga parcela alta'), 'a avaliação de preço considera a análise do cliente');
+ok(!str_contains((string) $ev['input'], 'analise_cliente') && proposal_totals(proposal_get($id)['data'])['total'] === 420000, 'a avaliação usa e salva a proposta da tela, sem análise do perfil');
 
 echo "\nN5c. Reembolsos e validade\n";
 $h->get('/painel/propostas/' . $id);

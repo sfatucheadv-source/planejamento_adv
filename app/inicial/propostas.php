@@ -338,12 +338,33 @@ function proposal_from_input(array $in): array
         $base = proposal_norm_text((string) ($in['texto_' . $k . '_base'] ?? ''));
         $manual = $posted !== $base || ($in['texto_' . $k . '_manual'] ?? '') === '1';
         if ($manual && $posted !== '' && $posted !== proposal_norm_text($auto[$k])) {
-            $d['texto'][$k] = mb_substr($posted, 0, 8000);
+            $d['texto'][$k] = mb_substr($posted, 0, 20000);
             $ref = proposal_norm_text((string) ($in['texto_' . $k . '_ref'] ?? ''));
             $d['texto_ref'][$k] = mb_substr($ref !== '' ? $ref : ($base !== '' ? $base : $auto[$k]), 0, 8000);
         }
     }
     return [$d, $err];
+}
+
+/**
+ * Texto da cláusula (marcação do documento) como HTML do editor da aba
+ * Contrato: parágrafos, parágrafo em destaque, listas e a formatação de cada
+ * trecho. O editor devolve a mesma marcação (proposta.js).
+ */
+function proposal_editor_html(string $markup): string
+{
+    $h = '';
+    foreach (doc_blocks($markup) as $b) {
+        $h .= match ($b['type']) {
+            'perfil' => '',
+            'lista' => '<ul>' . implode('', array_map(fn($t) => '<li>' . doc_inline_html($t) . '</li>', $b['items'])) . '</ul>',
+            'destaque' => '<p data-bloco="destaque">' . doc_inline_html($b['text']) . '</p>',
+            'dados' => '<p>' . implode('<br>', array_map(fn($r) => doc_inline_html(trim($r[0] . ' ' . $r[1])), $b['rows'])) . '</p>',
+            'assinatura' => '<p>' . doc_inline_html(implode("\n", $b['lines'])) . '</p>',
+            default => '<p>' . doc_inline_html($b['text']) . '</p>',
+        };
+    }
+    return $h !== '' ? $h : '<p><br></p>';
 }
 
 function proposal_norm_text(string $s): string

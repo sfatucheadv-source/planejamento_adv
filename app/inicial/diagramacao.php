@@ -25,6 +25,8 @@ declare(strict_types=1);
  *   - item                           (lista com travessão)
  *
  * Dentro do texto: **negrito**. Linhas do mesmo bloco viram quebras de linha.
+ * Formatação feita no editor da proposta: {|b i u m f=poppins t=14|}trecho{|/|}
+ * (negrito, itálico, sublinhado, marca-texto, fonte e tamanho em pt).
  * O mesmo conjunto de blocos gera o HTML paginado e o .docx: são o mesmo documento.
  */
 
@@ -116,25 +118,54 @@ function doc_block(array $lines): array
     return ['type' => 'p', 'text' => trim(implode("\n", $lines))];
 }
 
+/** Fontes que o editor da proposta oferece: chave => [nome no Word, pilha CSS]. */
+const DOC_FONTES = [
+    'lora' => ['Lora', '"Lora", Georgia, serif'],
+    'poppins' => ['Poppins', '"Poppins", Arial, sans-serif'],
+    'arial' => ['Arial', 'Arial, Helvetica, sans-serif'],
+    'times' => ['Times New Roman', '"Times New Roman", Times, serif'],
+];
+const DOC_TAMANHOS = [9, 10, 11, 12, 13, 14, 16, 18, 20, 24];
+
+/** Lê "{|b i u m f=poppins t=14|}": só aceita o que o editor oferece. */
+function doc_style_parse(string $spec): array
+{
+    $st = [];
+    foreach (preg_split('/\s+/', trim($spec)) as $tok) {
+        if (in_array($tok, ['b', 'i', 'u', 'm'], true)) {
+            $st[$tok] = true;
+        } elseif (preg_match('/^f=([a-z]+)$/', $tok, $m) && isset(DOC_FONTES[$m[1]])) {
+            $st['f'] = $m[1];
+        } elseif (preg_match('/^t=(\d{1,2})$/', $tok, $m) && in_array((int) $m[1], DOC_TAMANHOS, true)) {
+            $st['t'] = (int) $m[1];
+        }
+    }
+    return $st;
+}
+
 /**
- * Trechos de texto com estilo: [texto, negrito, pendente, versalete].
+ * Trechos de texto com estilo: [texto, negrito, pendente, versalete, formatação].
  * **negrito** e ^^versalete^^ (nomes das partes) ligam e desligam; [[…]] e
- * {{…}} que sobraram são pendências e saem destacados.
+ * {{…}} que sobraram são pendências e saem destacados; {|…|} … {|/|} é a
+ * formatação do editor (itálico, sublinhado, marca-texto, fonte, tamanho).
  */
 function doc_spans(string $text): array
 {
     $out = [];
     $bold = false;
     $caps = false;
-    foreach (preg_split('/(\*\*|\^\^|\[\[[^\]]*\]\]|\{\{[^}]*\}\})/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) as $piece) {
+    $st = [];
+    foreach (preg_split('/(\*\*|\^\^|\{\|[a-z0-9=\/ ]*\|\}|\[\[[^\]]*\]\]|\{\{[^}]*\}\})/u', $text, -1, PREG_SPLIT_DELIM_CAPTURE | PREG_SPLIT_NO_EMPTY) as $piece) {
         if ($piece === '**') {
             $bold = !$bold;
         } elseif ($piece === '^^') {
             $caps = !$caps;
+        } elseif (str_starts_with($piece, '{|')) {
+            $st = doc_style_parse(substr($piece, 2, -2));
         } elseif (str_starts_with($piece, '[[') || str_starts_with($piece, '{{')) {
-            $out[] = [$piece, $bold, true, $caps];
+            $out[] = [$piece, $bold || !empty($st['b']), true, $caps, $st];
         } else {
-            $out[] = [$piece, $bold, false, $caps];
+            $out[] = [$piece, $bold || !empty($st['b']), false, $caps, $st];
         }
     }
     return $out;
@@ -172,13 +203,27 @@ function doc_espaco(): float
 function doc_inline_html(string $text): string
 {
     $h = '';
-    foreach (doc_spans($text) as [$t, $bold, $pending, $caps]) {
+    foreach (doc_spans($text) as [$t, $bold, $pending, $caps, $st]) {
         $t = nl2br(e($t), false);
         if ($caps) {
             $t = '<span class="parte">' . $t . '</span>';
         }
+        if (!empty($st['u'])) {
+            $t = '<u>' . $t . '</u>';
+        }
+        if (!empty($st['i'])) {
+            $t = '<em>' . $t . '</em>';
+        }
         if ($bold) {
             $t = '<strong>' . $t . '</strong>';
+        }
+        if (!empty($st['m'])) {
+            $t = '<mark class="marca">' . $t . '</mark>';
+        }
+        if (isset($st['f']) || isset($st['t'])) {
+            // tamanho relativo ao corpo de 12 pt: acompanha a prévia e a folha
+            $css = (isset($st['f']) ? 'font-family:' . DOC_FONTES[$st['f']][1] . ';' : '') . (isset($st['t']) ? 'font-size:' . round($st['t'] / 12, 4) . 'em;' : '');
+            $t = '<span' . (isset($st['f']) ? ' data-f="' . $st['f'] . '"' : '') . (isset($st['t']) ? ' data-t="' . $st['t'] . '"' : '') . ' style="' . e($css) . '">' . $t . '</span>';
         }
         $h .= $pending ? '<mark class="pendente">' . $t . '</mark>' : $t;
     }
@@ -305,9 +350,9 @@ function docx_run(string $text, array $h = []): string
     $font = $h['font'] ?? DOCX_SERIF;
     $size = (int) round(($h['size'] ?? (doc_compact() ? 11 : 12)) * 2);
     $rPr = '<w:rPr><w:rFonts w:ascii="' . $font . '" w:hAnsi="' . $font . '" w:cs="' . $font . '" w:eastAsia="' . $font . '"/>'
-        . (!empty($h['bold']) ? '<w:b/>' : '') . (!empty($h['smallCaps']) ? '<w:smallCaps/>' : '')
+        . (!empty($h['bold']) ? '<w:b/>' : '') . (!empty($h['italic']) ? '<w:i/>' : '') . (!empty($h['smallCaps']) ? '<w:smallCaps/>' : '')
         . '<w:color w:val="' . ($h['color'] ?? DOCX_TINTA) . '"/><w:sz w:val="' . $size . '"/><w:szCs w:val="' . $size . '"/>'
-        . (!empty($h['highlight']) ? '<w:highlight w:val="yellow"/>' : '') . '</w:rPr>';
+        . (!empty($h['highlight']) ? '<w:highlight w:val="yellow"/>' : '') . (!empty($h['underline']) ? '<w:u w:val="single"/>' : '') . '</w:rPr>';
     $out = '';
     foreach (explode("\n", $text) as $i => $part) {
         if ($i) {
@@ -323,8 +368,10 @@ function docx_run(string $text, array $h = []): string
 function docx_runs(string $text, array $h = []): string
 {
     $out = '';
-    foreach (doc_spans($text) as [$t, $bold, $pending, $caps]) {
-        $out .= docx_run($t, ['bold' => $bold || $caps || !empty($h['bold']), 'smallCaps' => $caps || !empty($h['smallCaps']), 'highlight' => $pending] + $h);
+    foreach (doc_spans($text) as [$t, $bold, $pending, $caps, $st]) {
+        $fmt = ['italic' => !empty($st['i']), 'underline' => !empty($st['u'])]
+            + (isset($st['f']) ? ['font' => DOC_FONTES[$st['f']][0]] : []) + (isset($st['t']) ? ['size' => $st['t']] : []);
+        $out .= docx_run($t, $fmt + ['bold' => $bold || $caps || !empty($h['bold']), 'smallCaps' => $caps || !empty($h['smallCaps']), 'highlight' => $pending || !empty($st['m'])] + $h);
     }
     return $out;
 }

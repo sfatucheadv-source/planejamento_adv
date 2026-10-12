@@ -202,6 +202,36 @@ if ($soffice) {
     ok(is_file("$out/contrato-cartao.pdf"), '.docx abre no LibreOffice');
 }
 
+echo "\nP6b. Texto da cláusula formatado no editor (aba Contrato)\n";
+$h->get('/painel/propostas/' . $id);
+ok(str_contains($h->html, 'data-ed-barra') && str_contains($h->html, 'contenteditable="true"') && str_contains($h->html, '<option value="poppins">Poppins</option>') && str_contains($h->html, '<option value="14">14 pt</option>') && str_contains($h->html, 'data-cmd="marca"') && str_contains($h->html, 'data-cmd="destaque"'), 'editor com negrito, itálico, sublinhado, marca-texto, fonte, tamanho e parágrafo em destaque');
+$autoF = proposal_auto_texts(proposal_get($id)['data']);
+$fmt = "- {|b m|}Honorários fixos{|/|}: R$ 2.400,00, valor fechado.\n\n@destaque {|i u f=poppins t=14|}Valor que não depende do resultado.{|/|}";
+$h->post('/painel/propostas/' . $id, array_merge($full, ['texto_honorarios' => $fmt, 'texto_honorarios_base' => $autoF['honorarios'], 'texto_honorarios_manual' => '1', 'aba' => 'contrato']));
+ok((proposal_get($id)['data']['texto']['honorarios'] ?? '') === $fmt, 'texto formatado salvo como ajuste da cláusula');
+ok(str_contains($h->html, '<mark class="marca"><strong>Honorários fixos</strong></mark>') && str_contains($h->html, '<p data-bloco="destaque"><span data-f="poppins" data-t="14"') && str_contains($h->html, '<em><u>Valor que não depende'), 'o editor reabre com a formatação');
+kit_generate(find_case($id), 'honorarios');
+$ctf = kit_latest($id, 'honorarios')['content'];
+$corpo = doc_corpo_html(doc_blocks($ctf));
+ok(str_contains($corpo, '<mark class="marca"><strong>Honorários fixos</strong></mark>') && str_contains($corpo, '<p class="paragrafo-chave"><span data-f="poppins" data-t="14" style="font-family:&quot;Poppins&quot;, Arial, sans-serif;font-size:1.1667em;"><em><u>Valor'), 'contrato timbrado: destaque, negrito, marca-texto, fonte e tamanho');
+$xml = '';
+foreach (doc_blocks($ctf) as $b) {
+    $xml .= $b['type'] === 'perfil' ? '' : docx_block($b);
+}
+ok(str_contains($xml, '<w:b/><w:color w:val="222831"/><w:sz w:val="24"/><w:szCs w:val="24"/><w:highlight w:val="yellow"/></w:rPr><w:t xml:space="preserve">Honorários fixos')
+    && str_contains($xml, 'w:ascii="Poppins"') && str_contains($xml, '<w:i/>') && str_contains($xml, '<w:sz w:val="28"/>') && str_contains($xml, '<w:u w:val="single"/>'), '.docx: negrito, marca-texto, itálico, sublinhado, Poppins 14 pt');
+$bin = doc_docx(doc_blocks($ctf), ['titulo' => 'Contrato']);
+file_put_contents("$out/contrato-formatado.docx", $bin);
+if ($soffice) {
+    shell_exec(sprintf('cd %s && %s --headless --convert-to pdf contrato-formatado.docx > /dev/null 2>&1', escapeshellarg($out), escapeshellarg($soffice)));
+    ok(is_file("$out/contrato-formatado.pdf"), '.docx formatado abre no LibreOffice');
+}
+$mal = doc_corpo_html(doc_blocks("{|f=comic t=99 onclick|}<script>x</script>{|/|} e {|b\"><img src=x>|}y"));
+ok(!str_contains($mal, '<script>') && !str_contains($mal, 'comic') && !str_contains($mal, '<img') && str_contains($mal, '&lt;script&gt;'), 'só a formatação oferecida pelo editor é aceita; o resto sai como texto');
+$h->post('/painel/propostas/' . $id . '/previa', array_merge($full, ['_csrf' => $csrf]));
+$j = json_decode($h->html, true) ?: [];
+ok(str_contains($j['auto_html']['honorarios'] ?? '', '<ul><li>Honorários fixos:') && str_contains($j['auto_html']['pagamento'] ?? '', '<p>Formas de pagamento aceitas'), 'prévia ao vivo devolve o texto automático pronto para o editor');
+
 echo "\nP7. Asaas depois do contrato assinado (API simulada)\n";
 // Volta à negociação com parcelamento próprio e gera o contrato
 $h->get('/painel/propostas/' . $id);
