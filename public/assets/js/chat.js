@@ -171,7 +171,13 @@
           if (!log.querySelector('[data-id="' + m.getAttribute('data-id') + '"]')) { log.appendChild(m); }
         });
         log.setAttribute('data-last', String(j.last));
-        if (bar && j.bar !== null && j.bar !== undefined) { bar.innerHTML = j.bar; }
+        if (bar && j.bar !== null && j.bar !== undefined) {
+          var aberto = bar.querySelector('[data-guia]');
+          aberto = aberto && aberto.open;
+          bar.innerHTML = j.bar;
+          var g = bar.querySelector('[data-guia]');
+          if (g && aberto) g.open = true;
+        }
         scroll();
       })
       .catch(function () {

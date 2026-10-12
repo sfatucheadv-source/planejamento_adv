@@ -917,7 +917,7 @@ $router->post('/painel/assistente', function () {
     set_setting('agent_max_per_hour', $per >= 5 && $per <= 200 ? (string) $per : null);
     $fields = array_values(array_intersect(array_keys(agent_allowed_fields()), (array) ($_POST['campos'] ?? [])));
     set_setting('agent_required_fields', json_encode($fields));
-    $docs = array_values(array_intersect(array_keys(DOC_CATALOG), (array) ($_POST['documentos'] ?? [])));
+    $docs = array_values(array_intersect(array_keys(agent_doc_options()), (array) ($_POST['documentos'] ?? [])));
     set_setting('agent_required_docs', json_encode($docs));
     audit('assistente_config', null, 'ligado=' . setting('agent_enabled') . ' campos=' . count($fields) . ' docs=' . count($docs));
     flash(agent_enabled() || input('agent_enabled') !== '1' ? 'ok' : 'error', input('agent_enabled') === '1' && !llm_enabled()

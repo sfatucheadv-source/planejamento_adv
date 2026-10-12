@@ -210,9 +210,9 @@ $campos = ['aviso', 'objetivo_prioridade', 'situacao_contrato', 'atraso', 'atras
 $sid->post('/painel/assistente', ['agent_enabled' => '1', 'agent_name' => 'Assistente Fatuche', 'agent_greeting' => 'Oi! Sou o assistente do escritório e vou te ajudar a organizar tudo.',
     'agent_tone' => 'Tom de teste: caloroso e direto.', 'agent_skills' => AGENT_DEFAULTS['agent_skills'], 'agent_forbidden' => "Falar de honorários.\nProibição de teste: comentar futebol.",
     'agent_tech_reply' => AGENT_DEFAULTS['agent_tech_reply'], 'agent_done' => 'Coleta concluída, obrigado!', 'agent_max_per_hour' => '40',
-    'campos' => $campos, 'documentos' => ['identidade', 'residencia']]);
+    'campos' => $campos, 'documentos' => ['identidade', 'residencia', 'titular']]);
 setting('__reset');
-ok(agent_enabled() && agent_required_fields() === ['aviso', 'objetivo_prioridade', 'nome_completo', 'telefone', 'email', 'veiculo_marca', 'veiculo_modelo', 'veiculo_placa', 'situacao_contrato', 'atraso', 'atraso_qtd', 'cpf', 'banco'] && agent_required_docs() === ['identidade', 'residencia'], 'liga a IA e grava as variáveis (na ordem da conversa, com a identificação sempre colhida) e documentos mínimos; campo de Sidney é recusado');
+ok(agent_enabled() && agent_required_fields() === ['aviso', 'objetivo_prioridade', 'nome_completo', 'telefone', 'email', 'veiculo_marca', 'veiculo_modelo', 'veiculo_placa', 'situacao_contrato', 'atraso', 'atraso_qtd', 'cpf', 'banco'] && agent_required_docs() === ['identidade', 'residencia'] && !str_contains($sid->html, 'value="titular"'), 'liga a IA e grava as variáveis (na ordem da conversa, com a identificação sempre colhida) e documentos mínimos (sem o pedido conjunto do titular, que repetiria identidade e comprovante); campo de Sidney é recusado');
 $prompt = agent_system_prompt();
 ok(str_contains($prompt, 'Tom de teste: caloroso e direto.') && str_contains($prompt, 'comentar futebol') && str_contains($prompt, 'Assistente Fatuche') && str_contains($prompt, AGENT_FIXED_RULES[0]), 'instruções da IA usam o tom, as proibições e o nome do painel, mais as regras fixas');
 $sid->post('/painel/assistente', ['op' => 'testar', 'mensagem' => 'Os juros são abusivos?']);
@@ -224,7 +224,7 @@ $id = start_client($cli, 'Ana Lima', '(41) 98888-1111');
 $msgs = array_column(all('SELECT author, body FROM chat_messages WHERE case_id = ? ORDER BY id', [$id]), 'body');
 ok(($msgs[0] ?? '') === 'Oi! Sou o assistente do escritório e vou te ajudar a organizar tudo.' && str_contains(last_bot($id), 'Que bom ter você aqui'), 'saudação do painel e primeira pergunta feita pela IA');
 $cli->get('/cliente?area=conversa');
-ok(str_contains($cli->html, 'data-chat-form') && !preg_match('#id="pergunta".*?name="q" value=#s', $cli->html) && str_contains($cli->html, 'ainda falta'), 'conversa livre com anexo, sem o roteiro de botões, e lista do que falta');
+ok(str_contains($cli->html, 'data-chat-form') && !preg_match('#id="pergunta".*?name="q" value=#s', $cli->html), 'conversa livre com anexo, sem o roteiro de botões');
 say($cli, 'Não recebi nada disso, quero uma parcela que caiba no bolso');
 ok(fv($id, 'aviso') === 'nenhum' && fv($id, 'objetivo_prioridade') === 'reduzir_parcela' && str_contains(last_bot($id), 'O que você precisa resolver'), 'dados entendidos na conversa vão para a ficha');
 say($cli, 'O contrato está ativo e tenho 2 parcelas atrasadas no Banco Aymoré, não sei a taxa');
@@ -306,6 +306,8 @@ $idF = (int) scalar("SELECT MAX(id) FROM cases");
 $cf = c($idF);
 ok(str_contains($f->url, '/cliente') && $cf['client_name'] === 'Novo contato' && $cf['account_id'] && $cf['consent_at'] && (bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND author = 'client' AND body = 'O banco mandou notificação'", [$idF]), 'a primeira mensagem abre o atendimento e a conta, ainda sem nome nem contato');
 ok(str_contains($f->html, 'qual é o seu nome completo') && fv($idF, 'aviso') === 'banco' && array_slice(agent_missing_fields($idF), 0, 3) === ['objetivo_prioridade', 'nome_completo', 'telefone'], 'a IA ouve o problema, registra e pede a identificação');
+$f->get('/cliente?area=conversa');
+ok(!str_contains($f->html, 'data-guia') && !str_contains($f->html, 'ainda falta'), 'no começo da conversa não aparece lista do que falta');
 $f->post('/cliente/conversa/mensagem', ['message' => 'Meu nome é Fábio Teste Lima, WhatsApp (41) 93333-2222 e e-mail fabio@teste.local. Sou motorista de aplicativo.', 'k' => 'f1']);
 case_fields($idF, true);
 $cf = c($idF);
@@ -316,6 +318,10 @@ $cap = case_data($cf, 'capacidade');
 ok(($cap['nivel'] ?? '') === 'media' && str_contains($cap['obs'] ?? '', 'Motorista') && !scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND lower(body) LIKE '%capacidade%'", [$idF]), 'capacidade de contratação anotada (média), sem aparecer para o cliente');
 $f->post('/cliente/conversa/mensagem', ['message' => 'escala inválida', 'k' => 'f2']);
 ok((case_data(c($idF), 'capacidade')['nivel'] ?? '') === 'media', 'nível fora da escala alta/média/baixa é ignorado');
+$f->get('/cliente?area=conversa');
+$pct = agent_progress_pct($idF);
+ok(str_contains($f->html, 'data-guia') && str_contains($f->html, 'O que Sidney precisa') && str_contains($f->html, '<strong>' . $pct . '%</strong> concluído') && $pct > 0 && $pct < 100, 'depois da 3ª mensagem: guia discreto com o percentual concluído (' . $pct . '%)');
+ok(str_contains($f->html, '<details class="cv-guia"') && !str_contains($f->html, '<details class="cv-guia" open') && str_contains($f->html, 'Seus dados') && str_contains($f->html, 'Veículo') && str_contains($f->html, 'Identidade (RG ou CNH)'), 'guia fechado, com assuntos curtos (Seus dados, Veículo, Identidade…) em vez da lista de campos');
 $sid->get('/painel/atendimento/' . $idF);
 ok(str_contains($sid->html, 'Capacidade de contratação') && str_contains($sid->html, 'at-cap-media') && str_contains($sid->html, 'Fábio Teste Lima'), 'painel mostra a anotação discreta de capacidade');
 $sp = agent_system_prompt();

@@ -75,7 +75,7 @@ $conditional = ['aviso_data' => 'só se houver aviso', 'atraso' => 'se o contrat
     </div>
     <h3>Documentos mínimos</h3>
     <div class="ag-docs">
-      <?php foreach (DOC_CATALOG as $k => $d): ?>
+      <?php foreach (agent_doc_options() as $k => $d): ?>
         <label class="chk"><input type="checkbox" name="documentos[]" value="<?= e($k) ?>" <?= checked(in_array($k, $reqDocs, true)) ?>> <?= e($d['label']) ?></label>
       <?php endforeach ?>
     </div>

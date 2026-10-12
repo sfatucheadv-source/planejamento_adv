@@ -731,3 +731,21 @@ body.app-body { height: 100%; height: 100dvh; margin: 0; overflow: hidden; backg
 .cv-atalho { border: 1px solid var(--line, #D9D3C7); background: #fff; color: inherit; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: .92rem; cursor: pointer; }
 .cv-atalho:hover, .cv-atalho:focus-visible { border-color: currentColor; }
 .cv-start-msg textarea { width: 100%; resize: vertical; min-height: 84px; }
+
+/* Guia discreto de pendências no chat (fechado por padrão) */
+.cv-guia { margin: 8px 0 0; border: 1px solid var(--line); border-radius: 12px; background: var(--white); font-size: .9rem; }
+.cv-guia > summary { display: flex; align-items: center; gap: 10px; padding: 7px 12px; cursor: pointer; list-style: none; color: var(--ink-2); }
+.cv-guia > summary::-webkit-details-marker { display: none; }
+.cv-guia > summary::after { content: "▾"; color: var(--muted); font-size: .8rem; transition: transform .15s; }
+.cv-guia[open] > summary::after { transform: rotate(180deg); }
+.cv-guia-t { font-weight: 600; color: var(--petrol); white-space: nowrap; }
+.cv-guia-bar { flex: 1 1 auto; height: 6px; min-width: 40px; border-radius: 99px; background: var(--paper-2); overflow: hidden; }
+.cv-guia-bar i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--gold), var(--teal)); }
+.cv-guia-n { color: var(--muted); font-size: .82rem; white-space: nowrap; }
+.cv-guia-n strong { color: var(--teal-2); font-size: .9rem; }
+.cv-guia-lista { list-style: none; margin: 0; padding: 2px 12px 8px; display: flex; flex-wrap: wrap; gap: 6px; }
+.cv-guia-lista li { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 99px; border: 1px dashed var(--line); color: var(--ink-2); background: var(--paper); }
+.cv-guia-lista li span[aria-hidden] { font-size: .8rem; color: var(--gold-2); }
+.cv-guia-lista li.is-ok { border-style: solid; border-color: transparent; background: var(--teal-soft); color: var(--teal-2); }
+.cv-guia-lista li.is-ok span[aria-hidden] { color: var(--teal-2); }
+.cv-guia-dica { margin: 0; padding: 0 12px 10px; color: var(--muted); font-size: .82rem; }

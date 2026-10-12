@@ -662,6 +662,8 @@ SQL;
             }
             if ($v === 13) {
                 migrate_agent_v3($pdo);
+                // identidade e comprovante já são pedidos um a um: o pedido conjunto do titular sai
+                $pdo->exec("UPDATE documents SET status = 'dispensado' WHERE kind = 'titular' AND status IN ('falta', 'ajuda') AND id NOT IN (SELECT document_id FROM files WHERE document_id IS NOT NULL)");
             }
             if ($v === 11) {
                 migrate_clear_cases($pdo);

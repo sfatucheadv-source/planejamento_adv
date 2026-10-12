@@ -124,10 +124,22 @@ function agent_required_fields(): array
     return $list;
 }
 
+/**
+ * Documentos que o assistente pode pedir. O “documento e comprovante do
+ * titular” não entra: identidade e comprovante de residência já são pedidos
+ * um a um.
+ */
+const AGENT_DOCS_OFF = ['titular'];
+
+function agent_doc_options(): array
+{
+    return array_diff_key(DOC_CATALOG, array_flip(AGENT_DOCS_OFF));
+}
+
 function agent_required_docs(): array
 {
     $v = json_decode((string) setting('agent_required_docs', ''), true);
-    return array_values(array_filter(is_array($v) ? $v : AGENT_DEFAULT_DOCS, fn($k) => isset(DOC_CATALOG[$k])));
+    return array_values(array_filter(is_array($v) ? $v : AGENT_DEFAULT_DOCS, fn($k) => isset(agent_doc_options()[$k])));
 }
 
 /** Liga a conversa conduzida pela IA (precisa da IA configurada em Configurações). */
@@ -644,6 +656,66 @@ function agent_progress(int $id): array
 {
     return ['campos' => array_map(fn($k) => agent_allowed_fields()[$k]['label'], agent_missing_fields($id)), 'docs' => array_column(agent_missing_docs($id), 'label')];
 }
+
+/** Assuntos do guia de pendências (grupo da ficha => assunto curto para o cliente). */
+const AGENT_GUIDE_TOPICS = [
+    'situacao' => ['Sua situação', ['abertura', 'urgencia', 'situacao', 'contexto']],
+    'dados' => ['Seus dados', ['qualificacao', 'endereco', 'relacao']],
+    'veiculo' => ['Veículo', ['veiculo']],
+    'financiamento' => ['Financiamento', ['financiamento', 'pagamentos']],
+    'gratuidade' => ['Justiça gratuita', ['gratuidade']],
+    'conversa' => ['Conversa com Sidney', ['reuniao']],
+];
+
+/** Nome curto do documento no guia. */
+const AGENT_GUIDE_DOCS = [
+    'contrato' => 'Contrato', 'historico' => 'Extrato de pagamentos', 'titular' => 'Documentos do titular', 'identidade' => 'Identidade (RG ou CNH)',
+    'residencia' => 'Comprovante de residência', 'veiculo' => 'Documento do veículo (CRLV)', 'notificacoes' => 'Notificações e cobranças',
+    'processo' => 'Papéis do processo', 'seguro_tarifas' => 'Seguro e tarifas', 'venda' => 'Venda do veículo', 'despesas' => 'Demonstrativo do débito',
+    'renda' => 'Comprovante de renda',
+];
+
+/**
+ * Guia discreto do que Sidney precisa: assuntos curtos (não a lista de
+ * campos), cada um marcado quando completo. [['label', 'done', 'doc'], ...]
+ */
+function agent_guide(int $id): array
+{
+    $defs = agent_allowed_fields();
+    $missing = array_flip(agent_missing_fields($id));
+    $required = array_filter(agent_required_fields(), fn($k) => agent_field_applies($id, $k));
+    $out = [];
+    foreach (AGENT_GUIDE_TOPICS as [$label, $groups]) {
+        // nome, WhatsApp e e-mail ficam em "Seus dados", embora a ficha os guarde na abertura
+        $keys = array_filter($required, fn($k) => in_array($k, ['nome_completo', 'telefone', 'email'], true) ? $label === 'Seus dados' : in_array($defs[$k]['g'] ?? '', $groups, true));
+        if ($keys) {
+            $out[] = ['label' => $label, 'done' => !array_intersect_key(array_flip($keys), $missing), 'doc' => false];
+        }
+    }
+    $missDocs = array_column(agent_missing_docs($id), 'kind');
+    foreach (agent_required_docs() as $kind) {
+        if (scalar("SELECT 1 FROM documents WHERE case_id = ? AND kind = ? AND status <> 'dispensado'", [$id, $kind])) {
+            $out[] = ['label' => AGENT_GUIDE_DOCS[$kind] ?? DOC_CATALOG[$kind]['label'], 'done' => !in_array($kind, $missDocs, true), 'doc' => true];
+        }
+    }
+    return $out;
+}
+
+/** Quanto da coleta já foi feito (variáveis e documentos mínimos), de 0 a 100. */
+function agent_progress_pct(int $id): int
+{
+    $required = array_filter(agent_required_fields(), fn($k) => agent_field_applies($id, $k));
+    $docs = array_filter(agent_required_docs(), fn($kind) => (bool) scalar("SELECT 1 FROM documents WHERE case_id = ? AND kind = ? AND status <> 'dispensado'", [$id, $kind]));
+    $total = count($required) + count($docs);
+    if (!$total) {
+        return 100;
+    }
+    $falta = count(agent_missing_fields($id)) + count(agent_missing_docs($id));
+    return (int) max(0, min(100, floor(($total - $falta) / $total * 100)));
+}
+
+/** O guia aparece depois da terceira mensagem do cliente, quando a conversa já engrenou. */
+const AGENT_GUIDE_AFTER = 3;
 
 /** Conversa de teste do painel: mesmas instruções, com um cliente fictício. */
 function agent_test(string $message): array
