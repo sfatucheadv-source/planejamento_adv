@@ -9,21 +9,9 @@ $open = is_open();
       <p class="kicker">Financiamento de veículos · atendimento digital em todo o Brasil</p>
       <h1>O financiamento do carro apertou? Você não precisa resolver isso sozinho.</h1>
       <p class="lead">Parcela que não cabe mais, juros que parecem altos, carta do banco ou carro apreendido. O advogado <strong>Sidney Fatuche</strong> analisa o seu contrato, explica os caminhos possíveis e acompanha cada etapa até o resultado ser conferido na prática.</p>
-
-      <div class="first-question" aria-labelledby="pergunta-inicial">
-        <p id="pergunta-inicial" class="fq-title">Antes de tudo, uma pergunta que muda a ordem das coisas:</p>
-        <p class="fq-q">Você recebeu alguma notificação do banco, de cartório ou da Justiça? O carro já foi apreendido?</p>
-        <div class="fq-options">
-          <a class="fq-option is-urgent" href="<?= e(url('comecar', ['aviso' => 'apreendido', 'origem' => 'home'])) ?>">Sim, o carro foi apreendido</a>
-          <a class="fq-option is-urgent" href="<?= e(url('comecar', ['aviso' => 'justica', 'origem' => 'home'])) ?>">Recebi documento da Justiça ou de cartório</a>
-          <a class="fq-option" href="<?= e(url('comecar', ['aviso' => 'banco', 'origem' => 'home'])) ?>">Recebi cobrança ou carta do banco</a>
-          <a class="fq-option" href="<?= e(url('comecar', ['aviso' => 'nenhum', 'origem' => 'home'])) ?>">Nada disso, mas a parcela está pesada</a>
-          <a class="fq-option" href="<?= e(url('comecar', ['aviso' => 'nao_sei', 'origem' => 'home'])) ?>">Não sei dizer</a>
-        </div>
-        <p class="fq-foot">
-          <span class="availability <?= $open ? 'is-open' : '' ?>"><span class="dot" aria-hidden="true"></span><?= $open ? 'Sidney em atendimento agora' : 'Fora do horário · retornamos ' . e(fmt_when(next_opening())) ?></span>
-          <a href="<?= e(url('comecar', ['origem' => 'home'])) ?>">Prefere contar do seu jeito? Inicie o atendimento online</a>
-        </p>
+      <div class="hero-ctas">
+        <a class="btn btn-gold" href="<?= e(url('comecar', ['origem' => 'home-topo'])) ?>">Contar meu caso pelo chat</a>
+        <a class="btn btn-ghost" href="#como-funciona">Como funciona</a>
       </div>
     </div>
 
@@ -47,6 +35,21 @@ $open = is_open();
         </div>
       <?php endif ?>
     </aside>
+    <div class="first-question" aria-labelledby="pergunta-inicial">
+      <p id="pergunta-inicial" class="fq-title">Antes de tudo, uma pergunta que muda a ordem das coisas:</p>
+      <p class="fq-q">Você recebeu alguma notificação do banco, de cartório ou da Justiça? O carro já foi apreendido?</p>
+      <div class="fq-options">
+        <a class="fq-option is-urgent" href="<?= e(url('comecar', ['aviso' => 'apreendido', 'origem' => 'home'])) ?>">Sim, o carro foi apreendido</a>
+        <a class="fq-option is-urgent" href="<?= e(url('comecar', ['aviso' => 'justica', 'origem' => 'home'])) ?>">Recebi documento da Justiça ou de cartório</a>
+        <a class="fq-option" href="<?= e(url('comecar', ['aviso' => 'banco', 'origem' => 'home'])) ?>">Recebi cobrança ou carta do banco</a>
+        <a class="fq-option" href="<?= e(url('comecar', ['aviso' => 'nenhum', 'origem' => 'home'])) ?>">Nada disso, mas a parcela está pesada</a>
+        <a class="fq-option" href="<?= e(url('comecar', ['aviso' => 'nao_sei', 'origem' => 'home'])) ?>">Não sei dizer</a>
+      </div>
+      <p class="fq-foot">
+        <span class="availability <?= $open ? 'is-open' : '' ?>"><span class="dot" aria-hidden="true"></span><?= $open ? 'Sidney em atendimento agora' : 'Fora do horário · retornamos ' . e(fmt_when(next_opening())) ?></span>
+        <a href="<?= e(url('comecar', ['origem' => 'home'])) ?>">Prefere contar do seu jeito? Inicie o atendimento online</a>
+      </p>
+    </div>
   </div>
 </section>
 
