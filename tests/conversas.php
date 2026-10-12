@@ -338,18 +338,42 @@ $w->post('/cliente/entrar', ['protocol' => c($id2)['protocol'], 'password' => 's
 ok(str_contains($w->html, 'data-chat-log') && substr_count($w->html, 'data-conv="') === 3, 'entrando com o protocolo de qualquer atendimento, a pessoa vê todas as conversas');
 
 echo "\nC9. Painel: configuração de e-mail\n";
-$sid->get('/painel/configuracoes');
+$sid->get('/painel/configuracoes/email');
 ok(str_contains($sid->html, 'id="email"') && str_contains($sid->html, 'smtp_host'), 'seção de e-mails na tela de configurações');
 preg_match('/name="_csrf" value="([^"]+)"/', $sid->html, $cs);
 $sid->post('/painel/configuracoes', ['_csrf' => $cs[1], 'intake_workflow' => 'simple_v1', 'mail_driver' => 'smtp', 'smtp_host' => 'smtp.exemplo.com', 'smtp_port' => '465', 'smtp_user' => 'avisos@exemplo.com', 'smtp_pass' => 'segredo-smtp-1', 'notify_delay_min' => '15']);
 setting('__reset');
 ok(setting('smtp_host') === 'smtp.exemplo.com' && setting('smtp_pass') === 'segredo-smtp-1' && (int) setting('notify_delay_min') === 15, 'SMTP salvo');
-$sid->get('/painel/configuracoes');
+$sid->get('/painel/configuracoes/email');
 ok(!str_contains($sid->html, 'segredo-smtp-1') && str_contains($sid->html, '(configurada)'), 'a senha SMTP nunca volta para a tela');
 preg_match('/name="_csrf" value="([^"]+)"/', $sid->html, $cs);
 $sid->post('/painel/configuracoes', ['_csrf' => $cs[1], 'intake_workflow' => 'simple_v1', 'mail_driver' => 'smtp', 'smtp_host' => 'smtp.exemplo.com', 'smtp_port' => '465', 'smtp_user' => 'avisos@exemplo.com', 'smtp_pass' => '']);
 setting('__reset');
 ok(setting('smtp_pass') === 'segredo-smtp-1', 'campo em branco mantém a senha');
+
+echo "\nC10. Painel de controles\n";
+$sid->get('/painel/configuracoes');
+ok(str_contains($sid->html, 'Painel de controles') && substr_count($sid->html, 'role="switch"') === 4 && str_contains($sid->html, 'cfg-tile'), 'Configurações abre como painel de controles: 4 chaves e um quadro por área');
+ok(str_contains($sid->html, 'O que precisa de atenção') && str_contains($sid->html, 'painel/configuracoes/asaas'), 'lista o que precisa de atenção, com o atalho para resolver');
+foreach (['atendimento', 'ia', 'email', 'asaas'] as $sec) {
+    $sid->get('/painel/configuracoes/' . $sec);
+    ok($sid->status === 200 && str_contains($sid->html, 'name="secao" value="' . $sec . '"') && str_contains($sid->html, 'Painel de controles'), "página própria: $sec, com volta ao painel");
+}
+$sid->get('/painel/configuracoes');
+preg_match('/name="_csrf" value="([^"]+)"/', $sid->html, $cs);
+$sid->post('/painel/configuracoes', ['_csrf' => $cs[1], 'op' => 'alternar', 'controle' => 'avisos', 'ligar' => '0']);
+setting('__reset');
+ok(mail_driver() === 'off' && str_contains($sid->html, 'Avisos por e-mail desligados'), 'chave desliga os avisos por e-mail');
+$sid->post('/painel/configuracoes', ['_csrf' => $cs[1], 'op' => 'alternar', 'controle' => 'avisos', 'ligar' => '1']);
+setting('__reset');
+ok(mail_driver() === 'smtp', 'ao religar, volta ao envio que estava em uso (SMTP)');
+$sid->post('/painel/configuracoes', ['_csrf' => $cs[1], 'op' => 'alternar', 'controle' => 'ia', 'ligar' => '1']);
+setting('__reset');
+ok(setting('llm_enabled') !== '1' && str_contains(flash_error($sid), 'chave'), 'não liga a IA sem chave');
+$before = [setting('operator_user_id'), setting('llm_enabled'), setting('asaas_env')];
+$sid->post('/painel/configuracoes', ['_csrf' => $cs[1], 'secao' => 'email', 'mail_driver' => 'smtp', 'smtp_host' => 'smtp.exemplo.com', 'smtp_port' => '587', 'smtp_user' => 'avisos@exemplo.com', 'smtp_pass' => '', 'notify_delay_min' => '20']);
+setting('__reset');
+ok((int) setting('smtp_port') === 587 && [setting('operator_user_id'), setting('llm_enabled'), setting('asaas_env')] === $before && str_contains($sid->url, '/painel/configuracoes/email'), 'salvar uma área não mexe nas outras e volta para a mesma página');
 
 $clearMail();
 echo "\n" . ($fails ? "FALHAS: $fails · " : 'TUDO OK · ') . "$passes verificações aprovadas\n";

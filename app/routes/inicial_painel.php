@@ -792,25 +792,101 @@ $router->post('/painel/assistente', function () {
     redirect('painel/assistente');
 });
 
-/* ---------- Configurações (operador, entrada, dados do escritório) ---------- */
+/* ---------- Configurações: painel de controles e uma página por área ---------- */
 
-$router->get('/painel/configuracoes', function () {
-    $u = require_user();
-    view('panel/configuracoes', ['meta_title' => 'Configurações · Painel', 'users' => users_list(), 'u' => $u, 'models' => isset(LLM_PROVIDERS[(string) input('modelos')]) ? [(string) input('modelos') => llm_models_list((string) input('modelos'))] : (input('modelos') === '1' ? [llm_provider() => llm_models_list()] : []), 'usage' => llm_usage_summary()], 'panel');
-});
+const CONFIG_SECTIONS = [
+    'atendimento' => 'Atendimento e entrada',
+    'ia' => 'Inteligência artificial',
+    'email' => 'E-mails de aviso',
+    'asaas' => 'Asaas (cobranças)',
+];
 
-$router->post('/painel/configuracoes', function () {
+function config_view_data(array $u): array
+{
+    $m = (string) input('modelos');
+    return [
+        'users' => users_list(), 'u' => $u, 'usage' => llm_usage_summary(),
+        'models' => isset(LLM_PROVIDERS[$m]) ? [$m => llm_models_list($m)] : ($m === '1' ? [llm_provider() => llm_models_list()] : []),
+    ];
+}
+
+function require_config_editor(): array
+{
     $u = require_user();
     if (!has_role('supervisor') && !is_operator($u)) {
         forbidden();
     }
+    return $u;
+}
+
+$router->get('/painel/configuracoes', function () {
+    $u = require_user();
+    if (input('modelos') !== '') {
+        redirect('painel/configuracoes/ia?modelos=' . rawurlencode((string) input('modelos')));
+    }
+    seed_templates();
+    view('panel/configuracoes', ['meta_title' => 'Configurações · Painel'] + config_view_data($u), 'panel');
+});
+
+$router->get('/painel/configuracoes/{secao}', function (string $secao) {
+    $u = require_user();
+    if (!isset(CONFIG_SECTIONS[$secao])) {
+        redirect('painel/configuracoes');
+    }
+    view('panel/config_secao', ['meta_title' => CONFIG_SECTIONS[$secao] . ' · Configurações', 'secao' => $secao] + config_view_data($u), 'panel');
+});
+
+/** Liga e desliga direto pelo painel de controles. */
+function config_toggle(string $what, bool $on): string
+{
+    switch ($what) {
+        case 'ia':
+            if ($on && !llm_key()) {
+                return 'error:Cadastre a chave do fornecedor de IA antes de ligar.';
+            }
+            set_setting('llm_enabled', $on ? '1' : '0');
+            return $on ? 'IA ligada.' : 'IA desligada: o site usa o roteiro com perguntas e botões.';
+        case 'agente':
+            set_setting('agent_enabled', $on ? '1' : '0');
+            return $on ? (llm_enabled() ? 'A IA conduz a conversa do site.' : 'error:Conversa com IA ligada, mas só funciona com a IA ligada e com chave.') : 'Conversa conduzida pela IA desligada: vale o roteiro com botões.';
+        case 'avisos':
+            if ($on) {
+                set_setting('mail_driver', (string) (setting('mail_driver_prev') ?: (setting('smtp_host') ? 'smtp' : 'mail')));
+                return 'Avisos por e-mail ligados.';
+            }
+            if (mail_driver() !== 'off') {
+                set_setting('mail_driver_prev', mail_driver());
+            }
+            set_setting('mail_driver', 'off');
+            return 'Avisos por e-mail desligados. As novidades continuam marcadas na área do cliente.';
+        case 'entrada':
+            if ($on && !operator_id()) {
+                return 'error:Escolha o operador em “Atendimento e entrada” antes de ligar a entrada pelo assistente.';
+            }
+            set_setting('intake_workflow', $on ? 'simple_v1' : 'legacy');
+            return $on ? 'Entrada pelo atendimento online ligada.' : 'Novas entradas voltam ao formulário antigo de seis passos.';
+    }
+    return 'error:Controle desconhecido.';
+}
+
+function config_save_atendimento(): bool
+{
     $op = (int) input('operator_user_id');
     if ($op && !one('SELECT id FROM users WHERE id = ? AND active = 1', [$op])) {
         flash('error', 'Usuário inválido.');
-        redirect('painel/configuracoes');
+        return false;
     }
     set_setting('operator_user_id', $op ? (string) $op : null);
     set_setting('intake_workflow', input('intake_workflow') === 'legacy' ? 'legacy' : 'simple_v1');
+    if ($op) {
+        q("UPDATE cases SET operator_id = ? WHERE workflow_version = 'simple_v1' AND operator_id IS NULL", [$op]);
+    }
+    audit('configuracoes', null, 'operador=' . $op . ' entrada=' . setting('intake_workflow'));
+    return true;
+}
+
+function config_save_ia(): void
+{
     // IA: fornecedor, modelo e chave de cada um. A chave só é trocada quando um
     // valor novo é digitado; nunca volta para a tela.
     set_setting('llm_enabled', input('llm_enabled') === '1' ? '1' : '0');
@@ -840,6 +916,15 @@ $router->post('/painel/configuracoes', function () {
             }
         }
     }
+    if (input('llm_test') === '1') {
+        setting('__reset');
+        [$okTest, $msgTest] = llm_test();
+        flash($okTest ? 'ok' : 'error', 'Teste da IA: ' . $msgTest);
+    }
+}
+
+function config_save_asaas(): void
+{
     // Asaas: ambiente, chave (só trocada quando digitada), multa e juros de mora.
     $akey = trim((string) ($_POST['asaas_api_key'] ?? ''));
     if (input('asaas_remove_key') === '1') {
@@ -867,6 +952,15 @@ $router->post('/painel/configuracoes', function () {
             set_setting($k, rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.'));
         }
     }
+    if (input('asaas_test') === '1') {
+        setting('__reset');
+        [$okA, $msgA] = asaas_test();
+        flash($okA ? 'ok' : 'error', 'Teste do Asaas: ' . $msgA);
+    }
+}
+
+function config_save_email(): void
+{
     // E-mails de aviso: a senha SMTP só é trocada quando digitada e nunca volta para a tela.
     if (isset(MAIL_DRIVERS[(string) input('mail_driver')])) {
         set_setting('mail_driver', (string) input('mail_driver'));
@@ -895,22 +989,39 @@ $router->post('/painel/configuracoes', function () {
         [$okM, $errM] = send_mail($to, 'Teste de e-mail · ' . office('brand'), implode("\n\n", $lines), mail_html('Teste de e-mail', $lines), null, 'teste');
         flash($okM ? 'ok' : 'error', $okM ? 'E-mail de teste enviado para ' . $to . '. Confira a caixa de entrada e o spam.' : 'O e-mail de teste falhou: ' . $errM);
     }
-    if (input('asaas_test') === '1') {
-        setting('__reset');
-        [$okA, $msgA] = asaas_test();
-        flash($okA ? 'ok' : 'error', 'Teste do Asaas: ' . $msgA);
+}
+
+$router->post('/painel/configuracoes', function () {
+    require_config_editor();
+    $secao = (string) input('secao');
+    if (input('op') === 'alternar') {
+        $msg = config_toggle((string) input('controle'), input('ligar') === '1');
+        $err = str_starts_with($msg, 'error:');
+        flash($err ? 'error' : 'ok', $err ? substr($msg, 6) : $msg);
+        audit('configuracoes_controle', null, (string) input('controle') . '=' . (input('ligar') === '1' ? 'on' : 'off'));
+        redirect('painel/configuracoes');
     }
-    if (input('llm_test') === '1') {
-        setting('__reset');
-        [$okTest, $msgTest] = llm_test();
-        flash($okTest ? 'ok' : 'error', 'Teste da IA: ' . $msgTest);
+    if ($secao !== '' && !isset(CONFIG_SECTIONS[$secao])) {
+        redirect('painel/configuracoes');
     }
-    if ($op) {
-        q("UPDATE cases SET operator_id = ? WHERE workflow_version = 'simple_v1' AND operator_id IS NULL", [$op]);
+    // Cada página salva só a sua área; o envio sem área (formulário antigo) salva todas.
+    $ok = true;
+    if ($secao === '' || $secao === 'atendimento') {
+        $ok = config_save_atendimento();
     }
-    audit('configuracoes', null, 'operador=' . $op . ' entrada=' . setting('intake_workflow'));
-    flash('ok', 'Configurações salvas.');
-    redirect('painel/configuracoes');
+    if ($ok && ($secao === '' || $secao === 'ia')) {
+        config_save_ia();
+    }
+    if ($ok && ($secao === '' || $secao === 'asaas')) {
+        config_save_asaas();
+    }
+    if ($ok && ($secao === '' || $secao === 'email')) {
+        config_save_email();
+    }
+    if ($ok) {
+        flash('ok', $secao ? CONFIG_SECTIONS[$secao] . ': configurações salvas.' : 'Configurações salvas.');
+    }
+    redirect($secao ? 'painel/configuracoes/' . $secao : 'painel/configuracoes');
 });
 
 /* ---------- Migração dos casos existentes (seção 15.2) ---------- */

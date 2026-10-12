@@ -175,7 +175,7 @@ set_setting('agent_enabled', '0'); // este teste cobre o roteiro com botões + l
 for ($i = 0; $i < 30 && !@file_get_contents("http://127.0.0.1:$mockPort/api/v1/models"); $i++) {
     usleep(100000);
 }
-$sid->get('/painel/configuracoes');
+$sid->get('/painel/configuracoes/ia');
 ok(str_contains($sid->html, 'Inteligência artificial') && str_contains($sid->html, 'Google Gemini (API direta)') && str_contains($sid->html, '(não configurada)'), 'Configurações mostram a IA com os dois fornecedores, sem chave');
 $cfg = ['operator_user_id' => (string) scalar('SELECT id FROM users LIMIT 1'), 'intake_workflow' => 'simple_v1', 'office_address' => 'Rua X, 1', 'llm_enabled' => '1', 'llm_provider' => 'openrouter', 'llm_model' => 'google/gemini-2.5-flash'];
 $sid->post('/painel/configuracoes', $cfg + ['llm_api_key' => 'chave-errada']);

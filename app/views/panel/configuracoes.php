@@ -1,100 +1,141 @@
-<?php $opId = operator_id(); ?>
-<div class="page-head"><div><h1>Configurações</h1><p class="sub">Ajustes da operação. Nada aqui apaga atendimentos.</p></div></div>
-<form class="box form narrow-box" method="post" action="<?= e(url('painel/configuracoes')) ?>">
-  <?= csrf_field() ?>
-  <h2>Operador dos atendimentos</h2>
-  <label class="fld"><span>Quem recebe e conduz os novos atendimentos</span>
-    <select name="operator_user_id"><option value="0">Nenhum (modo de equipe antigo)</option><?php foreach ($users as $x): ?><option value="<?= (int) $x['id'] ?>" <?= selected((int) $x['id'], $opId) ?>><?= e($x['name']) ?> · <?= e($x['email']) ?></option><?php endforeach ?></select>
-  </label>
-  <p class="hint">Todo novo atendimento pertence a esta pessoa. Os atendimentos só aparecem para ela.</p>
-  <h2>Entrada pelo site</h2>
-  <label class="chk"><input type="radio" name="intake_workflow" value="simple_v1" <?= checked(intake_workflow() === 'simple_v1') ?>> Assistente virtual (atendimento inicial com Sidney)</label>
-  <label class="chk"><input type="radio" name="intake_workflow" value="legacy" <?= checked(intake_workflow() === 'legacy') ?>> Formulário antigo de seis passos (reversão)</label>
-  <p class="hint">A reversão só muda como as novas entradas chegam. Os atendimentos já registrados continuam como estão.</p>
-  <h2>Dados do escritório para os documentos</h2>
-  <p class="hint">Endereço, telefone, e-mail, prazo de resposta, orientação para urgências, chave PIX, foro padrão e as variáveis personalizadas ficam em <a href="<?= e(url('painel/variaveis')) ?>">Variáveis dos documentos</a>.</p>
-  <h2 id="ia">Inteligência artificial</h2>
-  <p class="hint">Com a IA ligada, o assistente pede os documentos logo no começo, lê os dados (contrato, identidade, comprovante de residência, extrato) e só pergunta ao cliente o que não estiver neles. Também responde às mensagens livres, sem dar orientação jurídica. Os dados lidos ficam marcados “IA · conferir” na ficha até você confirmar.</p>
-  <label class="chk"><input type="checkbox" name="llm_enabled" value="1" <?= checked(setting('llm_enabled') === '1') ?>> Usar IA no assistente</label>
-  <fieldset class="radios at-channels"><legend class="lbl">Fornecedor</legend>
-    <?php foreach (LLM_PROVIDERS as $pk => $pv): ?>
-      <label class="chk"><input type="radio" name="llm_provider" value="<?= e($pk) ?>" <?= checked(llm_provider() === $pk) ?>> <?= e($pv['label']) ?><?= llm_key($pk) ? ' <small>(chave ' . e(llm_key_hint($pk)) . ')</small>' : '' ?></label>
-    <?php endforeach ?>
-  </fieldset>
-  <?php foreach (LLM_PROVIDERS as $pk => $pv):
-    $keyName = $pk === 'openrouter' ? 'llm_api_key' : 'gemini_api_key';
-    $modelName = $pk === 'openrouter' ? 'llm_model' : 'gemini_model';
-    $list = $pv['models'] + ($models[$pk] ?? []);
-  ?>
-    <details class="at-inline" <?= llm_provider() === $pk ? 'open' : '' ?>>
-      <summary><?= e($pv['label']) ?><?= llm_provider() === $pk ? ' · em uso' : '' ?></summary>
-      <label class="fld"><span>Modelo</span>
-        <input name="<?= $modelName ?>" list="models-<?= e($pk) ?>" value="<?= e(llm_model($pk)) ?>" autocomplete="off" spellcheck="false">
-        <datalist id="models-<?= e($pk) ?>"><?php foreach ($list as $id => $label): ?><option value="<?= e($id) ?>"><?= e($label) ?></option><?php endforeach ?></datalist>
-      </label>
-      <p class="hint">Sugestões: <?= e(implode(' · ', array_keys($pv['models']))) ?>. <a href="<?= e(url('painel/configuracoes', ['modelos' => $pk])) ?>#ia">Carregar a lista completa</a><?= !empty($models[$pk]) ? ' (' . count($models[$pk]) . ' modelos)' : '' ?>.</p>
-      <label class="fld"><span>Chave de API <?= llm_key($pk) ? '<small>(configurada, termina em ' . e(llm_key_hint($pk)) . ')</small>' : '<small>(não configurada)</small>' ?></span>
-        <input type="password" name="<?= $keyName ?>" autocomplete="new-password" placeholder="<?= llm_key($pk) ? 'Deixe em branco para manter a chave atual' : ($pk === 'openrouter' ? 'sk-or-v1-…' : 'Chave do Google AI Studio') ?>" spellcheck="false">
-      </label>
-      <?php if (llm_key($pk)): ?><label class="chk"><input type="checkbox" name="remove_key_<?= e($pk) ?>" value="1"> Remover esta chave</label><?php endif ?>
-      <p class="hint"><?= $pk === 'openrouter' ? 'Crie a chave e limite o gasto em openrouter.ai › Keys. Um só cadastro dá acesso a modelos de vários fornecedores.' : 'Crie a chave em aistudio.google.com › Get API key (projeto do Google Cloud) e acompanhe o uso e o faturamento no mesmo projeto. No plano gratuito, o Google pode usar o conteúdo para melhorar os produtos; para documentos de clientes, use um projeto com faturamento ativo.' ?></p>
-    </details>
+<?php
+/**
+ * Painel de controles: a situação de cada área num quadro, os botões de ligar
+ * e desligar mais usados e o que precisa de atenção. Os detalhes de cada
+ * área ficam numa página própria.
+ */
+$opId = operator_id();
+$opName = $opId ? (string) scalar('SELECT name FROM users WHERE id = ?', [$opId]) : '';
+$keyOk = llm_key() !== null;
+$iaOn = llm_enabled();
+$agentOn = setting('agent_enabled', '1') === '1';
+$driver = mail_driver();
+$lastMail = one('SELECT * FROM mail_log ORDER BY id DESC LIMIT 1');
+$tpl = one('SELECT COUNT(*) AS total, SUM(approved_at IS NOT NULL) AS ok FROM doc_templates') ?: ['total' => 0, 'ok' => 0];
+$activeUsers = count(array_filter($users, fn($x) => (int) ($x['active'] ?? 1) === 1));
+$legacy = (int) scalar("SELECT COUNT(*) FROM cases WHERE workflow_version = 'legacy' AND status = 'ativo'");
+$recentErr = $usage['last_error'] && dt($usage['last_error']['created_at']) > now()->modify('-1 day');
+
+// O que precisa de atenção, do mais grave ao mais simples.
+$alerts = [];
+if (!$opId) {
+    $alerts[] = ['err', 'Nenhum operador escolhido: o site continua no formulário antigo.', 'painel/configuracoes/atendimento', 'Escolher operador'];
+}
+if (setting('llm_enabled') === '1' && !$keyOk) {
+    $alerts[] = ['err', 'A IA está marcada como ligada, mas sem chave do fornecedor.', 'painel/configuracoes/ia', 'Cadastrar chave'];
+} elseif ($recentErr) {
+    $alerts[] = ['warn', 'A IA teve erro nas últimas 24 horas: ' . mb_strimwidth((string) $usage['last_error']['error'], 0, 90, '…'), 'painel/configuracoes/ia', 'Ver a IA'];
+}
+if ($lastMail && !$lastMail['ok']) {
+    $alerts[] = ['err', 'O último e-mail de aviso falhou: ' . mb_strimwidth((string) $lastMail['error'], 0, 90, '…'), 'painel/configuracoes/email', 'Ver e-mails'];
+} elseif ($driver === 'mail') {
+    $alerts[] = ['warn', 'Os avisos saem pela função de e-mail da hospedagem e podem cair no spam. Configure o SMTP.', 'painel/configuracoes/email', 'Configurar SMTP'];
+} elseif ($driver === 'off') {
+    $alerts[] = ['warn', 'Os avisos por e-mail estão desligados: o cliente só vê as novidades quando entra.', 'painel/configuracoes/email', 'Ver e-mails'];
+}
+if ((int) $tpl['total'] > (int) $tpl['ok']) {
+    $alerts[] = ['warn', ((int) $tpl['total'] - (int) $tpl['ok']) . ' modelo(s) de documento aguardando a sua aprovação.', 'painel/modelos-documentos', 'Revisar modelos'];
+}
+if (!asaas_enabled()) {
+    $alerts[] = ['info', 'Asaas sem chave: as cobranças do contrato ainda não podem ser criadas pelo sistema.', 'painel/configuracoes/asaas', 'Conectar'];
+}
+
+$icon = function (string $d): string {
+    return '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="' . $d . '"/></svg>';
+};
+$I = [
+    'inbox' => 'M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.7 4H7.3a2 2 0 0 0-1.8 1.1z',
+    'spark' => 'M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z',
+    'chip' => 'M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2M6 4h12a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM9 9h6v6H9z',
+    'mail' => 'M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6',
+    'card' => 'M3 5h18a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM1 10h22',
+    'braces' => 'M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5a2 2 0 0 0 2 2h1M16 3h1a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0-2 2v5a2 2 0 0 1-2 2h-1',
+    'doc' => 'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h6',
+    'coin' => 'M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6',
+    'chat' => 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+    'team' => 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75',
+    'move' => 'M5 12h14M13 5l7 7-7 7',
+];
+
+// Controles rápidos: [chave, rótulo, ligado?, descrição, confirmação ao desligar]
+$switches = [
+    ['entrada', 'Atendimento online no site', intake_workflow() === 'simple_v1', 'Novas entradas pelo chat. Desligado: formulário antigo.', 'Desligar o atendimento online? As novas entradas voltam ao formulário antigo.'],
+    ['ia', 'Inteligência artificial', $iaOn, $keyOk ? 'Lê documentos e apoia o assistente.' : 'Cadastre a chave para poder ligar.', 'Desligar a IA? O site passa a usar só o roteiro com botões.'],
+    ['agente', 'IA conduz a conversa', $agentOn && $iaOn, 'Conversa livre com o cliente, com áudio e anexos.', null],
+    ['avisos', 'Avisos por e-mail', $driver !== 'off', 'Avisa o cliente de novidade na conversa.', null],
+];
+
+// Quadros: [grupo, ícone, título, estado (ok|warn|err|off|info), resumo do estado, detalhes, link, rótulo do link]
+$tiles = [
+    ['Atendimento', 'inbox', 'Atendimento e entrada', $opId ? 'ok' : 'err', $opId ? 'Operador: ' . $opName : 'Sem operador',
+        [intake_workflow() === 'simple_v1' ? 'Entrada pelo atendimento online' : 'Entrada pelo formulário antigo'], 'painel/configuracoes/atendimento', 'Configurar'],
+    ['Atendimento', 'spark', 'Assistente com IA', $agentOn && $iaOn ? 'ok' : 'off', $agentOn && $iaOn ? 'Conduzindo a conversa' : 'Roteiro com botões',
+        [count(agent_required_fields()) . ' variáveis e ' . count(agent_required_docs()) . ' documentos mínimos', 'Tom, proibições e competências'], 'painel/assistente', 'Ajustar o assistente'],
+    ['Atendimento', 'chat', 'Mensagens prontas', 'info', 'Modelos de mensagem ao cliente', ['Textos usados no WhatsApp e na área do cliente'], 'painel/modelos', 'Abrir mensagens'],
+    ['Integrações', 'chip', 'Inteligência artificial', !$keyOk ? 'err' : ($iaOn ? ($recentErr ? 'warn' : 'ok') : 'off'),
+        !$keyOk ? 'Sem chave' : ($iaOn ? 'Ligada' : 'Desligada'),
+        [LLM_PROVIDERS[llm_provider()]['label'] . ' em uso · ' . llm_model(), $keyOk ? 'Chave ' . llm_key_hint() : 'Chave não configurada', $usage['calls'] ? $usage['calls'] . ' chamada(s) em 30 dias' . ($usage['errors'] ? ', ' . $usage['errors'] . ' com erro' : '') : 'Sem uso nos últimos 30 dias'],
+        'painel/configuracoes/ia', 'Configurar'],
+    ['Integrações', 'mail', 'E-mails de aviso', $driver === 'off' ? 'off' : ($lastMail && !$lastMail['ok'] ? 'err' : ($driver === 'smtp' ? 'ok' : 'warn')),
+        MAIL_DRIVERS[$driver] ?? $driver,
+        ['Remetente: ' . mail_from()[0], 'Espera antes de avisar: ' . notify_delay_min() . ' min', $lastMail ? 'Último envio: ' . fmt_datetime($lastMail['created_at']) . ($lastMail['ok'] ? ' (enviado)' : ' (falhou)') : 'Nenhum envio ainda'],
+        'painel/configuracoes/email', 'Configurar'],
+    ['Integrações', 'card', 'Asaas (cobranças)', asaas_enabled() ? 'ok' : 'info', asaas_enabled() ? 'Conectado · ' . ASAAS_ENVS[asaas_env()]['label'] : 'Não conectado',
+        [asaas_enabled() ? 'Chave ' . asaas_key_hint() : 'Chave não configurada', 'Multa ' . str_replace('.', ',', (string) asaas_late_fees()['multa']) . '% · juros ' . str_replace('.', ',', (string) asaas_late_fees()['juros']) . '% ao mês'],
+        'painel/configuracoes/asaas', 'Configurar'],
+    ['Documentos', 'braces', 'Dados do escritório', 'info', 'Variáveis dos documentos', ['Endereço, telefone, PIX, foro e campos personalizados'], 'painel/variaveis', 'Editar dados'],
+    ['Documentos', 'doc', 'Modelos de documentos', (int) $tpl['total'] > (int) $tpl['ok'] ? 'warn' : 'ok', (int) $tpl['ok'] . ' de ' . (int) $tpl['total'] . ' aprovados',
+        ['Procuração, contrato, declaração e demais'], 'painel/modelos-documentos', 'Revisar modelos'],
+    ['Documentos', 'coin', 'Propostas', 'info', 'Honorários e parcelamento', ['Simulação e cláusula de pagamento do contrato'], 'painel/propostas', 'Abrir propostas'],
+    ['Equipe e sistema', 'team', 'Usuários do painel', 'info', $activeUsers . ' usuário(s) ativo(s)', ['Acessos e funções (somente supervisor)'], 'painel/equipe', 'Gerenciar'],
+    ['Equipe e sistema', 'move', 'Migração', $legacy ? 'info' : 'ok', $legacy ? $legacy . ' caso(s) no fluxo anterior' : 'Nada a migrar', ['Atendimentos registrados antes do novo fluxo'], 'painel/migracao', 'Abrir migração'],
+];
+$groups = [];
+foreach ($tiles as $t) {
+    $groups[$t[0]][] = $t;
+}
+$stLabel = ['ok' => 'Funcionando', 'warn' => 'Atenção', 'err' => 'Resolver', 'off' => 'Desligado', 'info' => ''];
+?>
+<div class="page-head"><div><h1>Painel de controles</h1><p class="sub">A situação de cada área num só lugar. Ligue e desligue o essencial aqui; os detalhes ficam em “Configurar”. Nada aqui apaga atendimentos.</p></div></div>
+
+<section class="cfg-switches" aria-label="Controles rápidos">
+  <?php foreach ($switches as [$key, $label, $on, $desc, $confirm]): ?>
+    <form method="post" action="<?= e(url('painel/configuracoes')) ?>" class="cfg-switch<?= $on ? ' is-on' : '' ?>">
+      <?= csrf_field() ?><input type="hidden" name="op" value="alternar"><input type="hidden" name="controle" value="<?= e($key) ?>"><input type="hidden" name="ligar" value="<?= $on ? '0' : '1' ?>">
+      <span class="cfg-switch-txt"><strong><?= e($label) ?></strong><small><?= e($desc) ?></small></span>
+      <button type="submit" class="cfg-toggle" role="switch" aria-checked="<?= $on ? 'true' : 'false' ?>" aria-label="<?= e(($on ? 'Desligar: ' : 'Ligar: ') . $label) ?>"<?= $on && $confirm ? ' data-confirm="' . e($confirm) . '"' : '' ?>><span></span></button>
+      <span class="cfg-switch-state"><?= $on ? 'Ligado' : 'Desligado' ?></span>
+    </form>
   <?php endforeach ?>
-  <label class="chk"><input type="checkbox" name="llm_test" value="1"> Testar a conexão do fornecedor escolhido ao salvar</label>
-  <p class="hint">As chaves ficam guardadas só no servidor e nunca aparecem de novo nesta tela. Os documentos enviados pelo cliente são mandados ao fornecedor escolhido para leitura; o aviso de privacidade do site informa isso.</p>
-  <?php if ($usage['calls']): ?>
-    <p class="small">Últimos 30 dias: <?= (int) $usage['calls'] ?> chamada(s), <?= (int) $usage['errors'] ?> com erro<?= $usage['cost'] > 0 ? ', custo informado de US$ ' . e(number_format($usage['cost'], 4, ',', '.')) : '' ?>.<?php if ($usage['last_error']): ?> Último erro (<?= e(fmt_datetime($usage['last_error']['created_at'])) ?>): <?= e(mb_strimwidth((string) $usage['last_error']['error'], 0, 160, '…')) ?><?php endif ?></p>
-  <?php endif ?>
-  <h2 id="asaas">Asaas (cobranças)</h2>
-  <p class="hint">Depois do contrato assinado, a tela da proposta cria no Asaas as cobranças com os mesmos valores e vencimentos do contrato: entrada, parcelas, pagamento à vista ou parcelamento no cartão.</p>
-  <fieldset class="radios at-channels"><legend class="lbl">Ambiente</legend>
-    <?php foreach (ASAAS_ENVS as $ek => $ev): ?>
-      <label class="chk"><input type="radio" name="asaas_env" value="<?= e($ek) ?>" <?= checked(asaas_env() === $ek) ?>> <?= e($ev['label']) ?></label>
-    <?php endforeach ?>
-  </fieldset>
-  <label class="fld"><span>Chave de API <?= asaas_key() ? '<small>(configurada, termina em ' . e(asaas_key_hint()) . ')</small>' : '<small>(não configurada)</small>' ?></span>
-    <input type="password" name="asaas_api_key" autocomplete="new-password" placeholder="<?= asaas_key() ? 'Deixe em branco para manter a chave atual' : '$aact_…' ?>" spellcheck="false">
-  </label>
-  <?php if (asaas_key()): ?><label class="chk"><input type="checkbox" name="asaas_remove_key" value="1"> Remover esta chave</label><?php endif ?>
-  <p class="hint">No Asaas: Integrações › Chaves de API › Gerar chave. Teste primeiro no Sandbox (conta separada em sandbox.asaas.com); a chave de produção começa com “$aact_prod_”.</p>
-  <div class="var-grid">
-    <label class="fld"><span>Multa por atraso (%)</span><input name="asaas_multa" inputmode="decimal" value="<?= e(str_replace('.', ',', (string) asaas_late_fees()['multa'])) ?>"></label>
-    <label class="fld"><span>Juros de mora (% ao mês)</span><input name="asaas_juros" inputmode="decimal" value="<?= e(str_replace('.', ',', (string) asaas_late_fees()['juros'])) ?>"></label>
-  </div>
-  <p class="hint">Os mesmos da cláusula “do atraso no pagamento” do contrato (2% de multa e 1% ao mês). Mude aqui só se mudar o contrato.</p>
-  <?php if (asaas_key()): ?>
-    <p class="small"><strong>Webhook</strong> (Integrações › Webhooks › Adicionar, eventos de cobrança): URL <code><?= e(asaas_webhook_url()) ?></code> · token de autenticação <code><?= e(asaas_webhook_token()) ?></code>. Com ele, pagamentos e vencimentos aparecem sozinhos no atendimento; sem ele, use “Atualizar situação” na proposta.</p>
-  <?php endif ?>
-  <label class="chk"><input type="checkbox" name="asaas_test" value="1"> Testar a conexão com o Asaas ao salvar</label>
-  <h2 id="email">E-mails de aviso ao cliente</h2>
-  <p class="hint">Quando uma conversa tem novidade que o cliente ainda não viu (mensagem sua, do assistente ou documento disponibilizado), ele recebe um e-mail com um link de acesso válido por <?= ACCESS_LINK_DAYS ?> dias. O e-mail não leva o conteúdo da conversa.</p>
-  <fieldset class="radios at-channels"><legend class="lbl">Envio</legend>
-    <?php foreach (MAIL_DRIVERS as $mk => $ml): ?>
-      <label class="chk"><input type="radio" name="mail_driver" value="<?= e($mk) ?>" <?= checked(mail_driver() === $mk) ?>> <?= e($ml) ?></label>
-    <?php endforeach ?>
-  </fieldset>
-  <div class="var-grid">
-    <label class="fld"><span>Remetente (e-mail)</span><input type="email" name="mail_from" value="<?= e((string) setting('mail_from')) ?>" placeholder="<?= e(mail_from()[0]) ?>"></label>
-    <label class="fld"><span>Nome do remetente</span><input name="mail_from_name" maxlength="80" value="<?= e((string) setting('mail_from_name')) ?>" placeholder="<?= e(office('brand')) ?>"></label>
-    <label class="fld"><span>Servidor SMTP</span><input name="smtp_host" value="<?= e((string) setting('smtp_host')) ?>" placeholder="smtp.hostinger.com" spellcheck="false"></label>
-    <label class="fld"><span>Porta</span><input name="smtp_port" inputmode="numeric" value="<?= e((string) (setting('smtp_port') ?: '465')) ?>"></label>
-    <label class="fld"><span>Usuário SMTP (o e-mail completo)</span><input name="smtp_user" value="<?= e((string) setting('smtp_user')) ?>" autocomplete="off" spellcheck="false"></label>
-    <label class="fld"><span>Senha SMTP <?= setting('smtp_pass') ? '<small>(configurada)</small>' : '<small>(não configurada)</small>' ?></span><input type="password" name="smtp_pass" autocomplete="new-password" placeholder="<?= setting('smtp_pass') ? 'Deixe em branco para manter' : '' ?>"></label>
-    <label class="fld"><span>Esperar antes de avisar (minutos)</span><input name="notify_delay_min" inputmode="numeric" value="<?= notify_delay_min() ?>"></label>
-  </div>
-  <p class="hint">Recomendado: uma caixa de e-mail do domínio do site (no hPanel, Emails › Contas de e-mail), com servidor smtp.hostinger.com, porta 465. Pela função da hospedagem, os e-mails podem cair no spam. A espera evita avisar quem está com a conversa aberta. Para enviar mesmo sem visitas no site, agende no cron da hospedagem, a cada 5 minutos: <code>php <?= e(ROOT_DIR) ?>/scripts/avisos.php</code></p>
-  <label class="fld"><span>Enviar um e-mail de teste para</span><input type="email" name="mail_test_to" placeholder="<?= e((string) ($u['email'] ?? office('email'))) ?>"></label>
-  <?php $mails = all('SELECT * FROM mail_log ORDER BY id DESC LIMIT 5'); if ($mails): ?>
-    <p class="small"><strong>Últimos envios:</strong></p>
-    <ul class="small"><?php foreach ($mails as $m): ?><li><?= e(fmt_datetime($m['created_at'])) ?> · <?= e($m['to_addr']) ?> · <?= $m['ok'] ? 'enviado' : 'falhou: ' . e(mb_strimwidth((string) $m['error'], 0, 120, '…')) ?></li><?php endforeach ?></ul>
-  <?php endif ?>
-  <button class="b b-primary" type="submit">Salvar</button>
-</form>
-<div class="box narrow-box">
-  <h2>Outras configurações</h2>
+</section>
+
+<?php if ($alerts): ?>
+<section class="box cfg-alerts" aria-labelledby="h-alertas">
+  <h2 id="h-alertas">O que precisa de atenção <span class="cfg-count"><?= count($alerts) ?></span></h2>
   <ul>
-    <li><a href="<?= e(url('painel/modelos-documentos')) ?>">Modelos de documentos</a></li>
-    <li><a href="<?= e(url('painel/migracao')) ?>">Migração dos atendimentos anteriores</a></li>
-    <li><a href="<?= e(url('painel/equipe')) ?>">Usuários com acesso ao painel</a> <small>(somente supervisor)</small></li>
+    <?php foreach ($alerts as [$tone, $txt, $href, $cta]): ?>
+      <li class="cfg-alert cfg-<?= e($tone) ?>"><span class="cfg-dot" aria-hidden="true"></span><span class="cfg-alert-txt"><?= e($txt) ?></span><a class="b" href="<?= e(url($href)) ?>"><?= e($cta) ?></a></li>
+    <?php endforeach ?>
   </ul>
-</div>
+</section>
+<?php else: ?>
+<p class="cfg-allok"><span class="cfg-dot" aria-hidden="true"></span> Tudo configurado e funcionando.</p>
+<?php endif ?>
+
+<?php foreach ($groups as $g => $list): ?>
+  <h2 class="cfg-group"><?= e($g) ?></h2>
+  <div class="cfg-grid">
+    <?php foreach ($list as [, $ic, $title, $st, $state, $facts, $href, $cta]): ?>
+      <a class="cfg-tile cfg-<?= e($st) ?>" href="<?= e(url($href)) ?>">
+        <span class="cfg-tile-head">
+          <span class="cfg-ico"><?= $icon($I[$ic]) ?></span>
+          <strong><?= e($title) ?></strong>
+          <?php if ($stLabel[$st]): ?><span class="cfg-pill"><span class="cfg-dot" aria-hidden="true"></span><?= e($stLabel[$st]) ?></span><?php endif ?>
+        </span>
+        <span class="cfg-state"><?= e($state) ?></span>
+        <span class="cfg-facts"><?php foreach ($facts as $f): ?><span><?= e($f) ?></span><?php endforeach ?></span>
+        <span class="cfg-cta"><?= e($cta) ?> ›</span>
+      </a>
+    <?php endforeach ?>
+  </div>
+<?php endforeach ?>

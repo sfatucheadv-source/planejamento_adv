@@ -19,7 +19,7 @@ $conditional = ['aviso_data' => 'só se houver aviso', 'atraso' => 'se o contrat
 </div>
 
 <?php if (!llm_enabled()): ?>
-  <div class="flash flash-error">A IA está desligada ou sem chave. Configure o fornecedor e a chave em <a href="<?= e(url('painel/configuracoes')) ?>#ia">Configurações › Inteligência artificial</a>. Sem isso, o site usa o roteiro com perguntas e botões.</div>
+  <div class="flash flash-error">A IA está desligada ou sem chave. Configure o fornecedor e a chave em <a href="<?= e(url('painel/configuracoes/ia')) ?>">Configurações › Inteligência artificial</a>. Sem isso, o site usa o roteiro com perguntas e botões.</div>
 <?php endif ?>
 
 <div class="ag-stats">

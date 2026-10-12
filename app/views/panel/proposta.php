@@ -175,7 +175,7 @@ $today = now()->format('Y-m-d');
   <?php elseif ($blockers): ?>
     <p>Depois do contrato assinado, as cobranças são criadas no Asaas com os mesmos valores e vencimentos do contrato.</p>
     <ul class="prop-bloqueios"><?php foreach ($blockers as $b): ?><li><?= e($b) ?></li><?php endforeach ?></ul>
-    <?php if (!asaas_enabled()): ?><p><a href="<?= e(url('painel/configuracoes')) ?>#asaas">Configurar o Asaas</a></p><?php endif ?>
+    <?php if (!asaas_enabled()): ?><p><a href="<?= e(url('painel/configuracoes/asaas')) ?>">Configurar o Asaas</a></p><?php endif ?>
   <?php else: $billing = asaas_billing_type($pr['data']); ?>
     <p>O contrato está assinado e confere com esta proposta. Serão criadas no Asaas:</p>
     <form method="post" action="<?= e(url('painel/propostas/' . $id . '/asaas')) ?>" class="form">
