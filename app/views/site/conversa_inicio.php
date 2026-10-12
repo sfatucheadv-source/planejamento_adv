@@ -11,7 +11,7 @@ $open = is_open();
       <p class="lead">Você pode enviar o que tiver e continuar depois.<?= llm_enabled() ? ' Com os documentos em mãos, o assistente lê os dados por você e pergunta só o que faltar.' : '' ?> O assistente organiza suas informações e documentos; Sidney analisa o caso e conversa com você sobre as opções.</p>
 
       <div class="cv-log cv-intro" aria-label="Conversa">
-        <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text"><?= e(BOT_GREETING) ?></div></div></div>
+        <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text"><?= e(bot_greeting()) ?></div></div></div>
         <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text">Para começar, como posso te chamar e qual é o seu contato? Assim seu atendimento fica guardado e você continua de onde parou.</div></div></div>
       </div>
 

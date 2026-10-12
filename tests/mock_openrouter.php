@@ -83,6 +83,35 @@ if (str_contains($system, 'extrai dados')) {
         $out = ['legivel' => false, 'tipo_confere' => false, 'observacao' => 'Imagem desfocada'];
     }
     $content = "```json\n" . json_encode($out, JSON_UNESCAPED_UNICODE) . "\n```";
+} elseif (str_contains($system, 'classifica documentos')) {
+    $content = json_encode(['tipo' => 'identidade']);
+} elseif (str_contains($system, 'Você conduz o acolhimento')) {
+    // Assistente que conduz a conversa: responde conforme a mensagem nova.
+    $now = mb_strtolower((string) substr($text, (int) strrpos($text, "AGORA:\n")));
+    $r = ['resposta' => 'Certo, anotado. Vamos seguir.', 'campos' => (object) []];
+    if (str_contains($now, 'início da conversa')) {
+        $r['resposta'] = 'Olá! Que bom ter você aqui. Primeiro: você recebeu algum aviso do banco ou da Justiça, ou o veículo já foi apreendido?';
+    } elseif (str_contains($now, 'quebrar')) {
+        $content = 'isto não é JSON';
+    } elseif (str_contains($now, 'nada disso')) {
+        $r = ['resposta' => 'Ótimo. O que você precisa resolver primeiro?', 'campos' => ['aviso' => 'nenhum', 'objetivo_prioridade' => 'reduzir_parcela']];
+    } elseif (str_contains($now, 'atrasad')) {
+        $r = ['resposta' => 'Entendi, obrigado por contar. Já tem algum processo na Justiça sobre esse financiamento?',
+              'campos' => ['situacao_contrato' => 'ativo', 'atraso' => 'sim', 'atraso_qtd' => 2, 'banco' => 'Banco Aymoré', 'obs_juridicas' => 'injeção', 'cpf' => '123'], 'nao_sabe' => ['taxa_mensal']];
+    } elseif (str_contains($now, 'abusivos')) {
+        $r = ['resposta' => 'Entendo a preocupação.', 'duvida_tecnica' => true, 'duvida' => 'Os juros do meu contrato são abusivos?'];
+    } elseif (str_contains($now, 'outra cliente')) {
+        $r = ['resposta' => 'A Joana Pereira Lima também é cliente, CPF 111.444.777-35.'];
+    } elseif (str_contains($now, 'apreendido ontem')) {
+        $r = ['resposta' => 'Sinto muito. Sidney foi avisado e vai olhar com prioridade.', 'campos' => ['aviso' => 'apreendido'], 'urgente' => true];
+    } elseif (str_contains($now, 'enviou o documento')) {
+        $r = ['resposta' => 'Obrigado pelo documento! Já anotei os dados. Agora, pode mandar o comprovante de residência?', 'documento_pedido' => 'residencia'];
+    } elseif (str_contains($now, 'não tenho comprovante')) {
+        $r = ['resposta' => 'Sem problema, anotado.', 'documentos_nao_tem' => ['residencia'], 'documentos_depois' => ['contrato']];
+    } elseif (str_contains($now, 'pode confirmar')) {
+        $r = ['resposta' => 'Perfeito, está tudo certo.', 'concluido' => true];
+    }
+    $content ??= json_encode($r, JSON_UNESCAPED_UNICODE);
 } elseif (str_contains($system, 'assistente virtual')) {
     $content = json_encode(['resposta' => 'Entendi. Sidney vai responder sobre isso. Anotei que há 2 parcelas em atraso.', 'campos' => ['atraso' => 'sim', 'atraso_qtd' => 2, 'proposta_honorarios' => 'zero'], 'urgente' => false], JSON_UNESCAPED_UNICODE);
 } else {

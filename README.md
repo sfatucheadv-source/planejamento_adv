@@ -77,6 +77,12 @@ Com a IA ligada:
 
 Sem chave, com a IA desligada ou se a chamada falhar, o roteiro determinístico continua funcionando. O código está em `app/inicial/ia.php`; o teste `php tests/assistente_ia.php` usa um simulador local das duas APIs (`tests/mock_openrouter.php`).
 
+### Assistente com IA conduzindo a conversa
+
+Em *Painel › Assistente com IA* (precisa da IA configurada em Configurações): liga a conversa conduzida pela IA no site e ajusta o nome, o tom de voz, a saudação, as competências, as proibições, a mensagem de encaminhamento de dúvidas técnicas, a mensagem de encerramento, as **variáveis mínimas** (com as condições do roteiro: “quantas em atraso” só se há atraso etc.) e os **documentos mínimos**. Há um teste do tom com cliente fictício e a visualização das instruções completas.
+
+Com ela ligada, o cliente conversa livremente e manda fotos e PDFs no próprio chat. A cada mensagem, a IA recebe só os dados daquele atendimento (ficha, documentos, conversa), registra o que a pessoa disse (nunca campos de Sidney; “não sei” e “depois” contam como resposta), identifica e lê os documentos enviados, pede o que falta e, com o mínimo reunido e confirmado pelo cliente, encerra a coleta e avisa Sidney. Dúvidas técnicas são respondidas com o encaminhamento ao advogado, registradas e viram a próxima ação de Sidney. Antes de chegar ao cliente, cada resposta passa por um filtro que barra CPF, e-mail, telefone, protocolo ou nome de outro cliente. Se a IA falhar, a conversa segue pelo roteiro com botões, de onde parou; o cliente também pode escolher os botões. Regras fixas no código (`app/inicial/agente.php`). Teste: `php tests/assistente_conversa.php`.
+
 ### Configuração e implantação
 
 1. Faça backup do banco (com WAL ativo, copie `fatuche.sqlite`, `-wal` e `-shm` juntos, com o site parado, ou use `sqlite3 fatuche.sqlite ".backup copia.sqlite"`).

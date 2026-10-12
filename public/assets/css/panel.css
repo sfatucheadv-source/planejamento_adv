@@ -591,3 +591,21 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
   .prop-quadro th:nth-child(3), .prop-quadro td:nth-child(3) { display: none; }
   .prop-doc .corpo p { text-align: left; }
 }
+
+/* Assistente com IA */
+.ag-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.ag-stats div { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: flex; flex-direction: column; }
+.ag-stats strong { font-size: 22px; color: var(--petrol); }
+.ag-stats span { font-size: 13px; color: var(--muted); }
+.ag-campos { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px 20px; }
+.ag-campos fieldset { border: 0; padding: 0; margin: 0; }
+.ag-campos .chk, .ag-docs .chk { display: block; margin: 2px 0; }
+.ag-docs { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0 20px; }
+.ag-fixas { margin: 4px 0 8px 18px; padding: 0; font-size: 14px; }
+.ag-fixas li { margin: 3px 0; }
+.ag-teste { flex: 1 1 320px; }
+.ag-resposta { background: var(--teal-soft); border-radius: 10px; padding: 10px 14px; margin: 10px 0 4px; }
+.ag-resposta p { margin: 4px 0 0; }
+.ag-prompt pre { white-space: pre-wrap; font-size: 12.5px; background: var(--bg); padding: 10px; border-radius: 8px; max-height: 420px; overflow: auto; }
+.ag-duvidas { list-style: none; padding: 0; margin: 0; }
+.ag-duvidas li { padding: 8px 0; border-bottom: 1px solid var(--line-2); }

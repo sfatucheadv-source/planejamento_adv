@@ -738,6 +738,60 @@ $router->post('/painel/variaveis', function () {
     redirect('painel/variaveis');
 });
 
+/* ---------- Assistente com IA (tom, competências, proibições, variáveis mínimas) ---------- */
+
+$router->get('/painel/assistente', function () {
+    require_user();
+    $since = now()->modify('-30 days')->format('Y-m-d H:i:s');
+    $stats = [
+        'conversas' => (int) scalar("SELECT COUNT(DISTINCT case_id) FROM llm_log WHERE kind = 'agente' AND created_at >= ?", [$since]),
+        'turnos' => (int) scalar("SELECT COUNT(*) FROM llm_log WHERE kind = 'agente' AND created_at >= ?", [$since]),
+        'falhas' => (int) scalar("SELECT COUNT(*) FROM llm_log WHERE kind = 'agente' AND ok = 0 AND created_at >= ?", [$since]),
+        'duvidas' => all("SELECT e.case_id, e.body, e.at, c.client_name, c.protocol FROM events e JOIN cases c ON c.id = e.case_id WHERE e.type = 'duvida' AND e.at >= ? ORDER BY e.id DESC LIMIT 10", [$since]),
+        'bloqueios' => (int) scalar("SELECT COUNT(*) FROM events WHERE type = 'ia' AND title LIKE 'Resposta da IA bloqueada%' AND at >= ?", [$since]),
+    ];
+    $test = $_SESSION['agent_test'] ?? null;
+    unset($_SESSION['agent_test']);
+    view('panel/assistente', ['meta_title' => 'Assistente com IA · Painel', 'stats' => $stats, 'test' => $test], 'panel');
+});
+
+$router->post('/painel/assistente', function () {
+    $u = require_user();
+    if (!has_role('supervisor') && !is_operator($u)) {
+        forbidden();
+    }
+    $op = (string) input('op');
+    if ($op === 'testar') {
+        $msg = trim((string) input('mensagem'));
+        $_SESSION['agent_test'] = $msg === '' ? null : ['mensagem' => $msg] + (llm_enabled() ? agent_test($msg) : ['ok' => false, 'error' => 'Configure a IA (fornecedor e chave) em Configurações.']);
+        redirect('painel/assistente#teste');
+    }
+    if ($op === 'padrao') {
+        foreach (array_merge(array_keys(AGENT_DEFAULTS), ['agent_required_fields', 'agent_required_docs']) as $k) {
+            set_setting($k, null);
+        }
+        audit('assistente_padrao');
+        flash('ok', 'Textos e variáveis do assistente voltaram ao padrão. O liga/desliga não mudou.');
+        redirect('painel/assistente');
+    }
+    set_setting('agent_enabled', input('agent_enabled') === '1' ? '1' : '0');
+    foreach (['agent_name' => 120, 'agent_greeting' => 1000, 'agent_tone' => 3000, 'agent_skills' => 4000, 'agent_forbidden' => 4000, 'agent_tech_reply' => 800, 'agent_done' => 800] as $k => $max) {
+        $v = trim(str_replace("\r\n", "\n", mb_substr((string) ($_POST[$k] ?? ''), 0, $max)));
+        set_setting($k, $v === '' || $v === AGENT_DEFAULTS[$k] ? null : $v);
+    }
+    $per = (int) input('agent_max_per_hour');
+    set_setting('agent_max_per_hour', $per >= 5 && $per <= 200 ? (string) $per : null);
+    $fields = array_values(array_intersect(array_keys(agent_allowed_fields()), (array) ($_POST['campos'] ?? [])));
+    set_setting('agent_required_fields', json_encode($fields));
+    $docs = array_values(array_intersect(array_keys(DOC_CATALOG), (array) ($_POST['documentos'] ?? [])));
+    set_setting('agent_required_docs', json_encode($docs));
+    audit('assistente_config', null, 'ligado=' . setting('agent_enabled') . ' campos=' . count($fields) . ' docs=' . count($docs));
+    flash(agent_enabled() || input('agent_enabled') !== '1' ? 'ok' : 'error', input('agent_enabled') === '1' && !llm_enabled()
+        ? 'Configurações salvas, mas a conversa com IA só funciona com a IA ligada e uma chave em Configurações › Inteligência artificial. Até lá, vale o roteiro com botões.'
+        : 'Configurações do assistente salvas. Valem para as próximas mensagens.');
+    redirect('painel/assistente');
+});
+
 /* ---------- Configurações (operador, entrada, dados do escritório) ---------- */
 
 $router->get('/painel/configuracoes', function () {

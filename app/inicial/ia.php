@@ -411,7 +411,8 @@ function ia_reply(array $c, string $message): ?string
         . "\n\nConversa recente:\n" . $history
         . "\n\nMensagem nova do cliente:\n" . mb_substr($message, 0, 2000);
     $res = llm_chat([
-        ['role' => 'system', 'content' => IA_CHAT_SYSTEM],
+        ['role' => 'system', 'content' => IA_CHAT_SYSTEM . "\n\nTom de voz definido pelo escritório:\n" . agent_setting('agent_tone')
+            . "\n\nNunca faça:\n" . agent_setting('agent_forbidden') . "\n\nRegras fixas:\n- " . implode("\n- ", AGENT_FIXED_RULES)],
         ['role' => 'user', 'content' => $context],
     ], $id, 'conversa', 600, 45);
     $json = $res['ok'] ? llm_json($res['content']) : null;

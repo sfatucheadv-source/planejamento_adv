@@ -13,6 +13,12 @@ const BOT_RECEIVED = 'Arquivo recebido. Sidney ainda vai conferir se está compl
 const BOT_OFFSCRIPT = 'Obrigado. Sua mensagem foi registrada e Sidney vai conferir. Enquanto isso, podemos continuar organizando suas informações, ou você pode aguardar o contato dele.';
 const BOT_DONE = 'Suas informações foram organizadas. Sidney irá conferir os documentos e preparar a conversa. Veja abaixo se ficou algo pendente.';
 
+/** Saudação: a do painel do assistente quando a IA conduz a conversa. */
+function bot_greeting(): string
+{
+    return agent_enabled() ? agent_setting('agent_greeting') : BOT_GREETING;
+}
+
 /** Lista ordenada de perguntas do roteiro (B02 a B10). */
 function bot_script(): array
 {
@@ -191,7 +197,7 @@ function bot_answered(int $id, array $q): bool
 /** Pergunta da vez, ou null quando o assistente não deve perguntar nada. */
 function bot_current(array $c): ?array
 {
-    if ($c['chat_mode'] !== 'bot' || !is_initial($c) || $c['initial_status'] === 'completed') {
+    if ($c['chat_mode'] !== 'bot' || !is_initial($c) || $c['initial_status'] === 'completed' || agent_active($c)) {
         return null;
     }
     $id = (int) $c['id'];

@@ -92,7 +92,7 @@ function intake_start_post(): never
         $_SESSION['intake_done_keys'][$key] = $id;
     }
     unset($_SESSION['intake_form_key']);
-    chat_post($id, 'bot', BOT_GREETING);
+    chat_post($id, 'bot', bot_greeting());
     chat_post($id, 'client', 'Sou ' . $a['nome'] . '. Meu contato é ' . format_phone($digits) . ($a['email'] ? ' e ' . mb_strtolower($a['email']) : '') . '.');
     if (isset(NOTICE_OPTIONS[$a['aviso']])) {
         // Reaproveita a seleção feita na página inicial (B02).
@@ -100,6 +100,11 @@ function intake_start_post(): never
         update_urgency_signal($id);
     }
     sync_intake_documents($id);
+    if (agent_enabled()) {
+        // A IA conduz: cumprimenta pelo nome e faz a primeira pergunta.
+        set_case_data($id, 'agent_started', now_str());
+        agent_turn(find_case($id), 'Início da conversa: a pessoa acabou de se identificar no site. Cumprimente pelo nome, diga em uma frase como funciona e faça a primeira pergunta.');
+    }
     session_regenerate_id(true);
     $_SESSION['intake_case'] = $id;
     if ($acc) {
@@ -113,6 +118,7 @@ function intake_start_post(): never
 function portal_initial_view(array $c, array $extra = []): never
 {
     $id = (int) $c['id'];
+    agent_resume($c);
     $area = (string) input('area', 'inicio');
     if (!in_array($area, ['inicio', 'conversa', 'documentos', 'reuniao'], true)) {
         $area = 'inicio';
@@ -181,13 +187,41 @@ $router->post('/cliente/conversa/corrigir', function () {
 
 $router->post('/cliente/conversa/mensagem', function () {
     $c = require_portal();
+    $id = (int) $c['id'];
     $text = trim((string) input('message'));
-    if ($text === '') {
+    $files = uploaded_files('arquivo');
+    $agent = agent_active($c);
+    if ($text === '' && !($agent && $files)) {
         flash('error', 'Escreva a mensagem.');
         portal_back('conversa', 'mensagem');
     }
-    $id = (int) $c['id'];
-    $new = chat_post($id, 'client', $text, null, (string) input('k') ?: null);
+    $key = (string) input('k');
+    if ($key !== '' && scalar('SELECT 1 FROM chat_messages WHERE case_id = ? AND client_key IN (?, ?)', [$id, $key, $key . '-msg'])) {
+        portal_back('conversa', 'fim'); // retentativa: já gravado
+    }
+    if ($agent) {
+        @set_time_limit(240);
+        $event = '';
+        if ($files) {
+            [$desc, $err] = agent_receive_files($c, $files, (string) input('doc'), $key);
+            if ($err) {
+                flash('error', $err);
+                portal_back('conversa', 'fim');
+            }
+            $event = $desc;
+        }
+        if ($text !== '') {
+            chat_post($id, 'client', $text, null, ($key !== '' ? $key . '-msg' : null));
+            mark_client_activity($id);
+            $event .= ($event !== '' ? "\nJunto, a pessoa escreveu: " : 'Mensagem nova do cliente: ') . mb_substr($text, 0, 2000);
+        }
+        agent_turn(find_case($id), $event);
+        if (input('ajax') === '1') {
+            json_out(['ok' => true]);
+        }
+        portal_back('conversa', 'fim');
+    }
+    $new = chat_post($id, 'client', $text, null, $key ?: null);
     if ($new) {
         mark_client_activity($id);
         if ($c['chat_mode'] === 'bot') {
@@ -196,6 +230,33 @@ $router->post('/cliente/conversa/mensagem', function () {
     }
     if (input('ajax') === '1') {
         json_out(['ok' => true]);
+    }
+    portal_back('conversa', 'fim');
+});
+
+// Com o mínimo reunido, o cliente pode encerrar a coleta sem esperar a IA.
+$router->post('/cliente/conversa/concluir', function () {
+    $c = require_portal();
+    if (agent_active($c) && agent_finish((int) $c['id'])) {
+        chat_post((int) $c['id'], 'client', 'Está tudo certo, pode enviar para Sidney.');
+        flash('ok', 'Enviado para Sidney.');
+    } else {
+        flash('error', 'Ainda falta alguma informação ou documento. Veja a lista acima da conversa.');
+    }
+    portal_back('conversa', 'fim');
+});
+
+// Alterna entre a conversa com a IA e as perguntas com botões.
+$router->post('/cliente/conversa/modo', function () {
+    $c = require_portal();
+    $id = (int) $c['id'];
+    if (input('modo') === 'botoes') {
+        set_case_data($id, 'agent_off', 'cliente');
+        add_event($id, 'ia', 'Cliente preferiu responder pelas perguntas com botões');
+    } elseif (agent_enabled()) {
+        set_case_data($id, 'agent_off', null);
+        set_case_data($id, 'agent_started', now_str());
+        chat_post($id, 'bot', 'Certo, seguimos conversando por aqui. Pode escrever com suas palavras ou mandar fotos e PDFs.');
     }
     portal_back('conversa', 'fim');
 });

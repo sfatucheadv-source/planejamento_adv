@@ -535,6 +535,14 @@ a.card:hover { transform: translateY(-2px); box-shadow: var(--shadow); border-co
 .cv-preview { display: flex; flex-wrap: wrap; gap: 8px; }
 .cv-preview img { width: 96px; height: 96px; object-fit: cover; border-radius: 8px; border: 1px solid var(--line); }
 .cv-preview span { font-size: .85rem; color: var(--muted); }
+/* Conversa conduzida pelo assistente com IA */
+.cv-progress { margin: 10px 0 0; padding: 8px 12px; border-left: 3px solid var(--gold, #C4A062); background: rgba(196,160,98,.08); border-radius: 6px; }
+.cv-progress p { margin: 0; }
+.cv-attach { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0 12px; }
+.cv-attach input[type=file] { max-width: 100%; }
+@media (max-width: 640px) { .cv-attach { grid-template-columns: minmax(0, 1fr); } }
+.cv-modo { margin: 4px 0 0; }
+.link-btn { background: none; border: 0; padding: 0; color: var(--muted); text-decoration: underline; cursor: pointer; font: inherit; font-size: .88rem; }
 .cv-saving { color: var(--teal-2); font-weight: 600; }
 .cv-summary dl { margin: 0 0 12px; }
 .cv-docs-mini { padding-left: 18px; }

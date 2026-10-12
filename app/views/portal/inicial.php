@@ -117,99 +117,133 @@ $choiceButtons = function (array $q) {
         <?php partial('chat_msgs', ['msgs' => $chat, 'operator' => false, 'c' => $c]) ?>
       </div>
 
+      <?php if (agent_active($c)): $prog = agent_progress($id); ?>
+        <?php if (!$c['intake_done_at']): ?>
+          <div class="cv-progress" id="pergunta">
+            <?php if ($prog['campos'] || $prog['docs']): ?>
+              <p class="small muted">Para Sidney analisar, ainda falta<?= $prog['campos'] ? ': ' . e(implode(', ', array_map('lcfirst_pt', array_slice($prog['campos'], 0, 3)))) . (count($prog['campos']) > 3 ? ' e mais ' . plural(count($prog['campos']) - 3, 'informação', 'informações') : '') : '' ?><?= $prog['docs'] ? ($prog['campos'] ? '; e ' : ': ') . plural(count($prog['docs']), 'documento', 'documentos') . ' (' . e(implode(', ', array_map('lcfirst_pt', $prog['docs']))) . ')' : '' ?>.</p>
+            <?php else: ?>
+              <form method="post" action="<?= e(url('cliente/conversa/concluir')) ?>" class="cv-btns"><?= csrf_field() ?><button class="btn btn-gold" type="submit">Está tudo certo, pode enviar para Sidney</button></form>
+            <?php endif ?>
+          </div>
+        <?php endif ?>
+        <form class="cv-free cv-agent" method="post" action="<?= e(url('cliente/conversa/mensagem')) ?>" enctype="multipart/form-data" id="fim" data-save data-reading="Enviando e lendo o documento. Pode levar até um minuto; não feche a página.">
+          <?= csrf_field() ?><input type="hidden" name="k" value="<?= e(bin2hex(random_bytes(8))) ?>">
+          <label class="field"><span class="sr">Sua mensagem</span><textarea name="message" rows="2" placeholder="Escreva sua mensagem…"></textarea></label>
+          <div class="cv-attach">
+            <label class="field"><span>Anexar foto ou PDF <small>(até <?= (int) config('upload_max_mb') ?> MB)</small></span><input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" multiple data-preview></label>
+            <?php $docOpts = array_filter($docs, fn($d) => $d['status'] !== 'dispensado'); if ($docOpts): ?>
+              <label class="field"><span>O arquivo é</span>
+                <select name="doc"><option value="">O assistente identifica</option><?php foreach ($docOpts as $d): ?><option value="<?= (int) $d['id'] ?>" <?= selected($d['kind'], (string) case_data($c, 'agent_doc')) ?>><?= e($d['label']) ?></option><?php endforeach ?></select>
+              </label>
+            <?php endif ?>
+          </div>
+          <div class="cv-preview" data-preview-box></div>
+          <div class="cv-btns">
+            <button class="btn btn-gold" type="submit">Enviar</button>
+            <button class="btn btn-ghost btn-small" type="submit" name="message" value="Quero falar com Sidney." formnovalidate>Quero falar com Sidney</button>
+          </div>
+          <p class="cv-saving" data-saving hidden aria-live="polite">O assistente está respondendo…</p>
+        </form>
+        <form method="post" action="<?= e(url('cliente/conversa/modo')) ?>" class="cv-modo"><?= csrf_field() ?><button class="link-btn" type="submit" name="modo" value="botoes">Prefiro responder com perguntas e botões</button></form>
+      <?php else: ?>
       <?php if ($q): ?>
-        <div class="cv-q" id="pergunta">
-          <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual<?= !empty($q['editing']) ? ' · corrigindo' : '' ?></span><div class="cv-text"><?= nl2br(e((string) $q['ask'])) ?></div></div></div>
-          <?php if ($q['kind'] === 'doc'): $d = $q['doc']; ?>
-            <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" data-save<?= llm_enabled() ? ' data-reading="Enviando e lendo o documento. Pode levar até um minuto; não feche a página."' : '' ?>>
-              <?= csrf_field() ?><input type="hidden" name="k" value="<?= e($form_key) ?>">
-              <label class="field"><span>Arquivo (PDF ou foto, até <?= (int) config('upload_max_mb') ?> MB)</span><input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" multiple data-preview></label>
-              <div class="cv-preview" data-preview-box></div>
-              <div class="cv-btns">
-                <button class="btn btn-gold" type="submit" name="choice" value="enviar">Tenho e vou enviar</button>
-                <button class="btn btn-ghost btn-small" type="submit" name="choice" value="depois" formnovalidate>Vou enviar depois</button>
-                <button class="btn btn-ghost btn-small" type="submit" name="choice" value="nao_tenho" formnovalidate>Não tenho</button>
-              </div>
-            </form>
-          <?php elseif ($q['kind'] === 'final'): ?>
-            <div class="cv-summary">
-              <h3>Seus dados</h3>
-              <dl class="facts">
-                <?php foreach (['nome', 'telefone', 'aviso', 'objetivo_prioridade', 'situacao_contrato', 'banco', 'parcela', 'reuniao_canal'] as $k): if (!isset($fields[$k])) { continue; } ?>
-                  <div><dt><?= e(field_def($k)['label']) ?></dt><dd><?= e(field_display($k, $fields[$k])) ?></dd></div>
-                <?php endforeach ?>
-              </dl>
-              <h3>Documentos</h3>
-              <ul class="cv-docs-mini">
-                <?php foreach ($docs as $d): [$label, $sub] = client_doc_state($d); ?><li><?= e($d['label']) ?>: <strong><?= e($label) ?></strong><?= $sub ? ' · ' . e($sub) : '' ?></li><?php endforeach ?>
-              </ul>
-              <p>Próximo passo: Sidney confere os documentos e prepara a conversa com você.</p>
-            </div>
-            <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/responder')) ?>" data-save>
-              <?= csrf_field() ?><input type="hidden" name="q" value="final"><input type="hidden" name="k" value="<?= e($form_key) ?>">
-              <div class="cv-btns"><button class="btn btn-gold" type="submit">Está correto, pode enviar para Sidney</button></div>
-              <p class="muted small">Para corrigir alguma resposta, use “Corrigir resposta” na conversa acima.</p>
-            </form>
-          <?php else: ?>
-            <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/responder')) ?>" data-save>
-              <?= csrf_field() ?><input type="hidden" name="q" value="<?= e($q['key']) ?>"><input type="hidden" name="k" value="<?= e($form_key) ?>">
-              <?php if ($q['kind'] === 'choice'): $opts = field_def($q['field'])['options']; ?>
-                <div class="cv-options" role="radiogroup" aria-label="Respostas">
-                  <?php foreach ($opts as $k => $l): ?><button class="cv-opt" type="submit" name="value" value="<?= e($k) ?>"><?= e($l) ?></button><?php endforeach ?>
+          <div class="cv-q" id="pergunta">
+            <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual<?= !empty($q['editing']) ? ' · corrigindo' : '' ?></span><div class="cv-text"><?= nl2br(e((string) $q['ask'])) ?></div></div></div>
+            <?php if ($q['kind'] === 'doc'): $d = $q['doc']; ?>
+              <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" data-save<?= llm_enabled() ? ' data-reading="Enviando e lendo o documento. Pode levar até um minuto; não feche a página."' : '' ?>>
+                <?= csrf_field() ?><input type="hidden" name="k" value="<?= e($form_key) ?>">
+                <label class="field"><span>Arquivo (PDF ou foto, até <?= (int) config('upload_max_mb') ?> MB)</span><input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" multiple data-preview></label>
+                <div class="cv-preview" data-preview-box></div>
+                <div class="cv-btns">
+                  <button class="btn btn-gold" type="submit" name="choice" value="enviar">Tenho e vou enviar</button>
+                  <button class="btn btn-ghost btn-small" type="submit" name="choice" value="depois" formnovalidate>Vou enviar depois</button>
+                  <button class="btn btn-ghost btn-small" type="submit" name="choice" value="nao_tenho" formnovalidate>Não tenho</button>
                 </div>
-                <div class="cv-btns"><?= $choiceButtons($q) ?></div>
-              <?php elseif ($q['kind'] === 'confirm'): ?>
-                <div class="cv-btns"><button class="btn btn-gold" type="submit" name="value" value="sim">Sim, está correto</button></div>
-                <label class="field"><span>Ou escreva o que precisa corrigir</span><textarea name="correction" rows="2"><?= e($oldVal('correction')) ?></textarea></label>
-                <div class="cv-btns"><button class="btn btn-ghost btn-small" type="submit" name="value" value="corrigir">Enviar correção</button></div>
-              <?php elseif ($q['kind'] === 'group'): ?>
-                <div class="cv-grid">
-                  <?php foreach ($q['fields'] as $f): $def = field_def($f); ?>
-                    <label class="field <?= in_array($f, ['logradouro'], true) ? 'cv-wide' : '' ?>"><span><?= e($def['label']) ?><?= in_array($f, $q['optional'] ?? [], true) ? ' <small>(opcional)</small>' : '' ?></span>
-                      <?php if ($def['type'] === 'choice'): ?>
-                        <select name="<?= e($f) ?>"><option value="">—</option><?php foreach ($def['options'] as $k => $l): ?><option value="<?= e($k) ?>" <?= selected($k, $oldVal($f) ?: field_input_value($f, $fields[$f] ?? null)) ?>><?= e($l) ?></option><?php endforeach ?></select>
-                      <?php else: ?>
-                        <input type="text" name="<?= e($f) ?>" value="<?= e($oldVal($f) ?: field_input_value($f, $fields[$f] ?? null)) ?>" <?= $f === 'cep' ? 'inputmode="numeric" autocomplete="postal-code"' : ($f === 'logradouro' ? 'autocomplete="address-line1"' : ($f === 'cidade' ? 'autocomplete="address-level2"' : '')) ?>>
-                      <?php endif ?>
-                    </label>
+              </form>
+            <?php elseif ($q['kind'] === 'final'): ?>
+              <div class="cv-summary">
+                <h3>Seus dados</h3>
+                <dl class="facts">
+                  <?php foreach (['nome', 'telefone', 'aviso', 'objetivo_prioridade', 'situacao_contrato', 'banco', 'parcela', 'reuniao_canal'] as $k): if (!isset($fields[$k])) { continue; } ?>
+                    <div><dt><?= e(field_def($k)['label']) ?></dt><dd><?= e(field_display($k, $fields[$k])) ?></dd></div>
                   <?php endforeach ?>
-                </div>
-                <div class="cv-btns"><button class="btn btn-gold" type="submit">Enviar</button><?= $choiceButtons($q) ?></div>
-              <?php else:
-                $def = field_def($q['field']);
-                $cur = $oldVal('value') ?: (!empty($q['editing']) ? field_input_value($q['field'], $fields[$q['field']] ?? null) : (string) ($q['suggest'] ?? ''));
-                $attrs = match ($def['type']) {
-                    'money', 'rate' => 'type="text" inputmode="decimal"',
-                    'int', 'cpf', 'cep' => 'type="text" inputmode="numeric"',
-                    'date' => 'type="date"',
-                    default => 'type="text"',
-                };
-              ?>
-                <label class="field"><span class="sr"><?= e($def['label']) ?></span>
-                  <?php if ($def['type'] === 'textarea'): ?>
-                    <textarea name="value" rows="3"><?= e($cur) ?></textarea>
-                  <?php else: ?>
-                    <input <?= $attrs ?> name="value" value="<?= e($cur) ?>" placeholder="<?= e(match ($def['type']) { 'money' => 'Ex.: 1.450,00', 'rate' => 'Ex.: 1,89', 'cpf' => 'Somente números', default => '' }) ?>" autocomplete="off">
-                  <?php endif ?>
-                </label>
-                <div class="cv-btns"><button class="btn btn-gold" type="submit">Enviar</button><?= $choiceButtons($q) ?></div>
-              <?php endif ?>
-            </form>
-          <?php endif ?>
-          <p class="cv-saving" data-saving hidden aria-live="polite">Salvando…</p>
-        </div>
-      <?php elseif (!$completed && $c['chat_mode'] === 'bot'): ?>
-        <p class="notice" id="pergunta"><?= e(BOT_DONE) ?></p>
+                </dl>
+                <h3>Documentos</h3>
+                <ul class="cv-docs-mini">
+                  <?php foreach ($docs as $d): [$label, $sub] = client_doc_state($d); ?><li><?= e($d['label']) ?>: <strong><?= e($label) ?></strong><?= $sub ? ' · ' . e($sub) : '' ?></li><?php endforeach ?>
+                </ul>
+                <p>Próximo passo: Sidney confere os documentos e prepara a conversa com você.</p>
+              </div>
+              <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/responder')) ?>" data-save>
+                <?= csrf_field() ?><input type="hidden" name="q" value="final"><input type="hidden" name="k" value="<?= e($form_key) ?>">
+                <div class="cv-btns"><button class="btn btn-gold" type="submit">Está correto, pode enviar para Sidney</button></div>
+                <p class="muted small">Para corrigir alguma resposta, use “Corrigir resposta” na conversa acima.</p>
+              </form>
+            <?php else: ?>
+              <form class="cv-answer" method="post" action="<?= e(url('cliente/conversa/responder')) ?>" data-save>
+                <?= csrf_field() ?><input type="hidden" name="q" value="<?= e($q['key']) ?>"><input type="hidden" name="k" value="<?= e($form_key) ?>">
+                <?php if ($q['kind'] === 'choice'): $opts = field_def($q['field'])['options']; ?>
+                  <div class="cv-options" role="radiogroup" aria-label="Respostas">
+                    <?php foreach ($opts as $k => $l): ?><button class="cv-opt" type="submit" name="value" value="<?= e($k) ?>"><?= e($l) ?></button><?php endforeach ?>
+                  </div>
+                  <div class="cv-btns"><?= $choiceButtons($q) ?></div>
+                <?php elseif ($q['kind'] === 'confirm'): ?>
+                  <div class="cv-btns"><button class="btn btn-gold" type="submit" name="value" value="sim">Sim, está correto</button></div>
+                  <label class="field"><span>Ou escreva o que precisa corrigir</span><textarea name="correction" rows="2"><?= e($oldVal('correction')) ?></textarea></label>
+                  <div class="cv-btns"><button class="btn btn-ghost btn-small" type="submit" name="value" value="corrigir">Enviar correção</button></div>
+                <?php elseif ($q['kind'] === 'group'): ?>
+                  <div class="cv-grid">
+                    <?php foreach ($q['fields'] as $f): $def = field_def($f); ?>
+                      <label class="field <?= in_array($f, ['logradouro'], true) ? 'cv-wide' : '' ?>"><span><?= e($def['label']) ?><?= in_array($f, $q['optional'] ?? [], true) ? ' <small>(opcional)</small>' : '' ?></span>
+                        <?php if ($def['type'] === 'choice'): ?>
+                          <select name="<?= e($f) ?>"><option value="">—</option><?php foreach ($def['options'] as $k => $l): ?><option value="<?= e($k) ?>" <?= selected($k, $oldVal($f) ?: field_input_value($f, $fields[$f] ?? null)) ?>><?= e($l) ?></option><?php endforeach ?></select>
+                        <?php else: ?>
+                          <input type="text" name="<?= e($f) ?>" value="<?= e($oldVal($f) ?: field_input_value($f, $fields[$f] ?? null)) ?>" <?= $f === 'cep' ? 'inputmode="numeric" autocomplete="postal-code"' : ($f === 'logradouro' ? 'autocomplete="address-line1"' : ($f === 'cidade' ? 'autocomplete="address-level2"' : '')) ?>>
+                        <?php endif ?>
+                      </label>
+                    <?php endforeach ?>
+                  </div>
+                  <div class="cv-btns"><button class="btn btn-gold" type="submit">Enviar</button><?= $choiceButtons($q) ?></div>
+                <?php else:
+                  $def = field_def($q['field']);
+                  $cur = $oldVal('value') ?: (!empty($q['editing']) ? field_input_value($q['field'], $fields[$q['field']] ?? null) : (string) ($q['suggest'] ?? ''));
+                  $attrs = match ($def['type']) {
+                      'money', 'rate' => 'type="text" inputmode="decimal"',
+                      'int', 'cpf', 'cep' => 'type="text" inputmode="numeric"',
+                      'date' => 'type="date"',
+                      default => 'type="text"',
+                  };
+                ?>
+                  <label class="field"><span class="sr"><?= e($def['label']) ?></span>
+                    <?php if ($def['type'] === 'textarea'): ?>
+                      <textarea name="value" rows="3"><?= e($cur) ?></textarea>
+                    <?php else: ?>
+                      <input <?= $attrs ?> name="value" value="<?= e($cur) ?>" placeholder="<?= e(match ($def['type']) { 'money' => 'Ex.: 1.450,00', 'rate' => 'Ex.: 1,89', 'cpf' => 'Somente números', default => '' }) ?>" autocomplete="off">
+                    <?php endif ?>
+                  </label>
+                  <div class="cv-btns"><button class="btn btn-gold" type="submit">Enviar</button><?= $choiceButtons($q) ?></div>
+                <?php endif ?>
+              </form>
+            <?php endif ?>
+            <p class="cv-saving" data-saving hidden aria-live="polite">Salvando…</p>
+          </div>
+        <?php elseif (!$completed && $c['chat_mode'] === 'bot'): ?>
+          <p class="notice" id="pergunta"><?= e(BOT_DONE) ?></p>
+        <?php endif ?>
+  
+        <form class="cv-free" method="post" action="<?= e(url('cliente/conversa/mensagem')) ?>" id="fim" data-save>
+          <?= csrf_field() ?><input type="hidden" name="k" value="<?= e(bin2hex(random_bytes(8))) ?>">
+          <label class="field"><span><?= $c['chat_mode'] === 'human' ? 'Escreva para Sidney' : 'Tem uma dúvida ou algo fora das perguntas? Escreva aqui' ?></span><textarea name="message" rows="2" required></textarea></label>
+          <div class="cv-btns">
+            <button class="btn <?= $c['chat_mode'] === 'human' ? 'btn-gold' : 'btn-ghost' ?>" type="submit">Enviar mensagem</button>
+            <?php if ($c['chat_mode'] === 'bot' && !$completed): ?><button class="btn btn-ghost btn-small" type="submit" name="message" value="Quero falar com Sidney." formnovalidate>Quero falar com Sidney</button><?php endif ?>
+          </div>
+        </form>
+        <?php if (agent_enabled() && $c['chat_mode'] === 'bot' && !$completed && case_data($c, 'agent_off')): ?>
+          <form method="post" action="<?= e(url('cliente/conversa/modo')) ?>" class="cv-modo"><?= csrf_field() ?><button class="link-btn" type="submit" name="modo" value="ia">Voltar a conversar livremente com o assistente</button></form>
+        <?php endif ?>
       <?php endif ?>
-
-      <form class="cv-free" method="post" action="<?= e(url('cliente/conversa/mensagem')) ?>" id="fim" data-save>
-        <?= csrf_field() ?><input type="hidden" name="k" value="<?= e(bin2hex(random_bytes(8))) ?>">
-        <label class="field"><span><?= $c['chat_mode'] === 'human' ? 'Escreva para Sidney' : 'Tem uma dúvida ou algo fora das perguntas? Escreva aqui' ?></span><textarea name="message" rows="2" required></textarea></label>
-        <div class="cv-btns">
-          <button class="btn <?= $c['chat_mode'] === 'human' ? 'btn-gold' : 'btn-ghost' ?>" type="submit">Enviar mensagem</button>
-          <?php if ($c['chat_mode'] === 'bot' && !$completed): ?><button class="btn btn-ghost btn-small" type="submit" name="message" value="Quero falar com Sidney." formnovalidate>Quero falar com Sidney</button><?php endif ?>
-        </div>
-      </form>
     </section>
 
 <?php elseif ($area === 'documentos'): ?>
