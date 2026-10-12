@@ -35,12 +35,20 @@ function public_link(string $path): string
 function client_case_title(array $c): string
 {
     $id = (int) $c['id'];
-    $banco = trim((string) (fv($id, 'banco') ?? $c['bank'] ?? ''));
     $veiculo = trim(implode(' ', array_filter([(string) (fv($id, 'veiculo_marca') ?? ''), (string) (fv($id, 'veiculo_modelo') ?? '')])));
-    if ($banco !== '' || $veiculo !== '') {
-        return mb_strimwidth(implode(' · ', array_filter([$banco, $veiculo])), 0, 60, '…');
+    $placa = (string) (fv($id, 'veiculo_placa') ?? '');
+    if ($placa !== '') {
+        $placa = field_display('veiculo_placa', case_fields($id)['veiculo_placa']);
     }
-    return is_initial($c) && $c['initial_status'] === 'collecting' ? 'Novo atendimento' : 'Atendimento ' . $c['protocol'];
+    $t = implode(' · ', array_filter([$veiculo, $placa]));
+    return $t !== '' ? mb_strimwidth($t, 0, 60, '…') : 'Veículo a informar';
+}
+
+/** Banco e data de início do atendimento, para distinguir um do outro. */
+function client_case_meta(array $c): string
+{
+    $banco = trim((string) (fv((int) $c['id'], 'banco') ?? $c['bank'] ?? ''));
+    return mb_strimwidth($banco !== '' ? $banco : 'Banco a informar', 0, 40, '…') . ' · início ' . fmt_date(substr((string) $c['created_at'], 0, 10));
 }
 
 /** Mensagens e avisos que a pessoa ainda não viu neste atendimento. */
@@ -77,6 +85,7 @@ function client_conversations(?array $current = null): array
             'id' => (int) $c['id'],
             'protocol' => $c['protocol'],
             'title' => client_case_title($c),
+            'meta' => client_case_meta($c),
             'status' => is_initial($c) && empty($c['execution_started_at']) ? initial_status_label($c, true) : 'Caso em andamento',
             'preview' => $last ? ($last['author'] === 'client' ? 'Você: ' : '') . mb_strimwidth(preg_replace('/\s+/u', ' ', (string) $last['body']), 0, 80, '…') : '',
             'at' => $at,
@@ -126,6 +135,39 @@ function start_client_case(array $a, ?int $accountId, string $intro, ?string $ag
         // A IA conduz: cumprimenta pelo nome e faz a primeira pergunta.
         set_case_data($id, 'agent_started', now_str());
         agent_turn(find_case($id), $agentStart ?? 'Início da conversa: a pessoa acabou de se identificar no site (nome completo, e-mail e telefone já registrados). Cumprimente pelo primeiro nome, diga em uma frase como funciona (ela pode escrever, mandar áudio, fotos ou PDFs) e faça a primeira pergunta.');
+    }
+    mark_case_seen($id);
+    return $id;
+}
+
+/**
+ * Atendimento aberto direto pelo chat, sem formulário: a primeira mensagem da
+ * pessoa abre o caso e a IA ouve, registra e colhe a identificação (nome,
+ * WhatsApp e e-mail) ao longo da conversa. Sem IA, o roteiro pergunta.
+ */
+function start_chat_case(string $message, string $origin, string $aviso, ?int $accountId): int
+{
+    $c = create_initial_case(['nome' => '', 'telefone' => '', 'email' => '', 'origem' => $origin], 'site', $accountId);
+    $id = (int) $c['id'];
+    chat_post($id, 'bot', bot_greeting());
+    chat_post($id, 'client', $message);
+    mark_client_activity($id);
+    if (isset(NOTICE_OPTIONS[$aviso])) {
+        set_field($id, 'aviso', $aviso);
+        update_urgency_signal($id);
+    }
+    sync_intake_documents($id);
+    if (agent_enabled()) {
+        set_case_data($id, 'agent_started', now_str());
+        agent_turn(find_case($id), 'Início da conversa, sem formulário: a pessoa abriu o chat do site e escreveu a primeira mensagem abaixo. '
+            . 'Mostre que entendeu o problema em uma frase, registre o que ela contou e faça a próxima pergunta. '
+            . 'Logo no começo, peça o nome completo e, em seguida, o WhatsApp e o e-mail para os avisos.'
+            . "\nPrimeira mensagem: " . mb_substr($message, 0, 2000));
+    } else {
+        $objetivo = trim(mb_substr($message, 0, 2000));
+        if ($objetivo !== '') {
+            set_field($id, 'objetivo_texto', $objetivo);
+        }
     }
     mark_case_seen($id);
     return $id;

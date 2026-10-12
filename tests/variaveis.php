@@ -250,6 +250,21 @@ $sid->post('/painel/modelos-documentos', ['op' => 'salvar', 'key' => 'honorarios
 ok(doc_template('honorarios')['body'] === $body, 'modelo com as variáveis novas e personalizadas é aceito');
 [$out, $missing] = render_template($body, kit_vars($id));
 ok(str_contains($out, 'PIX CNPJ 12.345.678/0001-90') && str_contains($out, 'placa ABC1D23') && str_contains($out, 'Multa: 20% dos honorários pendentes'), 'texto gerado com os valores');
+
+echo "\nV6b. Modelos em abas, simulação com um atendimento e prévia ao vivo\n";
+$sid->get('/painel/modelos-documentos?modelo=procuracao&caso=' . $id);
+ok(substr_count($sid->html, 'class="mdl-aba"') >= 3 && str_contains($sid->html, 'aria-current="page"') && str_contains($sid->html, 'name="modelo" value="procuracao"'), 'um modelo por aba');
+ok(str_contains($sid->html, 'data-mdl-frame') && str_contains($sid->html, 'Simular com o atendimento') && preg_match('/<option value="' . $id . '"\s+selected/', $sid->html) === 1, 'prévia no timbrado e atendimento escolhido para simular');
+ok(str_contains($sid->html, 'name="v[cliente.nome_completo]"') && str_contains($sid->html, 'data-ins-bloco') && str_contains($sid->html, 'Parágrafo em destaque') && str_contains($sid->html, 'Assinatura') && str_contains($sid->html, 'Quebra de página') && str_contains($sid->html, 'data-ins-se') && str_contains($sid->html, 'data-ins-var'), 'editor com os blocos do padrão, variáveis, condições e dados editáveis da simulação');
+preg_match('/name="_csrf" value="([^"]+)"/', $sid->html, $cs);
+$antes = doc_template('procuracao');
+$sid->post('/painel/modelos-documentos/procuracao/simular', ['_csrf' => $cs[1], 'caso' => (string) $id, 'zoom' => '0.8',
+    'body' => "# Procuração\n\n@destaque Outorgante: ^^{{cliente.nome_completo}}^^, placa {{veiculo.placa}}.\n\n@dados\nFoo: {|b m|}{{cliente.cpf}}{|/|}", 'v' => ['veiculo.placa' => 'ZZZ9Z99', 'nao.existe' => 'x']]);
+ok(str_contains($sid->html, 'paragrafo-chave') && str_contains($sid->html, 'placa ZZZ9Z99') && str_contains($sid->html, '<mark class="marca"><strong>') && str_contains($sid->html, 'zoom:0.8') && str_contains($sid->html, 'SIMULAÇÃO'), 'simulação usa o texto em edição, os dados do atendimento e o ajuste digitado');
+ok(doc_template('procuracao')['body'] === $antes['body'] && (int) doc_template('procuracao')['version'] === (int) $antes['version'], 'simular não salva o modelo');
+$sid->post('/painel/modelos-documentos/procuracao/simular', ['_csrf' => $cs[1], 'caso' => '', 'body' => "Nome: {{cliente.nome_completo}}"]);
+ok(str_contains($sid->html, 'FALTA: Nome completo') && str_contains($sid->html, 'MODELO'), 'sem atendimento, o que falta aparece marcado');
+ok(template_used_vars("{{a.b}} x {{c.d|padrão}}\n@se nao e.f\n{{a.b}}\n@fimse\n{{flex:o/a}} {{clausula:x}}") === ['a.b', 'c.d', 'e.f'], 'lista das variáveis usadas no modelo');
 ok(str_contains($out, 'Testemunha: ______________') && !$missing, 'testemunha opcional usa o texto padrão e não bloqueia');
 $sid->get('/painel/variaveis');
 ok(str_contains($sid->html, 'Contrato de honorários</td>') || str_contains($sid->html, '>Contrato de honorários<'), 'catálogo mostra em que modelo a variável é usada');

@@ -8,30 +8,31 @@ $open = is_open();
     <div class="triage-main">
       <p class="kicker">Atendimento inicial</p>
       <h1>Atendimento online</h1>
-      <p class="lead">Você pode enviar o que tiver e continuar depois.<?= llm_enabled() ? ' Com os documentos em mãos, o assistente lê os dados por você e pergunta só o que faltar.' : '' ?> O assistente organiza suas informações e documentos; Sidney analisa o caso e conversa com você sobre as opções.</p>
+      <p class="lead">Sem formulário: comece contando o que está acontecendo. O assistente ouve, registra e organiza tudo para Sidney, que analisa o caso e conversa com você sobre as opções.</p>
 
       <div class="cv-log cv-intro" aria-label="Conversa">
         <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text"><?= e(bot_greeting()) ?></div></div></div>
-        <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text">Para começar, preciso só do seu nome completo, e-mail e telefone. Assim seu atendimento fica registrado e você continua de onde parou. Depois, é só conversar: pode escrever, mandar áudio, fotos ou PDFs.</div></div></div>
+        <div class="cv-msg cv-bot"><div class="cv-bubble"><span class="cv-who">Assistente virtual</span><div class="cv-text">O que está acontecendo? Escreva do seu jeito ou toque em uma opção. Eu peço seu nome e contato durante a conversa.</div></div></div>
       </div>
 
       <?php if (!empty($errors['form'])): ?><p class="notice notice-urgent"><?= e($errors['form']) ?></p><?php endif ?>
-      <form class="panel cv-start" method="post" action="<?= e(url('comecar')) ?>" novalidate>
+      <form class="panel cv-start cv-start-chat" method="post" action="<?= e(url('comecar')) ?>" data-cv-start>
         <?= csrf_field() ?>
         <input type="hidden" name="origin" value="<?= $v('origin') ?>">
         <input type="hidden" name="aviso" value="<?= $v('aviso') ?>">
         <input type="hidden" name="form_key" value="<?= e($form_key) ?>">
         <div class="hp" aria-hidden="true"><label>Site <input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>
-        <label class="field"><span>Nome completo</span><input type="text" name="nome" value="<?= $v('nome') ?>" autocomplete="name" required <?= isset($errors['nome']) ? 'aria-invalid="true" aria-describedby="err-nome" autofocus' : '' ?>></label>
-        <?= $err('nome') ?>
-        <label class="field"><span>E-mail</span><input type="email" name="email" value="<?= $v('email') ?>" autocomplete="email" required <?= isset($errors['email']) ? 'aria-invalid="true" aria-describedby="err-email"' : '' ?>></label>
-        <?= $err('email') ?>
-        <label class="field"><span>WhatsApp ou telefone, com DDD</span><input type="tel" name="telefone" value="<?= $v('telefone') ?>" autocomplete="tel" inputmode="tel" required <?= isset($errors['telefone']) ? 'aria-invalid="true" aria-describedby="err-telefone"' : '' ?>></label>
-        <?= $err('telefone') ?>
-        <label class="check"><input type="checkbox" name="consent" value="1" required <?= isset($errors['consent']) ? 'aria-invalid="true"' : '' ?>> <span>Autorizo o uso destes dados para o meu atendimento, conforme a <a href="<?= e(url('privacidade')) ?>" target="_blank">política de privacidade</a>.<?php if (llm_enabled()): ?> Os documentos e mensagens podem ser lidos por um serviço de inteligência artificial, só para organizar as informações; Sidney confere tudo.<?php endif ?></span></label>
-        <?= $err('consent') ?>
-        <button type="submit" class="btn btn-gold btn-block">Iniciar o atendimento</button>
-        <p class="t-help">Começar não significa contratar. Primeiro organizamos as informações; depois Sidney analisa e conversa com você.</p>
+        <div class="cv-atalhos" role="group" aria-label="Respostas rápidas">
+          <?php foreach (['O banco mandou notificação', 'Meu carro foi apreendido', 'Estou com parcelas atrasadas', 'A parcela está pesada demais', 'Quero revisar os juros'] as $at): ?>
+            <button type="submit" name="atalho" value="<?= e($at) ?>" class="cv-atalho" formnovalidate><?= e($at) ?></button>
+          <?php endforeach ?>
+        </div>
+        <label class="field cv-start-msg"><span class="sr">Sua mensagem</span>
+          <textarea name="mensagem" rows="3" maxlength="2000" placeholder="Conte o que está acontecendo com o seu financiamento…" autofocus <?= isset($errors['mensagem']) ? 'aria-invalid="true" aria-describedby="err-mensagem"' : '' ?>><?= $v('mensagem') ?></textarea>
+        </label>
+        <?= $err('mensagem') ?>
+        <button type="submit" class="btn btn-gold btn-block">Enviar e começar</button>
+        <p class="t-help">Ao enviar, você autoriza o uso das informações da conversa para o seu atendimento, conforme a <a href="<?= e(url('privacidade')) ?>" target="_blank">política de privacidade</a>.<?php if (llm_enabled()): ?> As mensagens e documentos podem ser lidos por um serviço de inteligência artificial, só para organizar as informações; Sidney confere tudo.<?php endif ?> Começar não significa contratar.</p>
       </form>
     </div>
     <aside class="triage-side">

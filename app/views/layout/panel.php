@@ -5,7 +5,7 @@ $flashes = take_flashes();
 $openTasks = $u ? (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'aberta' AND (owner_id = ? OR owner_id IS NULL) AND due_at <= ?", [$u['id'], now()->format('Y-m-d 23:59:59')]) : 0;
 $operator = $u && is_operator($u);
 $queueCount = $u ? count(guide_queue($u)[0]) : 0;
-$attCount = $operator ? (int) scalar("SELECT COUNT(*) FROM cases WHERE workflow_version = 'simple_v1' AND execution_started_at IS NULL AND operator_id = ? AND initial_status <> 'completed' AND ((activity_at IS NOT NULL AND (activity_seen_at IS NULL OR activity_at > activity_seen_at)) OR (urgency_signal IS NOT NULL AND urgency_reviewed_at IS NULL))", [$u['id']]) : 0;
+$attCount = $operator ? (int) scalar("SELECT COUNT(*) FROM cases WHERE workflow_version = 'simple_v1' AND execution_started_at IS NULL AND operator_id = ? AND initial_status <> 'completed' AND archived_at IS NULL AND ((activity_at IS NOT NULL AND (activity_seen_at IS NULL OR activity_at > activity_seen_at)) OR (urgency_signal IS NOT NULL AND urgency_reviewed_at IS NULL))", [$u['id']]) : 0;
 $icons = [
     'list' => 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
     'pulse' => 'M3 12h4l3 8 4-16 3 8h4',

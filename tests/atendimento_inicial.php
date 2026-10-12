@@ -183,6 +183,7 @@ $answers = [
     'aviso_data' => ['mode' => 'unknown'],
     'objetivo_prioridade' => ['value' => 'manter_veiculo'],
     'objetivo_texto' => ['value' => 'Uso o carro para trabalhar e estou com medo de perder.'],
+    'veiculo' => ['veiculo_marca' => 'Fiat', 'veiculo_modelo' => 'Argo', 'veiculo_placa' => 'ABC1D23'],
     'resumo_confirmado' => ['value' => 'sim'],
     'situacao_contrato' => ['value' => 'ativo'],
     'atraso' => ['value' => 'sim'],

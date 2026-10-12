@@ -55,7 +55,7 @@ $unreadTotal = array_sum(array_column($convs, 'unread'));
           <span class="conv-main">
             <span class="conv-top"><strong><?= e($cv['title']) ?></strong><time datetime="<?= e(str_replace(' ', 'T', $cv['at'])) ?>"><?= e(conv_when($cv['at'])) ?></time></span>
             <span class="conv-bottom"><span class="conv-prev"><?= e($cv['preview'] ?: $cv['status']) ?></span><span class="conv-badge" data-badge<?= $cv['unread'] ? '' : ' hidden' ?> aria-label="<?= (int) $cv['unread'] ?> novidade(s)"><?= (int) $cv['unread'] ?></span></span>
-            <small class="conv-meta"><?= e($cv['protocol']) ?> · <?= e($cv['status']) ?></small>
+            <small class="conv-meta"><?= e($cv['meta']) ?> · <?= e($cv['protocol']) ?></small>
           </span>
         </a>
       <?php endforeach ?>

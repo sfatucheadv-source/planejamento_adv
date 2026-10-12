@@ -783,3 +783,53 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .ed-area [data-t="24"] { font-size: calc(var(--ed-base) * 24 / 12); }
 .ed-area[data-on] + .ed-fonte, .ed-fonte[hidden] { display: none; }
 @media (max-width: 640px) { .ed-area p { text-align: left; } .ed-barra select { max-width: 140px; } }
+/* Capacidade de contratação (anotação discreta do assistente): alta é a situação favorável */
+.at-cap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.at-cap span { text-transform: uppercase; letter-spacing: .04em; font-size: 11px; font-weight: 700; }
+.at-cap strong { border-radius: 999px; padding: 1px 9px; font-size: 12px; background: var(--line); color: var(--ink); }
+.at-cap-alta strong { background: #DFF0E5; color: var(--green); }
+.at-cap-media strong { background: var(--amber-soft); color: var(--amber); }
+.at-cap-baixa strong { background: #F8E7E2; color: var(--red); }
+.at-cap small { font-size: 12.5px; }
+/* Atendimentos do mesmo cliente e gestão (fechar, arquivar, excluir) */
+.at-irmaos { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 0 0 12px; }
+.at-irmaos .lbl { width: 100%; }
+.at-irmao { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); text-decoration: none; color: var(--ink); min-width: 200px; max-width: 340px; }
+.at-irmao strong { font-size: 14px; color: var(--petrol); }
+.at-irmao small { font-size: 12px; color: var(--muted); }
+.at-irmao:hover { border-color: var(--teal); }
+.at-irmao.is-on { border-color: var(--teal); background: var(--teal-soft); box-shadow: inset 0 0 0 1px var(--teal); }
+.at-gestao > summary { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; cursor: pointer; list-style: none; }
+.at-gestao > summary::-webkit-details-marker { display: none; }
+.at-gestao > summary h2 { margin: 0; }
+.at-gestao-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-top: 12px; }
+.at-gestao-grid h3 { margin: 0; font-size: 15px; }
+
+/* Modelos de documentos: abas, editor e prévia ao vivo */
+.mdl-abas a { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 3px solid transparent; color: var(--muted); font: 600 15px var(--sans); text-decoration: none; white-space: nowrap; margin-bottom: -1px; }
+.mdl-abas a:hover { color: var(--petrol); }
+.mdl-abas a[aria-selected="true"] { color: var(--petrol); border-bottom-color: var(--teal); }
+.mdl-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.mdl-dot.is-ok { background: var(--green); }
+.mdl-dot.is-wait { background: var(--amber); }
+.mdl-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.mdl-grid > .box { margin-bottom: 0; min-width: 0; }
+.mdl-head { display: flex; flex-wrap: wrap; align-items: end; gap: 6px 16px; }
+.mdl-titulo { flex: 1 1 260px; }
+.mdl-versao { margin: 0 0 10px; font-size: 13px; color: var(--muted); }
+.mdl-barra { position: sticky; top: 0; }
+.mdl-barra select { max-width: 170px; }
+.mdl-body { width: 100%; min-height: 60vh; font: 13.5px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; tab-size: 2; }
+.mdl-aprovar { margin-top: 8px; }
+.mdl-ajuda { margin-top: 12px; }
+.mdl-ajuda > summary, .mdl-dados > summary { cursor: pointer; color: var(--teal); font-weight: 600; }
+.mdl-previa { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 24px); }
+.mdl-caso .fld { margin: 0; }
+.mdl-dados { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; }
+.mdl-vars { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 12px; max-height: 32vh; overflow: auto; margin-top: 6px; }
+.mdl-vars small { color: var(--muted); font-weight: 400; }
+.mdl-frame-wrap { display: flex; flex-direction: column; gap: 6px; flex: 1 1 auto; min-height: 0; }
+.mdl-zoom { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.mdl-zoom a { margin-left: auto; }
+.mdl-frame { width: 100%; flex: 1 1 auto; min-height: 70vh; border: 1px solid var(--line); border-radius: 10px; background: #E9E6DF; }
+@media (max-width: 1100px) { .mdl-grid { grid-template-columns: minmax(0, 1fr); } .mdl-previa { position: static; max-height: none; } }

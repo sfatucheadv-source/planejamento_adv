@@ -8,6 +8,9 @@ declare(strict_types=1);
 
 /* ---------- Abertura (seção 14.3: uma criação, operador configurado) ---------- */
 
+/** Nome provisório do atendimento aberto pelo chat, antes de a pessoa se identificar. */
+const CLIENT_NAME_PENDING = 'Novo contato';
+
 function create_initial_case(array $a, string $source = 'site', ?int $accountId = null, ?int $previousId = null): array
 {
     $now = now_str();
@@ -25,7 +28,8 @@ function create_initial_case(array $a, string $source = 'site', ?int $accountId 
         'updated_at' => $now,
         'source' => $source,
         'origin_page' => mb_substr((string) ($a['origem'] ?? ''), 0, 120),
-        'client_name' => mb_substr((string) $a['nome'], 0, 120),
+        // Sem formulário: o nome chega pela conversa; até lá, "Novo contato".
+        'client_name' => mb_substr(trim((string) $a['nome']) ?: CLIENT_NAME_PENDING, 0, 120),
         'client_phone' => $digits ?: null,
         'consent_at' => $now,
         'stage' => 'acolhimento',
@@ -44,8 +48,12 @@ function create_initial_case(array $a, string $source = 'site', ?int $accountId 
         'activity_at' => $now,
         'data' => '{}',
     ]);
-    set_field($id, 'nome', (string) $a['nome']);
-    set_field($id, 'telefone', (string) $a['telefone']);
+    if (trim((string) $a['nome']) !== '') {
+        set_field($id, 'nome', (string) $a['nome']);
+    }
+    if ($digits !== '') {
+        set_field($id, 'telefone', (string) $a['telefone']);
+    }
     if (!empty($a['email'])) {
         set_field($id, 'email', (string) $a['email']);
     }
@@ -648,4 +656,90 @@ function initial_alerts(array $c): array
         $out[] = ['mid', 'Comunicar o encerramento ao cliente'];
     }
     return $out;
+}
+
+/* ---------- Gestão: fechar, arquivar e excluir (gestor e administrador) ---------- */
+
+/** Gestor do caso e supervisor (administrador) podem fechar, arquivar e excluir atendimentos. */
+function can_manage_cases(): bool
+{
+    return has_role('gestor', 'supervisor');
+}
+
+/** Atendimentos da mesma pessoa (mesma conta ou, sem conta, mesmo telefone), do mais novo ao mais antigo. */
+function client_sibling_cases(array $c): array
+{
+    if ($c['account_id']) {
+        return all('SELECT * FROM cases WHERE account_id = ? ORDER BY id DESC', [$c['account_id']]);
+    }
+    if ($c['client_phone']) {
+        return all('SELECT * FROM cases WHERE client_phone = ? ORDER BY id DESC', [$c['client_phone']]);
+    }
+    return [$c];
+}
+
+/** Fecha o atendimento em qualquer situação, com o motivo registrado. */
+function case_close(array $c, string $reason, int $userId): ?string
+{
+    $reason = trim(mb_substr($reason, 0, 1000));
+    if (mb_strlen($reason) < 3) {
+        return 'Escreva o motivo do fechamento.';
+    }
+    if ($c['initial_status'] === 'completed') {
+        return 'Este atendimento já está fechado.';
+    }
+    $id = (int) $c['id'];
+    if ($m = current_meeting($id)) {
+        q("UPDATE case_meetings SET status = 'cancelada' WHERE id = ?", [$m['id']]);
+    }
+    bump_case($id, ['initial_status' => 'completed', 'initial_completed_at' => now_str(), 'closure_reason' => $reason, 'chat_mode' => 'human',
+        'next_action' => null, 'next_action_due' => null]);
+    add_event($id, 'situacao', 'Atendimento fechado pelo escritório', $reason, true, 'equipe');
+    audit('atendimento_fechado', $id, $reason);
+    return null;
+}
+
+/** Arquiva (some das listas do escritório) ou desarquiva. Nada é apagado. */
+function case_archive(array $c, bool $on, int $userId): void
+{
+    $id = (int) $c['id'];
+    q('UPDATE cases SET archived_at = ?, archived_by = ?, updated_at = ? WHERE id = ?', [$on ? now_str() : null, $on ? $userId : null, now_str(), $id]);
+    add_event($id, 'gestao', $on ? 'Atendimento arquivado' : 'Atendimento desarquivado');
+    audit($on ? 'atendimento_arquivado' : 'atendimento_desarquivado', $id);
+}
+
+/**
+ * Exclui de vez o atendimento e tudo o que é dele (conversa, ficha,
+ * documentos, arquivos, propostas). A conta do cliente só sai se não tiver
+ * outro atendimento. Fica o registro na auditoria.
+ */
+function case_delete(array $c, string $confirm, int $userId): ?string
+{
+    if (trim(mb_strtoupper($confirm)) !== mb_strtoupper((string) $c['protocol'])) {
+        return 'Para excluir, digite o protocolo ' . $c['protocol'] . ' exatamente como aparece.';
+    }
+    $id = (int) $c['id'];
+    if ($c['execution_started_at'] || $c['contract_state'] === 'formalizado') {
+        // Caso contratado também pode sair, mas fica explícito na auditoria.
+        audit('atendimento_contratado_excluido', null, $c['protocol']);
+    }
+    db()->beginTransaction();
+    q('UPDATE cases SET previous_case_id = NULL WHERE previous_case_id = ?', [$id]);
+    q('UPDATE cases SET duplicate_of = NULL WHERE duplicate_of = ?', [$id]);
+    q('DELETE FROM audit WHERE case_id = ?', [$id]);
+    q('DELETE FROM mail_log WHERE case_id = ?', [$id]);
+    q('DELETE FROM cases WHERE id = ?', [$id]);
+    if ($c['account_id'] && !scalar('SELECT 1 FROM cases WHERE account_id = ?', [$c['account_id']])) {
+        q('DELETE FROM client_accounts WHERE id = ?', [$c['account_id']]);
+    }
+    db()->commit();
+    $dir = config('storage_dir') . '/uploads/' . $id;
+    if (is_dir($dir)) {
+        foreach (glob($dir . '/*') ?: [] as $f) {
+            @unlink($f);
+        }
+        @rmdir($dir);
+    }
+    audit('atendimento_excluido', null, $c['protocol'] . ' · ' . $c['client_name']);
+    return null;
 }

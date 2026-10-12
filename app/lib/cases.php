@@ -20,6 +20,11 @@ function set_case_data(int $caseId, string $key, mixed $value): void
     q('UPDATE cases SET data = ?, updated_at = ? WHERE id = ?', [json_encode($data, JSON_UNESCAPED_UNICODE), now_str(), $caseId]);
 }
 
+function find_case_or_null(int $id): ?array
+{
+    return one('SELECT * FROM cases WHERE id = ?', [$id]);
+}
+
 function find_case(int $id): array
 {
     $c = one('SELECT * FROM cases WHERE id = ?', [$id]);

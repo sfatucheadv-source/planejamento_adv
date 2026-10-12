@@ -34,8 +34,58 @@ function intake_start_page(array $errors = [], array $old = []): never
     ], 'site', $errors ? 422 : 200);
 }
 
+/** Entrada sem formulário: a primeira mensagem no chat abre o atendimento. */
+function intake_chat_post(): never
+{
+    $existing = portal_case();
+    if ($existing && is_initial($existing) && $existing['initial_status'] !== 'completed') {
+        redirect('cliente?area=conversa');
+    }
+    $msg = trim(mb_substr(str_replace("\r\n", "\n", (string) input('mensagem')), 0, 2000));
+    if ($msg === '') {
+        $msg = trim(mb_substr((string) input('atalho'), 0, 200));
+    }
+    $errors = [];
+    if (mb_strlen($msg) < 2) {
+        $errors['mensagem'] = 'Escreva em poucas palavras o que está acontecendo, ou toque em uma das opções.';
+    }
+    $bot = input('website') !== '' || (time() - (int) ($_SESSION['triage_started'] ?? 0)) < 2;
+    if (!$errors && !$bot && too_many_attempts('triage:' . client_ip(), 6, 60)) {
+        $errors['form'] = 'Recebemos muitos envios deste aparelho em pouco tempo. Fale com Sidney pelo WhatsApp, por favor.';
+    }
+    if ($errors) {
+        intake_start_page($errors, $_POST);
+    }
+    if ($bot) {
+        redirect('comecar');
+    }
+    $key = (string) input('form_key');
+    if ($key !== '' && ($done = $_SESSION['intake_done_keys'][$key] ?? null)) {
+        $_SESSION['portal_case'] = $done;
+        redirect('cliente?area=conversa');
+    }
+    record_attempt('triage:' . client_ip());
+    @set_time_limit(180);
+    $acc = portal_account_id();
+    $aviso = (string) input('aviso');
+    $id = start_chat_case($msg, (string) input('origin'), $aviso, $acc);
+    if (!$acc) {
+        login_portal($id);
+    }
+    $_SESSION['portal_case'] = $id;
+    if ($key !== '') {
+        $_SESSION['intake_done_keys'][$key] = $id;
+    }
+    unset($_SESSION['intake_form_key']);
+    redirect('cliente?area=conversa');
+}
+
 function intake_start_post(): never
 {
+    if (!isset($_POST['nome'])) {
+        intake_chat_post();
+    }
+    // Entrada antiga com nome, e-mail e telefone (ainda aceita: registros do painel e testes).
     $a = [
         'nome' => trim(mb_substr((string) input('nome'), 0, 120)),
         'telefone' => (string) input('telefone'),

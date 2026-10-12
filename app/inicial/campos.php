@@ -430,6 +430,9 @@ function set_field(int $caseId, string $key, ?string $raw, string $state = 'info
         [$caseId, $key, $value, $state, $source, $docId, now_str(), $source === 'cliente' ? null : ($u['id'] ?? null)]);
     case_fields($caseId, true);
     sync_case_columns($caseId, $key, $value, $state);
+    if ($state === 'informado' && $value !== null && in_array($key, ['nome_completo', 'nome', 'telefone', 'email'], true)) {
+        sync_identity($caseId, $key, $value);
+    }
 
     $c = one('SELECT preparation_at, review_flag FROM cases WHERE id = ?', [$caseId]);
     if ($old && !empty($def['material']) && $c && $c['preparation_at']) {
@@ -439,6 +442,36 @@ function set_field(int $caseId, string $key, ?string $raw, string $state = 'info
         add_event($caseId, 'campo', 'Dado alterado: ' . $def['label'], FIELD_SOURCES[$source] ?? $source);
     }
     return null;
+}
+
+/**
+ * Identificação que chega pela conversa (o atendimento começa sem formulário):
+ * o nome completo vira o nome do atendimento, e nome, telefone e e-mail
+ * completam a conta do cliente, que recebe os avisos.
+ */
+function sync_identity(int $caseId, string $key, string $value): void
+{
+    $c = one('SELECT id, client_name, account_id FROM cases WHERE id = ?', [$caseId]);
+    if (!$c) {
+        return;
+    }
+    if ($key === 'nome_completo' && (fv($caseId, 'nome') === null || $c['client_name'] === CLIENT_NAME_PENDING)) {
+        set_field($caseId, 'nome', $value, 'informado', 'cliente');
+        return;
+    }
+    if ($key === 'telefone') {
+        $dup = scalar("SELECT protocol FROM cases WHERE workflow_version = 'simple_v1' AND client_phone = ? AND id <> ? AND initial_status <> 'completed' AND execution_started_at IS NULL
+            AND (? IS NULL OR account_id IS NULL OR account_id <> ?) ORDER BY id DESC LIMIT 1", [$value, $caseId, $c['account_id'], $c['account_id']]);
+        if ($dup && !one("SELECT 1 FROM events WHERE case_id = ? AND type = 'duplicidade'", [$caseId])) {
+            add_event($caseId, 'duplicidade', 'Possível duplicidade', 'Há outro atendimento ativo com o mesmo telefone (protocolo ' . $dup . '). Sidney decide o vínculo.');
+        }
+    }
+    if ($c['account_id']) {
+        $col = ['nome' => 'name', 'telefone' => 'phone', 'email' => 'email'][$key] ?? null;
+        if ($col) {
+            q("UPDATE client_accounts SET $col = ? WHERE id = ? AND ($col IS NULL OR $col = '' OR $col = ?)", [$value, $c['account_id'], CLIENT_NAME_PENDING]);
+        }
+    }
 }
 
 /** Mantém as colunas antigas atualizadas para listas, busca e execução. */

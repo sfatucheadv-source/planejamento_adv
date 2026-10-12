@@ -39,6 +39,16 @@ function bot_script(): array
          'ask' => 'O que você precisa resolver primeiro?'],
         ['key' => 'objetivo_texto', 'block' => 'B03', 'field' => 'objetivo_texto', 'kind' => 'textarea', 'skip' => 'Não tenho mais nada a acrescentar agora',
          'ask' => 'Se quiser, conte mais sobre a sua situação. Tudo o que você escrever chega para Sidney do jeito que você escreveu.'],
+        // B03b — identificação (o atendimento começa sem formulário; só depois de ouvir o problema)
+        ['key' => 'nome_completo', 'block' => 'B03', 'field' => 'nome_completo', 'kind' => 'text',
+         'ask' => 'Para registrar seu atendimento: qual é o seu nome completo?'],
+        ['key' => 'telefone', 'block' => 'B03', 'field' => 'telefone', 'kind' => 'text',
+         'ask' => 'Qual é o seu WhatsApp ou telefone, com DDD? É por ele que Sidney fala com você.'],
+        ['key' => 'email', 'block' => 'B03', 'field' => 'email', 'kind' => 'text', 'later' => 'Prefiro não informar agora',
+         'ask' => 'E o seu e-mail? Enviamos por ele o aviso de cada novidade e o link para voltar a esta conversa.'],
+        ['key' => 'veiculo', 'block' => 'B03', 'kind' => 'group', 'later' => 'Informo o veículo depois',
+         'fields' => ['veiculo_marca', 'veiculo_modelo', 'veiculo_placa'], 'optional' => ['veiculo_placa'],
+         'ask' => 'Qual é o veículo deste financiamento? Marca, modelo e, se souber, a placa. Assim cada atendimento fica identificado pelo carro.'],
         ['key' => 'resumo_confirmado', 'block' => 'B03', 'field' => 'resumo_confirmado', 'kind' => 'confirm',
          'ask' => fn($id) => 'Deixa eu confirmar se entendi: ' . bot_summary_sentence($id)],
         // B04 — situação
@@ -59,8 +69,6 @@ function bot_script(): array
          'ask' => 'Qual é o nome do titular do contrato?', 'when' => fn($id) => in_array(fv($id, 'relacao_contrato'), ['representante', 'terceiro'], true)],
         ['key' => 'representacao', 'block' => 'B05', 'field' => 'representacao', 'kind' => 'text', 'later' => 'Explico para Sidney na conversa',
          'ask' => 'Como você representa o titular? Por exemplo: procuração, curatela, inventário.', 'when' => fn($id) => fv($id, 'relacao_contrato') === 'representante'],
-        ['key' => 'nome_completo', 'block' => 'B05', 'field' => 'nome_completo', 'kind' => 'text', 'later' => 'Informo depois',
-         'ask' => 'Qual é o seu nome completo, como está no documento?'],
         ['key' => 'cpf', 'block' => 'B05', 'field' => 'cpf', 'kind' => 'cpf', 'later' => 'Informo depois',
          'ask' => 'Qual é o seu CPF?'],
         ['key' => 'estado_civil', 'block' => 'B05', 'field' => 'estado_civil', 'kind' => 'choice', 'later' => 'Prefiro informar depois',
@@ -285,8 +293,11 @@ function bot_answer(array $c, string $qkey, array $in, string $sendKey): ?string
                 $writes[] = [$f, $raw, 'informado'];
             }
             $filled = array_filter($writes, fn($w) => $w[2] === 'informado');
-            if (!array_filter($filled, fn($w) => in_array($w[0], ['logradouro', 'cidade'], true))) {
+            if ($q['key'] === 'endereco' && !array_filter($filled, fn($w) => in_array($w[0], ['logradouro', 'cidade'], true))) {
                 $errors[] = 'Informe pelo menos a rua e a cidade, ou escolha “informo depois”.';
+            }
+            if ($q['key'] === 'veiculo' && !array_filter($filled, fn($w) => in_array($w[0], ['veiculo_marca', 'veiculo_modelo'], true))) {
+                $errors[] = 'Informe pelo menos a marca ou o modelo do veículo, ou escolha “informo depois”.';
             }
             break;
         case 'confirm':

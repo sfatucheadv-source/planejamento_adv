@@ -289,6 +289,8 @@ function negotiation_context(array $c, array $d, array $g): array
             'urgencia' => $c['urgency_signal'] ?? null,
             'aberto_em' => substr((string) $c['created_at'], 0, 10),
             'origem' => $c['source'] ?? null,
+            // anotação do assistente; escala em que "alta" = tem condições de contratar
+            'capacidade_contratacao' => case_data($c, 'capacidade'),
         ],
         'guia' => [
             'piso_oab' => $prices['base'] ? $prices['base'] / 100 : null,
@@ -422,6 +424,10 @@ function negotiation_profile(int $caseId): array
     $veic = trim(implode(' ', array_filter([fv($caseId, 'veiculo_marca'), fv($caseId, 'veiculo_modelo'), fv($caseId, 'veiculo_ano')])));
     if ($veic !== '') {
         $out = ['Veículo' => $veic] + $out;
+    }
+    $cap = case_data(find_case($caseId), 'capacidade');
+    if ($cap) {
+        $out['Capacidade de contratação'] = (CAPACITY_LEVELS[$cap['nivel']] ?? $cap['nivel']) . ($cap['obs'] ? ' — ' . $cap['obs'] : '');
     }
     $renda = fv($caseId, 'renda_valor');
     $parcela = fv($caseId, 'parcela');

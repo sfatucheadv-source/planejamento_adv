@@ -8,3 +8,4 @@ storage/codigo-instalacao.txt
 !storage/sessions/.gitkeep
 app/config.local.php
 .DS_Store
+storage/backup-*

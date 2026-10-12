@@ -212,7 +212,7 @@ $sid->post('/painel/assistente', ['agent_enabled' => '1', 'agent_name' => 'Assis
     'agent_tech_reply' => AGENT_DEFAULTS['agent_tech_reply'], 'agent_done' => 'Coleta concluída, obrigado!', 'agent_max_per_hour' => '40',
     'campos' => $campos, 'documentos' => ['identidade', 'residencia']]);
 setting('__reset');
-ok(agent_enabled() && agent_required_fields() === ['aviso', 'objetivo_prioridade', 'situacao_contrato', 'atraso', 'atraso_qtd', 'nome_completo', 'cpf'] && agent_required_docs() === ['identidade', 'residencia'], 'liga a IA e grava as variáveis (na ordem da conversa) e documentos mínimos; campo de Sidney é recusado');
+ok(agent_enabled() && agent_required_fields() === ['aviso', 'objetivo_prioridade', 'nome_completo', 'telefone', 'email', 'veiculo_marca', 'veiculo_modelo', 'veiculo_placa', 'situacao_contrato', 'atraso', 'atraso_qtd', 'cpf', 'banco'] && agent_required_docs() === ['identidade', 'residencia'], 'liga a IA e grava as variáveis (na ordem da conversa, com a identificação sempre colhida) e documentos mínimos; campo de Sidney é recusado');
 $prompt = agent_system_prompt();
 ok(str_contains($prompt, 'Tom de teste: caloroso e direto.') && str_contains($prompt, 'comentar futebol') && str_contains($prompt, 'Assistente Fatuche') && str_contains($prompt, AGENT_FIXED_RULES[0]), 'instruções da IA usam o tom, as proibições e o nome do painel, mais as regras fixas');
 $sid->post('/painel/assistente', ['op' => 'testar', 'mensagem' => 'Os juros são abusivos?']);
@@ -262,6 +262,10 @@ say($cli, 'Não tenho comprovante no meu nome');
 ok(scalar("SELECT status FROM documents WHERE case_id = ? AND kind = 'residencia'", [$id]) === 'nao_possui', '“não tenho” registrado no documento');
 
 echo "\nA6. Encerramento da coleta\n";
+say($cli, 'O carro é um Fiat Argo placa ABC1D23');
+foreach (['veiculo_marca' => 'Fiat', 'veiculo_modelo' => 'Argo', 'veiculo_placa' => 'ABC1D23'] as $k => $v) {
+    fv($id, $k) ?? set_field($id, $k, $v);
+}
 ok(agent_missing_fields($id) === [] && agent_missing_docs($id) === [], 'variáveis e documentos mínimos reunidos');
 $cli->get('/cliente?area=conversa');
 ok(str_contains($cli->html, 'Está tudo certo, pode enviar para Sidney'), 'cliente vê o botão para encerrar');
@@ -291,11 +295,32 @@ $hdr = (string) shell_exec('curl -sI ' . escapeshellarg($base . '/'));
 ok(str_contains($hdr, 'microphone=(self)'), 'o site permite o microfone para gravar áudio no chat');
 $f = new Browser($base);
 $f->get('/comecar');
-ok(str_contains($f->html, 'Nome completo') && str_contains($f->html, 'name="email"') && !str_contains($f->html, 'name="adaptacao"'), 'formulário inicial: nome completo, e-mail e telefone');
+ok(!str_contains($f->html, 'name="nome"') && !str_contains($f->html, 'name="email"') && !str_contains($f->html, 'name="telefone"') && str_contains($f->html, 'name="mensagem"') && str_contains($f->html, 'class="cv-atalho"'), 'sem formulário: o atendimento começa pela conversa, com respostas rápidas');
 preg_match('/name="form_key" value="([^"]+)"/', $f->html, $fk);
 sleep(3);
-$f->post('/comecar', ['nome' => 'Davi', 'telefone' => '(41) 95555-1111', 'email' => '', 'consent' => '1', 'website' => '', 'form_key' => $fk[1]]);
-ok(str_contains($f->html, 'nome completo (nome e sobrenome)') && str_contains($f->html, 'Informe um e-mail válido'), 'nome sem sobrenome e e-mail em branco são recusados');
+$f->post('/comecar', ['mensagem' => '', 'website' => '', 'form_key' => $fk[1]]);
+ok(str_contains($f->html, 'Escreva em poucas palavras') && !scalar("SELECT 1 FROM cases WHERE client_name = 'Novo contato'"), 'mensagem vazia não abre atendimento');
+sleep(3);
+$f->post('/comecar', ['mensagem' => '', 'atalho' => 'O banco mandou notificação', 'website' => '', 'form_key' => $fk[1]]);
+$idF = (int) scalar("SELECT MAX(id) FROM cases");
+$cf = c($idF);
+ok(str_contains($f->url, '/cliente') && $cf['client_name'] === 'Novo contato' && $cf['account_id'] && $cf['consent_at'] && (bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND author = 'client' AND body = 'O banco mandou notificação'", [$idF]), 'a primeira mensagem abre o atendimento e a conta, ainda sem nome nem contato');
+ok(str_contains($f->html, 'qual é o seu nome completo') && fv($idF, 'aviso') === 'banco' && array_slice(agent_missing_fields($idF), 0, 3) === ['objetivo_prioridade', 'nome_completo', 'telefone'], 'a IA ouve o problema, registra e pede a identificação');
+$f->post('/cliente/conversa/mensagem', ['message' => 'Meu nome é Fábio Teste Lima, WhatsApp (41) 93333-2222 e e-mail fabio@teste.local. Sou motorista de aplicativo.', 'k' => 'f1']);
+case_fields($idF, true);
+$cf = c($idF);
+$accF = one('SELECT * FROM client_accounts WHERE id = ?', [$cf['account_id']]);
+ok(fv($idF, 'nome_completo') === 'Fábio Teste Lima' && $cf['client_name'] === 'Fábio Teste Lima' && $cf['client_phone'] === '41933332222' && $cf['client_email'] === 'fabio@teste.local', 'nome, WhatsApp e e-mail colhidos na conversa completam o atendimento');
+ok($accF['name'] === 'Fábio Teste Lima' && $accF['email'] === 'fabio@teste.local' && $accF['phone'] === '41933332222', 'e a conta do cliente, que passa a receber os avisos por e-mail');
+$cap = case_data($cf, 'capacidade');
+ok(($cap['nivel'] ?? '') === 'media' && str_contains($cap['obs'] ?? '', 'Motorista') && !scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND lower(body) LIKE '%capacidade%'", [$idF]), 'capacidade de contratação anotada (média), sem aparecer para o cliente');
+$f->post('/cliente/conversa/mensagem', ['message' => 'escala inválida', 'k' => 'f2']);
+ok((case_data(c($idF), 'capacidade')['nivel'] ?? '') === 'media', 'nível fora da escala alta/média/baixa é ignorado');
+$sid->get('/painel/atendimento/' . $idF);
+ok(str_contains($sid->html, 'Capacidade de contratação') && str_contains($sid->html, 'at-cap-media') && str_contains($sid->html, 'Fábio Teste Lima'), 'painel mostra a anotação discreta de capacidade');
+$sp = agent_system_prompt();
+ok(str_contains($sp, 'ativo e resolutivo') && str_contains($sp, '"alta" é sempre a situação favorável') && str_contains($sp, 'nunca comente com a pessoa') && str_contains($sp, 'Não há formulário de entrada'), 'instruções: tom ativo e resolutivo, identificação na conversa, capacidade discreta e escala com alta favorável');
+
 $cli4 = new Browser($base);
 $id4 = start_client($cli4, 'Elisa Rocha', '(41) 94444-1111');
 ok(fv($id4, 'nome_completo') === 'Elisa Rocha' && fv($id4, 'email') === 'elisa@teste.local' && (string) c($id4)['client_phone'] === '41944441111', 'nome completo, e-mail e telefone registrados na ficha');

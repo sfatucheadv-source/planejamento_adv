@@ -619,8 +619,21 @@ SQL;
 ALTER TABLE proposal_evaluations ADD COLUMN kind TEXT NOT NULL DEFAULT 'preco';
 SQL;
 
+    // Versão 11 — base zerada de atendimentos (pedido de Sidney): ver migrate_clear_cases().
+    $migrations[11] = <<<SQL
+CREATE INDEX IF NOT EXISTS idx_cases_created ON cases(created_at);
+SQL;
+
+    // Versão 12 — gestor e administrador arquivam atendimentos (somem das listas do escritório).
+    $migrations[12] = <<<SQL
+CREATE INDEX IF NOT EXISTS idx_cases_account_id ON cases(account_id, id);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
+            if ($v === 11) {
+                migrate_backup_before_clear($pdo); // VACUUM INTO não roda dentro de transação
+            }
             $pdo->beginTransaction();
             $pdo->exec($sql);
             if ($v === 2) {
@@ -634,6 +647,17 @@ SQL;
             }
             if ($v === 10) {
                 migrate_remove_validade($pdo);
+            }
+            if ($v === 12) {
+                $cols = array_column($pdo->query('PRAGMA table_info(cases)')->fetchAll(), 'name');
+                if (!in_array('archived_at', $cols, true)) {
+                    $pdo->exec('ALTER TABLE cases ADD COLUMN archived_at TEXT');
+                    $pdo->exec('ALTER TABLE cases ADD COLUMN archived_by INTEGER REFERENCES users(id)');
+                }
+            }
+            if ($v === 11) {
+                migrate_clear_cases($pdo);
+                migrate_agent_defaults($pdo);
             }
             $pdo->exec('PRAGMA user_version = ' . $v);
             $pdo->commit();
@@ -756,4 +780,67 @@ function migrate_remove_validade(PDO $pdo): void
             $pdo->prepare('UPDATE doc_templates SET body = ?, version = version + 1, updated_at = ? WHERE key = ?')->execute([$body, $now, $key]);
         }
     }
+}
+
+/** Pasta da cópia de segurança feita antes de zerar os atendimentos. */
+function migrate_backup_dir(): string
+{
+    return config('storage_dir') . '/backup-antes-de-zerar-atendimentos';
+}
+
+/** Cópia íntegra do banco (e, depois, dos arquivos enviados) antes de apagar. */
+function migrate_backup_before_clear(PDO $pdo): void
+{
+    if (!(int) $pdo->query('SELECT COUNT(*) FROM cases')->fetchColumn()) {
+        return;
+    }
+    $dir = migrate_backup_dir();
+    if (!is_dir($dir)) {
+        mkdir($dir, 0700, true);
+    }
+    $file = $dir . '/fatuche-' . date('Ymd-His') . '.sqlite';
+    $pdo->exec('VACUUM INTO ' . $pdo->quote($file));
+}
+
+/**
+ * Migração 11: apaga todos os atendimentos e o que pertence a eles (conversas,
+ * ficha, documentos, propostas, cobranças, contas de clientes, avisos e
+ * registros). Usuários do painel, configurações, modelos e variáveis ficam.
+ * Os arquivos enviados vão para a pasta da cópia de segurança, não são apagados.
+ */
+function migrate_clear_cases(PDO $pdo): void
+{
+    $had = (int) $pdo->query('SELECT COUNT(*) FROM cases')->fetchColumn();
+    if (!$had) {
+        return;
+    }
+    $pdo->exec('UPDATE cases SET previous_case_id = NULL, duplicate_of = NULL');
+    foreach (['case_artifact_versions', 'asaas_charges', 'proposal_evaluations', 'proposal_guides', 'proposals', 'client_access_links', 'mail_log', 'llm_log',
+        'chat_messages', 'case_meetings', 'case_pending_items', 'case_fields', 'files', 'documents', 'tasks', 'events', 'messages', 'decisions', 'offers',
+        'schedule', 'deadlines', 'exceptions', 'feedback', 'case_checks'] as $t) {
+        if ($pdo->query("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = " . $pdo->quote($t))->fetchColumn()) {
+            $pdo->exec('DELETE FROM ' . $t);
+        }
+    }
+    $pdo->exec('DELETE FROM cases');
+    $pdo->exec('DELETE FROM client_accounts');
+    $pdo->exec('DELETE FROM audit WHERE case_id IS NOT NULL');
+    $pdo->exec("DELETE FROM login_attempts");
+    $pdo->prepare('INSERT INTO audit (at, user_id, case_id, action, detail) VALUES (?, NULL, NULL, ?, ?)')
+        ->execute([date('Y-m-d H:i:s'), 'atendimentos_zerados', $had . ' atendimento(s) apagado(s); cópia em ' . basename(migrate_backup_dir())]);
+    $up = config('storage_dir') . '/uploads';
+    if (is_dir($up)) {
+        $dest = migrate_backup_dir() . '/uploads-' . date('Ymd-His');
+        if (!is_dir(dirname($dest))) {
+            mkdir(dirname($dest), 0700, true);
+        }
+        @rename($up, $dest);
+    }
+}
+
+/** Quem não tinha mudado o tom do assistente passa a usar o novo padrão (ativo e resolutivo). */
+function migrate_agent_defaults(PDO $pdo): void
+{
+    $st = $pdo->prepare("DELETE FROM settings WHERE key = 'agent_tone' AND replace(value, char(13), '') = ?");
+    $st->execute([AGENT_TONE_PREVIOUS]);
 }

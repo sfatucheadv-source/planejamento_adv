@@ -26,7 +26,7 @@ $statusTag = [
 </form>
 
 <?php if (!$rows): ?>
-  <p class="q-empty"><?= $filter === 'concluidos' ? 'Nenhum atendimento inicial concluído ainda.' : 'Tudo em dia. Quando alguém começar pelo assistente do site, o atendimento aparece aqui.' ?></p>
+  <p class="q-empty"><?= $filter === 'arquivados' ? 'Nenhum atendimento arquivado.' : ($filter === 'concluidos' ? 'Nenhum atendimento inicial concluído ainda.' : 'Tudo em dia. Quando alguém começar pelo assistente do site, o atendimento aparece aqui.') ?></p>
 <?php endif ?>
 
 <div class="at-list">
@@ -37,7 +37,8 @@ $statusTag = [
           <?php if ($r['urgent']): ?><em class="tag tag-red"><?= e(URGENCY_SIGNALS[$c['urgency_signal']] ?? 'Prazo próximo') ?></em><?php endif ?>
           <?php if ($r['new']): ?><em class="tag tag-blue">novo</em><?php endif ?>
         </span>
-        <span class="at-meta"><span class="mono"><?= e($c['protocol']) ?></span> · <?= e($c['bank'] ?: 'banco não informado') ?><?= $r['contract'] ? ' · contrato ' . e($r['contract']) : '' ?></span>
+        <?php $irmaos = count(client_sibling_cases($c)); ?>
+        <span class="at-meta"><span class="mono"><?= e($c['protocol']) ?></span> · <?= e(client_case_title($c)) ?> · <?= e($c['bank'] ?: 'banco não informado') ?> · início <?= e(fmt_date(substr((string) $c['created_at'], 0, 10))) ?><?= $r['contract'] ? ' · contrato ' . e($r['contract']) : '' ?><?= $irmaos > 1 ? ' · <em class="tag tag-gray">' . $irmaos . ' atendimentos do cliente</em>' : '' ?><?= $c['archived_at'] ? ' · <em class="tag tag-gray">arquivado</em>' : '' ?></span>
         <span class="at-next"><strong>Próxima ação:</strong> <?= e($c['next_action'] ?: 'definir') ?><?php if ($r['pending']): ?> · <span class="muted">pendência: <?= e($r['pending']) ?></span><?php endif ?></span>
       </span>
       <span class="at-side">

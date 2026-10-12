@@ -119,7 +119,16 @@ if (str_contains($system, 'extrai dados')) {
     // Assistente que conduz a conversa: responde conforme a mensagem nova.
     $now = mb_strtolower((string) substr($text, (int) strrpos($text, "AGORA:\n")));
     $r = ['resposta' => 'Certo, anotado. Vamos seguir.', 'campos' => (object) []];
-    if (str_contains($now, 'início da conversa')) {
+    if (str_contains($now, 'sem formulário')) {
+        $r = ['resposta' => 'Entendi: o banco mandou uma notificação, e isso vai para Sidney com prioridade. Para registrar seu atendimento, qual é o seu nome completo?',
+              'campos' => ['aviso' => 'banco'], 'capacidade' => null];
+    } elseif (str_contains($now, 'meu nome é')) {
+        $r = ['resposta' => 'Obrigado, Fábio! Já registrei seu nome e seus contatos. Agora me conte: há parcelas em atraso?',
+              'campos' => ['nome_completo' => 'Fábio Teste Lima', 'telefone' => '(41) 93333-2222', 'email' => 'fabio@teste.local', 'profissao' => 'motorista de aplicativo'],
+              'capacidade' => ['nivel' => 'media', 'observacao' => 'Motorista de aplicativo; a parcela pesa no orçamento, mas tem renda própria.']];
+    } elseif (str_contains($now, 'escala inválida')) {
+        $r = ['resposta' => 'Anotado.', 'capacidade' => ['nivel' => 'altissima', 'observacao' => 'x']];
+    } elseif (str_contains($now, 'início da conversa')) {
         $r['resposta'] = 'Olá! Que bom ter você aqui. Primeiro: você recebeu algum aviso do banco ou da Justiça, ou o veículo já foi apreendido?';
         $r['sugestoes'] = ['Não recebi nada disso', 'O carro foi apreendido', 'Recebi carta do banco', 'Uma sugestão longa demais para caber num atalho de resposta rápida'];
     } elseif (str_contains($now, 'quebrar')) {

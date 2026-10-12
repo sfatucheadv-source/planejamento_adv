@@ -32,9 +32,9 @@ return [
     // Dados (banco, sessões, documentos). Se existir a pasta "fatuche-storage" AO LADO da pasta
     // do site (na Hostinger: ao lado de public_html), ela é usada: assim nenhuma atualização
     // pelo Git encosta nos dados. Sem ela, usa storage/ dentro do projeto.
-    'storage_dir'   => is_dir(dirname(__DIR__, 2) . '/fatuche-storage')
+    'storage_dir'   => getenv('FATUCHE_STORAGE') ?: (is_dir(dirname(__DIR__, 2) . '/fatuche-storage')
         ? dirname(__DIR__, 2) . '/fatuche-storage'
-        : dirname(__DIR__) . '/storage',
+        : dirname(__DIR__) . '/storage'),
     'upload_max_mb' => 15,
 
     // Número de dias corridos sem atualização ao cliente antes de gerar alerta (workflow: 15).

@@ -21,7 +21,7 @@ function require_case_operator(int $id): array
 
 /* ---------- Lista de atendimentos (seção 11.1) ---------- */
 
-const ATTENDANCE_FILTERS = ['todos' => 'Todos', 'urgentes' => 'Urgentes', 'retorno' => 'Retorno hoje/vencido', 'aguardando' => 'Aguardando cliente', 'concluidos' => 'Concluídos'];
+const ATTENDANCE_FILTERS = ['todos' => 'Todos', 'urgentes' => 'Urgentes', 'retorno' => 'Retorno hoje/vencido', 'aguardando' => 'Aguardando cliente', 'concluidos' => 'Concluídos', 'arquivados' => 'Arquivados'];
 
 $router->get('/painel/atendimentos', function () {
     $u = require_user();
@@ -29,7 +29,12 @@ $router->get('/painel/atendimentos', function () {
     $filter = isset(ATTENDANCE_FILTERS[$filter]) ? $filter : 'todos';
     $where = ["workflow_version = 'simple_v1'", 'execution_started_at IS NULL', 'operator_id = ?'];
     $params = [(int) $u['id']];
-    $where[] = $filter === 'concluidos' ? "initial_status = 'completed'" : "initial_status <> 'completed'";
+    if ($filter === 'arquivados') {
+        $where[] = 'archived_at IS NOT NULL';
+    } else {
+        $where[] = 'archived_at IS NULL';
+        $where[] = $filter === 'concluidos' ? "initial_status = 'completed'" : "initial_status <> 'completed'";
+    }
     if (($term = trim((string) input('q'))) !== '') {
         $where[] = '(client_name LIKE ? OR protocol LIKE ? OR client_phone LIKE ? OR bank LIKE ? OR id IN (SELECT case_id FROM case_fields WHERE field = \'contrato_numero\' AND value LIKE ?))';
         $like = '%' . $term . '%';
@@ -168,6 +173,41 @@ $router->post('/painel/atendimento/{id}', function (string $id) {
     $c = require_case_operator((int) $id);
     $anchor = initial_panel_action($c, (string) input('op'));
     redirect('painel/atendimento/' . $c['id'] . '#' . $anchor);
+});
+
+/* Gestor e administrador: fechar, arquivar, desarquivar e excluir o atendimento. */
+$router->post('/painel/atendimento/{id}/gestao', function (string $id) {
+    $u = require_user();
+    $c = require_case_operator((int) $id);
+    if (!can_manage_cases()) {
+        flash('error', 'Fechar, arquivar e excluir atendimentos é do gestor ou do administrador.');
+        redirect('painel/atendimento/' . $c['id']);
+    }
+    switch ((string) input('op')) {
+        case 'fechar':
+            $err = case_close($c, (string) input('motivo'), (int) $u['id']);
+            flash($err ? 'error' : 'ok', $err ?? 'Atendimento fechado. O cliente vê que foi encerrado.');
+            break;
+        case 'arquivar':
+            case_archive($c, true, (int) $u['id']);
+            flash('ok', 'Atendimento arquivado: saiu das listas. Ele continua acessível pelo filtro “Arquivados”.');
+            redirect('painel/atendimentos');
+        case 'desarquivar':
+            case_archive($c, false, (int) $u['id']);
+            flash('ok', 'Atendimento desarquivado.');
+            break;
+        case 'excluir':
+            $err = case_delete($c, (string) input('confirmar'), (int) $u['id']);
+            if (!$err) {
+                flash('ok', 'Atendimento ' . $c['protocol'] . ' excluído.');
+                redirect('painel/atendimentos');
+            }
+            flash('error', $err);
+            break;
+        default:
+            flash('error', 'Ação desconhecida.');
+    }
+    redirect('painel/atendimento/' . $c['id'] . '#gestao');
 });
 
 /** Executa uma ação da ficha e devolve a âncora do bloco. */
@@ -568,12 +608,60 @@ function initial_panel_action(array $c, string $op): string
 $router->get('/painel/modelos-documentos', function () {
     require_user();
     seed_templates();
+    $templates = all('SELECT * FROM doc_templates ORDER BY key');
+    $key = (string) (input('modelo') ?: input('editar'));
+    $cur = array_values(array_filter($templates, fn($t) => $t['key'] === $key))[0] ?? ($templates[0] ?? null);
+    $caseId = (int) input('caso');
+    $case = $caseId ? find_case_or_null($caseId) : null;
+    $labels = template_var_labels();
+    $simVars = [];
+    if ($cur) {
+        $vals = $case ? kit_vars((int) $case['id']) : [];
+        foreach (template_used_vars($cur['body']) as $k) {
+            if (isset($labels[$k])) {
+                $simVars[$k] = ['label' => $labels[$k], 'value' => $vals[$k] ?? null];
+            }
+        }
+    }
     view('panel/modelos_documentos', [
         'meta_title' => 'Modelos de documentos · Painel',
-        'templates' => all('SELECT * FROM doc_templates ORDER BY key'),
-        'vars' => template_var_labels(),
-        'edit' => (string) input('editar'),
+        'templates' => $templates,
+        't' => $cur,
+        'vars' => $labels,
+        'case' => $case,
+        'simVars' => $simVars,
+        'cases' => all("SELECT id, protocol, client_name, created_at, account_id, bank FROM cases WHERE workflow_version = 'simple_v1' AND archived_at IS NULL ORDER BY id DESC LIMIT 60"),
     ], 'panel');
+});
+
+/**
+ * Simulação ao vivo: o texto em edição (ainda não salvo) com os dados de um
+ * atendimento e os ajustes digitados na tela. Nada é gravado.
+ */
+$router->post('/painel/modelos-documentos/{key}/simular', function (string $key) {
+    require_user();
+    $t = doc_template($key) ?? not_found();
+    $body = str_replace("\r\n", "\n", (string) ($_POST['body'] ?? $t['body']));
+    $caseId = (int) input('caso');
+    $case = $caseId ? find_case_or_null($caseId) : null;
+    if ($case && !can_operate($case, current_user())) {
+        forbidden();
+    }
+    $vars = $case ? kit_vars((int) $case['id']) : [];
+    $vars['kit.versao'] = 'simulação';
+    $labels = template_var_labels();
+    foreach ((array) ($_POST['v'] ?? []) as $k => $v) {
+        $v = trim(mb_substr((string) $v, 0, 2000));
+        if (isset($labels[(string) $k]) && $v !== '') {
+            $vars[(string) $k] = $v;
+        }
+    }
+    [$content] = render_template($body, $vars);
+    $zoom = max(0.4, min(1.2, (float) input('zoom', '0.75')));
+    header('Cache-Control: private, no-store');
+    $html = doc_page($t['title'] . ' · simulação', doc_blocks($content), [], $case ? 'SIMULAÇÃO' : 'MODELO');
+    echo str_replace('</head>', '<style>body{zoom:' . $zoom . '}.barra{display:none!important}</style></head>', $html);
+    exit;
 });
 
 /** Prévia do modelo no timbrado, com as variáveis à mostra (destacadas). */
@@ -601,21 +689,24 @@ $router->post('/painel/modelos-documentos', function () {
         $body = str_replace("\r\n", "\n", (string) ($_POST['body'] ?? ''));
         if (trim($body) === '') {
             flash('error', 'O modelo não pode ficar vazio.');
-            redirect('painel/modelos-documentos?editar=' . $key);
+            redirect('painel/modelos-documentos?modelo=' . $key);
         }
         [, $missing] = render_template($body, array_fill_keys(array_keys(template_var_labels()), 'x'));
         $bad = array_filter($missing, fn($m) => str_starts_with($m, 'variável não aprovada'));
         if ($bad) {
-            flash('error', 'Variáveis não reconhecidas: ' . implode(', ', $bad) . '.');
-            redirect('painel/modelos-documentos?editar=' . $key);
+            flash('error', 'Variáveis não reconhecidas: ' . implode(', ', $bad) . '. O texto não foi salvo.');
+            $_SESSION['modelo_rascunho'][$key] = $body;
+            redirect('painel/modelos-documentos?modelo=' . $key . (input('caso') ? '&caso=' . (int) input('caso') : ''));
         }
         if ($body !== $t['body']) {
             q('UPDATE doc_templates SET body = ?, title = ?, version = version + 1, approved_at = NULL, approved_by = NULL, updated_at = ? WHERE key = ?', [$body, mb_substr(trim((string) input('title')) ?: $t['title'], 0, 120), now_str(), $key]);
             audit('modelo_editado', null, $key);
             flash('ok', 'Nova versão do modelo salva. Revise e aprove para liberar a publicação.');
+        } else {
+            flash('ok', 'Nada mudou no texto.');
         }
     }
-    redirect('painel/modelos-documentos');
+    redirect('painel/modelos-documentos?modelo=' . $key . (input('caso') ? '&caso=' . (int) input('caso') : ''));
 });
 
 /* ---------- Propostas (condições negociadas por atendimento) ---------- */
@@ -630,9 +721,9 @@ function proposal_tab_hash(): string
 $router->get('/painel/propostas', function () {
     $u = require_user();
     $rows = all("SELECT p.*, c.protocol, c.client_name, c.initial_status FROM proposals p JOIN cases c ON c.id = p.case_id
-                 WHERE c.workflow_version = 'simple_v1' AND c.operator_id = ? ORDER BY p.updated_at DESC", [$u['id']]);
+                 WHERE c.workflow_version = 'simple_v1' AND c.operator_id = ? AND c.archived_at IS NULL ORDER BY p.updated_at DESC", [$u['id']]);
     $cases = all("SELECT id, protocol, client_name FROM cases WHERE workflow_version = 'simple_v1' AND execution_started_at IS NULL AND operator_id = ?
-                  AND initial_status <> 'completed' AND id NOT IN (SELECT case_id FROM proposals) ORDER BY id DESC", [$u['id']]);
+                  AND initial_status <> 'completed' AND archived_at IS NULL AND id NOT IN (SELECT case_id FROM proposals) ORDER BY id DESC", [$u['id']]);
     view('panel/propostas', ['meta_title' => 'Propostas · Painel', 'rows' => $rows, 'cases' => $cases], 'panel');
 });
 

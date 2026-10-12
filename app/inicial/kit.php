@@ -600,3 +600,17 @@ function kit_not_applicable(array $c, string $kind, string $reason): ?string
     add_event($id, 'kit', KIT_ITEMS[$kind]['label'] . ': não se aplica', trim($reason));
     return null;
 }
+
+/** Variáveis que um modelo usa (dados e condições), na ordem em que aparecem. */
+function template_used_vars(string $body): array
+{
+    preg_match_all('/\{\{\s*([a-z0-9_.]+)\s*(?:\|[^}]*)?\}\}|^\s*@se\s+(?:nao\s+)?([a-z0-9_.]+)\s*$/mu', $body, $m, PREG_SET_ORDER);
+    $out = [];
+    foreach ($m as $x) {
+        $k = ($x[2] ?? '') !== '' ? $x[2] : $x[1];
+        if ($k !== '' && !str_starts_with($k, 'clausula') && !in_array($k, $out, true)) {
+            $out[] = $k;
+        }
+    }
+    return $out;
+}

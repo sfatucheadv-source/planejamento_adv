@@ -251,7 +251,7 @@ $id3 = (int) scalar('SELECT MAX(id) FROM cases');
 $ana->post('/cliente/novo', []);
 ok((int) scalar('SELECT MAX(id) FROM cases') === $id3 && str_contains(flash_error($ana), 'atendimentos em andamento'), 'limite de 3 atendimentos em andamento por conta');
 $ana->get('/cliente/trocar/' . $id1);
-ok(str_contains($ana->html, 'Protocolo ' . $c1['protocol']), 'entrar e sair das conversas pela lista');
+ok(str_contains($ana->html, '· ' . $c1['protocol'] . ' ·') && str_contains($ana->html, 'aria-current="page"'), 'entrar e sair das conversas pela lista');
 
 echo "\nC4. Sigilo entre contas\n";
 $bia = new Browser($base);
@@ -374,6 +374,50 @@ $before = [setting('operator_user_id'), setting('llm_enabled'), setting('asaas_e
 $sid->post('/painel/configuracoes', ['_csrf' => $cs[1], 'secao' => 'email', 'mail_driver' => 'smtp', 'smtp_host' => 'smtp.exemplo.com', 'smtp_port' => '587', 'smtp_user' => 'avisos@exemplo.com', 'smtp_pass' => '', 'notify_delay_min' => '20']);
 setting('__reset');
 ok((int) setting('smtp_port') === 587 && [setting('operator_user_id'), setting('llm_enabled'), setting('asaas_env')] === $before && str_contains($sid->url, '/painel/configuracoes/email'), 'salvar uma área não mexe nas outras e volta para a mesma página');
+
+echo "\nC11. Cada atendimento identificado pelo veículo; navegação e gestão no painel\n";
+foreach (['veiculo_marca' => 'Fiat', 'veiculo_modelo' => 'Argo', 'veiculo_placa' => 'ABC1D23', 'banco' => 'Banco Aymoré'] as $k => $v) {
+    set_field($id1, $k, $v);
+}
+$ana->get('/cliente/conversas');
+$c1 = c($id1);
+ok(str_contains($ana->html, '<strong>Fiat Argo · ' . field_display('veiculo_placa', case_fields($id1, true)['veiculo_placa']) . '</strong>') && str_contains($ana->html, 'Banco Aymoré · início ' . fmt_date(substr($c1['created_at'], 0, 10))), 'na lista do cliente: veículo e placa no título, banco e data de início embaixo');
+ok(str_contains($ana->html, '<strong>Veículo a informar</strong>') && !str_contains($ana->html, '<strong>Novo atendimento</strong>'), 'sem veículo ainda: “Veículo a informar” no lugar de “Novo atendimento”');
+$ana->get('/cliente/trocar/' . $id2);
+ok(!str_contains($ana->html, 'Fiat Argo') || !str_contains(substr($ana->html, strpos($ana->html, 'app-bar-title')), 'Fiat Argo'), 'cada conversa com o seu próprio histórico e cabeçalho');
+$sid->get('/painel/atendimentos');
+ok(substr_count($sid->html, 'class="at-row') >= 3 && str_contains($sid->html, 'atendimentos do cliente'), 'no painel, cada atendimento aparece como item próprio, marcado como do mesmo cliente');
+$sid->get('/painel/atendimento/' . $id2);
+ok(str_contains($sid->html, 'atendimentos deste cliente') && str_contains($sid->html, 'href="' . '/painel/atendimento/' . $id1 . '"') || str_contains($sid->html, 'painel/atendimento/' . $id1 . '"'), 'na ficha, navegação entre os atendimentos do mesmo cliente');
+ok(str_contains($sid->html, 'id="gestao"') && str_contains($sid->html, 'Excluir atendimento') && str_contains($sid->html, 'Arquivar atendimento'), 'gestor/administrador vê fechar, arquivar e excluir');
+preg_match('/name="_csrf" value="([^"]+)"/', $sid->html, $cs);
+$sid->post('/painel/atendimento/' . $id2 . '/gestao', ['_csrf' => $cs[1], 'op' => 'fechar', 'motivo' => '']);
+ok(c($id2)['initial_status'] !== 'completed' && str_contains(flash_error($sid), 'motivo'), 'fechar exige o motivo');
+$sid->post('/painel/atendimento/' . $id2 . '/gestao', ['_csrf' => $cs[1], 'op' => 'fechar', 'motivo' => 'Cliente resolveu direto com o banco']);
+ok(c($id2)['initial_status'] === 'completed' && c($id2)['closure_reason'] === 'Cliente resolveu direto com o banco', 'atendimento fechado com o motivo');
+$sid->post('/painel/atendimento/' . $id2 . '/gestao', ['_csrf' => $cs[1], 'op' => 'arquivar']);
+$sid->get('/painel/atendimentos?f=concluidos');
+ok(c($id2)['archived_at'] && !str_contains($sid->html, c($id2)['protocol']), 'arquivado some das listas');
+$sid->get('/painel/atendimentos?f=arquivados');
+ok(str_contains($sid->html, c($id2)['protocol']), 'e aparece no filtro “Arquivados”');
+$sid->post('/painel/atendimento/' . $id2 . '/gestao', ['_csrf' => $cs[1], 'op' => 'desarquivar']);
+ok(!c($id2)['archived_at'], 'desarquivar devolve às listas');
+$p2 = c($id2)['protocol'];
+$sid->post('/painel/atendimento/' . $id2 . '/gestao', ['_csrf' => $cs[1], 'op' => 'excluir', 'confirmar' => 'errado']);
+ok((bool) one('SELECT 1 FROM cases WHERE id = ?', [$id2]), 'excluir sem digitar o protocolo não apaga');
+$sid->post('/painel/atendimento/' . $id2 . '/gestao', ['_csrf' => $cs[1], 'op' => 'excluir', 'confirmar' => strtolower($p2)]);
+ok(!one('SELECT 1 FROM cases WHERE id = ?', [$id2]) && !scalar('SELECT 1 FROM chat_messages WHERE case_id = ?', [$id2]) && str_contains($sid->url, '/painel/atendimentos') && (bool) scalar("SELECT 1 FROM audit WHERE action = 'atendimento_excluido' AND detail LIKE ?", [$p2 . '%']), 'excluído de vez, com registro na auditoria');
+ok((bool) one('SELECT 1 FROM cases WHERE id = ?', [$id1]) && (bool) one('SELECT 1 FROM client_accounts WHERE id = ?', [$c1['account_id']]), 'os outros atendimentos e a conta do cliente continuam');
+$ana->get('/cliente/conversas');
+ok(!str_contains($ana->html, $p2) && str_contains($ana->html, $c1['protocol']), 'o cliente deixa de ver o atendimento excluído');
+$uid2 = insert('users', ['name' => 'Calc', 'email' => 'calc@teste.local', 'roles' => 'calculos', 'pass_hash' => password_hash('senha-calc-12345', PASSWORD_DEFAULT), 'active' => 1, 'created_at' => now_str()]);
+$calc = new Browser($base);
+$calc->get('/painel/entrar');
+$calc->post('/painel/entrar', ['email' => 'calc@teste.local', 'password' => 'senha-calc-12345']);
+$calc->get('/painel/atendimento/' . $id1);
+preg_match('/name="_csrf" value="([^"]+)"/', $calc->html, $cs2);
+$calc->post('/painel/atendimento/' . $id1 . '/gestao', ['_csrf' => $cs2[1] ?? '', 'op' => 'excluir', 'confirmar' => $c1['protocol']]);
+ok((bool) one('SELECT 1 FROM cases WHERE id = ?', [$id1]) && !str_contains($calc->html, 'Excluir atendimento'), 'quem não é gestor nem administrador não exclui');
 
 $clearMail();
 echo "\n" . ($fails ? "FALHAS: $fails · " : 'TUDO OK · ') . "$passes verificações aprovadas\n";

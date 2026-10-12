@@ -111,6 +111,20 @@ if ($P && $N) {
 <?php if ($prev): ?><p class="hint">Vinculado ao atendimento anterior <a href="<?= e(url('painel/atendimento/' . $prev['id'])) ?>"><?= e($prev['protocol']) ?></a>. Dados trazidos de lá estão marcados “confirmar”.</p><?php endif ?>
 <?php if ($c['migrated_from_stage']): ?><p class="hint">Migrado do fluxo anterior (etapa “<?= e(stage_label($c['migrated_from_stage'])) ?>”). O histórico completo continua na <a href="<?= e(url('painel/caso/' . $id)) ?>?legado=1">ficha antiga</a>.</p><?php endif ?>
 
+<?php $irmaos = client_sibling_cases($c); if (count($irmaos) > 1): ?>
+  <nav class="at-irmaos" aria-label="Atendimentos deste cliente">
+    <span class="lbl"><?= count($irmaos) ?> atendimentos deste cliente</span>
+    <?php foreach ($irmaos as $ir): $on = (int) $ir['id'] === $id; ?>
+      <a class="at-irmao <?= $on ? 'is-on' : '' ?>" href="<?= e(url('painel/atendimento/' . $ir['id'])) ?>"<?= $on ? ' aria-current="page"' : '' ?>>
+        <strong><?= e(client_case_title($ir)) ?></strong>
+        <small><?= e(client_case_meta($ir)) ?> · <?= e($ir['protocol']) ?> · <?= e(initial_status_label($ir)) ?><?= $ir['archived_at'] ? ' · arquivado' : '' ?></small>
+      </a>
+    <?php endforeach ?>
+  </nav>
+<?php endif ?>
+
+<?php if ($c['archived_at']): ?><p class="warn-line">Atendimento arquivado em <?= e(fmt_datetime($c['archived_at'])) ?>: não aparece nas listas do escritório.</p><?php endif ?>
+
 <nav class="at-blocks" aria-label="Blocos da ficha">
   <a href="#dados">1 · Dados e contexto</a><a href="#documentos">2 · Documentos</a><a href="#analise">3 · Análise e proposta</a><a href="#reuniao">4 · Reunião</a><a href="#kit">5 · Kit e decisão</a><a href="#conversa">Conversa</a>
 </nav>
@@ -122,6 +136,9 @@ if ($P && $N) {
 <section class="box at-block" id="dados" aria-labelledby="h-dados">
   <div class="box-head"><h2 id="h-dados">1 · Dados e contexto</h2><span class="hint">Coleta <?= $c['intake_done_at'] ? 'concluída pelo cliente em ' . e(fmt_date($c['intake_done_at'])) : 'em andamento' ?></span></div>
 
+  <?php if ($cap = case_data($c, 'capacidade')): ?>
+    <p class="at-cap at-cap-<?= e($cap['nivel']) ?>" title="Anotação interna do assistente; o cliente não vê"><span>Capacidade de contratação</span> <strong><?= e(CAPACITY_LEVELS[$cap['nivel']] ?? $cap['nivel']) ?></strong><?= $cap['obs'] ? ' <small>' . e($cap['obs']) . '</small>' : '' ?></p>
+  <?php endif ?>
   <?php if ($c['urgency_signal']): ?>
     <div class="at-urg">
       <p><strong><?= e(URGENCY_SIGNALS[$c['urgency_signal']]) ?>:</strong> <?= e((string) $c['urgency_reason']) ?><?= $c['urgency_date'] ? ' · relatado para ' . e(fmt_date($c['urgency_date'])) : '' ?>. <span class="muted">Relato do cliente; prazo só existe depois de confirmado.</span></p>
@@ -677,3 +694,30 @@ if ($P && $N) {
   <p class="hint">Mensagens externas (WhatsApp, e-mail) continuam sendo enviadas por você; abrir o WhatsApp não confirma entrega.</p>
 </aside>
 </div>
+
+<?php if (can_manage_cases()): $gest = fn(string $op) => '<form method="post" action="' . e(url('painel/atendimento/' . $id . '/gestao')) . '" class="stack">' . csrf_field() . '<input type="hidden" name="op" value="' . $op . '">'; ?>
+<details class="box at-gestao" id="gestao">
+  <summary><h2>Gestão do atendimento</h2><span class="hint">gestor e administrador · fechar, arquivar ou excluir</span></summary>
+  <div class="at-gestao-grid">
+    <?php if ($c['initial_status'] !== 'completed'): ?>
+      <?= $gest('fechar') ?>
+        <h3>Fechar</h3>
+        <p class="hint">Encerra o atendimento em qualquer etapa. O cliente vê que foi encerrado e a conversa passa para você.</p>
+        <label class="fld"><span>Motivo</span><textarea name="motivo" rows="2" required placeholder="ex.: cliente desistiu; resolveu direto com o banco"></textarea></label>
+        <button class="b" type="submit" data-confirm="Fechar este atendimento?">Fechar atendimento</button>
+      </form>
+    <?php endif ?>
+    <?= $gest($c['archived_at'] ? 'desarquivar' : 'arquivar') ?>
+      <h3><?= $c['archived_at'] ? 'Desarquivar' : 'Arquivar' ?></h3>
+      <p class="hint"><?= $c['archived_at'] ? 'Volta a aparecer nas listas do escritório.' : 'Tira das listas do escritório sem apagar nada. Fica no filtro “Arquivados”. O cliente continua vendo a conversa.' ?></p>
+      <button class="b" type="submit"><?= $c['archived_at'] ? 'Desarquivar' : 'Arquivar atendimento' ?></button>
+    </form>
+    <?= $gest('excluir') ?>
+      <h3>Excluir</h3>
+      <p class="hint">Apaga de vez o atendimento, a conversa, a ficha, os documentos e a proposta. Não dá para desfazer.</p>
+      <label class="fld"><span>Digite o protocolo <strong class="mono"><?= e($c['protocol']) ?></strong> para confirmar</span><input name="confirmar" autocomplete="off" required></label>
+      <button class="b b-danger" type="submit" data-confirm="Excluir de vez o atendimento <?= e($c['protocol']) ?>? Não dá para desfazer.">Excluir atendimento</button>
+    </form>
+  </div>
+</details>
+<?php endif ?>

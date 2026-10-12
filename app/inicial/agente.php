@@ -19,15 +19,32 @@ declare(strict_types=1);
  * a pergunta da vez é sempre calculada a partir do que ainda falta.
  */
 
+/** Tom padrão: ativo e resolutivo, focado em ouvir e registrar o problema. */
+const AGENT_TONE_DEFAULT = "Ativo e resolutivo: você conduz a conversa, não espera a pessoa perguntar. Chame a pessoa pelo nome e use \"você\".\n"
+    . "Primeiro ouça: deixe a pessoa contar o problema com as palavras dela, mostre que entendeu repetindo o essencial em uma frase e registre tudo.\n"
+    . "Depois aja: diga o que já ficou registrado, faça a próxima pergunta e diga qual é o próximo passo. No máximo uma ou duas perguntas por mensagem.\n"
+    . "Frases curtas, linguagem simples, sem juridiquês e sem gírias. Firme e acolhedor, sem dramatizar.\n"
+    . "Agradeça as informações e os documentos enviados.";
+
+/** Tom padrão anterior (migração: quem não o alterou passa a usar o novo). */
+const AGENT_TONE_PREVIOUS = "Humano, respeitoso e prestativo. Chame a pessoa pelo nome que ela prefere e use \"você\".\n"
+    . "Frases curtas, linguagem simples, sem juridiquês e sem gírias.\n"
+    . "Mostre que entende a preocupação (parcelas atrasadas, medo de perder o veículo), sem dramatizar.\n"
+    . "Foco em resolver e em agilidade: aproveite tudo o que a pessoa já contou, faça no máximo uma ou duas perguntas por mensagem e diga qual é o próximo passo.\n"
+    . "Agradeça as informações e os documentos enviados.";
+
+/** Identificação que a conversa sempre colhe (o atendimento começa sem formulário). */
+const AGENT_IDENTITY_FIELDS = ['nome_completo', 'telefone', 'email', 'veiculo_marca', 'veiculo_modelo', 'veiculo_placa', 'banco'];
+
+/** Capacidade de contratação: escala única do sistema, em que "alta" é sempre a situação favorável. */
+const CAPACITY_LEVELS = ['alta' => 'Alta', 'media' => 'Média', 'baixa' => 'Baixa'];
+
 const AGENT_DEFAULTS = [
     'agent_name' => 'Assistente virtual da Fatuche Advocacia',
-    'agent_greeting' => 'Olá! Sou o assistente virtual da Fatuche Advocacia. Vou conversar com você para entender a situação do seu financiamento e organizar as informações e os documentos para o advogado Sidney Fatuche. Pode escrever do seu jeito e mandar fotos ou PDFs aqui mesmo na conversa.',
-    'agent_tone' => "Humano, respeitoso e prestativo. Chame a pessoa pelo nome que ela prefere e use \"você\".\n"
-        . "Frases curtas, linguagem simples, sem juridiquês e sem gírias.\n"
-        . "Mostre que entende a preocupação (parcelas atrasadas, medo de perder o veículo), sem dramatizar.\n"
-        . "Foco em resolver e em agilidade: aproveite tudo o que a pessoa já contou, faça no máximo uma ou duas perguntas por mensagem e diga qual é o próximo passo.\n"
-        . "Agradeça as informações e os documentos enviados.",
-    'agent_skills' => "Acolher a pessoa e entender o que ela precisa resolver primeiro.\n"
+    'agent_greeting' => 'Olá! Sou o assistente virtual da Fatuche Advocacia. Me conte o que está acontecendo com o seu financiamento: eu registro tudo e organizo para o advogado Sidney Fatuche. Pode escrever do seu jeito, mandar áudio, fotos ou PDFs.',
+    'agent_tone' => AGENT_TONE_DEFAULT,
+    'agent_skills' => "Ouvir e registrar o problema da pessoa com as palavras dela e entender o que ela precisa resolver primeiro.\n"
+        . "Identificar a pessoa e o contrato durante a conversa: nome completo, WhatsApp ou telefone, e-mail (para os avisos), veículo com placa e banco.\n"
         . "Identificar urgências: apreensão do veículo, aviso de busca e apreensão, notificação de cartório, processo ou prazo.\n"
         . "Coletar os dados de qualificação: nome completo, CPF, estado civil, profissão, nacionalidade e endereço.\n"
         . "Coletar os dados do financiamento: banco, data, valor financiado, número e valor das parcelas, taxas, parcelas pagas e em atraso.\n"
@@ -85,6 +102,8 @@ function agent_required_fields(): array
             $order[$f] ??= count($order);
         }
     }
+    // A identificação é sempre colhida: o atendimento começa sem formulário.
+    $list = array_values(array_unique(array_merge($list, AGENT_IDENTITY_FIELDS)));
     usort($list, fn($a, $b) => ($order[$a] ?? 999) <=> ($order[$b] ?? 999));
     return $list;
 }
@@ -114,7 +133,7 @@ function agent_allowed_fields(): array
 {
     static $out = null;
     if ($out === null) {
-        $out = array_filter(base_field_defs(), fn($d, $k) => empty($d['sidney']) && !in_array($k, ['resumo_confirmado', 'resumo_correcao', 'telefone', 'email'], true), ARRAY_FILTER_USE_BOTH);
+        $out = array_filter(base_field_defs(), fn($d, $k) => empty($d['sidney']) && !in_array($k, ['resumo_confirmado', 'resumo_correcao'], true), ARRAY_FILTER_USE_BOTH);
     }
     return $out;
 }
@@ -189,16 +208,23 @@ function agent_system_prompt(): string
         . "REGRAS FIXAS (valem acima de tudo)\n" . $list(AGENT_FIXED_RULES) . "\n\n"
         . "MENSAGEM PADRÃO PARA DÚVIDAS TÉCNICAS (use com suas palavras, sem responder a dúvida)\n" . agent_setting('agent_tech_reply') . "\n\n"
         . "COMO CONDUZIR\n"
+        . "- Seja ativo e resolutivo: conduza a conversa, ouça o problema, registre e avance para o próximo passo sem esperar a pessoa perguntar.\n"
+        . "- Não há formulário de entrada: depois de ouvir o problema, peça o nome completo, o WhatsApp ou telefone com DDD e o e-mail (é por ele que vão os avisos). Peça com naturalidade, explicando para que serve. Pergunte também o veículo (marca, modelo e placa) e o banco: cada atendimento é identificado pelo carro.\n"
         . "- Siga a lista \"DADOS MÍNIMOS QUE FALTAM\" na ordem, mas aproveite o que a pessoa contar fora de ordem.\n"
         . "- Peça os documentos mínimos que faltam; explique em uma frase para que servem. Com o documento, você não precisa perguntar o que já estiver nele.\n"
         . "- Quando a pessoa não souber ou preferir informar depois, registre e siga em frente, sem insistir.\n"
         . "- Quando não faltar nada, faça um resumo curto do que foi registrado e pergunte se está correto. Só marque \"concluido\": true quando a pessoa confirmar.\n"
+        . "- Observe com discrição as condições econômicas da pessoa e a capacidade de contratar o escritório (renda, ocupação, comprometimento com a parcela, bens, como fala de dinheiro). "
+        . "Registre em \"capacidade\" o nível \"alta\" (tem condições de contratar), \"media\" ou \"baixa\", com uma observação de uma frase baseada só no que ela disse. "
+        . "É uma anotação interna para Sidney: nunca pergunte diretamente sobre isso só para medir, nunca comente com a pessoa e não use gênero, origem ou aparência. Sem sinais suficientes, use null.\n"
+        . "- Toda escala usa alta, média e baixa, e \"alta\" é sempre a situação favorável.\n"
         . "- Respostas com no máximo 5 frases curtas, em português do Brasil, sem markdown.\n"
         . "- Em \"sugestoes\", ofereça de 2 a 4 respostas curtas (até 40 caracteres) que a pessoa possa tocar para responder à sua pergunta, escritas como ela falaria (ex.: \"Sim, está atrasado\", \"Não sei\", \"Vou mandar a foto\"). São só atalhos: ela continua livre para escrever, mandar áudio ou arquivos.\n\n"
         . "RESPOSTA: SOMENTE um objeto JSON com as chaves:\n"
         . '{"resposta": "texto para o cliente", "campos": {"chave": "valor"}, "nao_sabe": ["chave"], "depois": ["chave"], '
         . '"documento_pedido": "tipo do documento que você está pedindo agora ou null", "documentos_nao_tem": ["tipo"], "documentos_depois": ["tipo"], '
-        . '"duvida_tecnica": false, "duvida": "a dúvida técnica, com as palavras da pessoa", "urgente": false, "falar_com_sidney": false, "concluido": false, "sugestoes": ["resposta curta"]}' . "\n"
+        . '"duvida_tecnica": false, "duvida": "a dúvida técnica, com as palavras da pessoa", "urgente": false, "falar_com_sidney": false, "concluido": false, "sugestoes": ["resposta curta"], '
+        . '"capacidade": {"nivel": "alta|media|baixa", "observacao": "uma frase"}}' . "\n"
         . 'Em "campos" use só as chaves listadas no contexto, com o formato indicado.';
 }
 
@@ -238,7 +264,8 @@ function agent_context(int $id, string $event): string
     $others = array_diff_key($allowed, array_flip($missing), $fields);
     $c = find_case($id);
     return 'Hoje: ' . fmt_date(now()->format('Y-m-d')) . ' · horário de atendimento de Sidney: dias úteis, em horário comercial.'
-        . "\nA pessoa prefere ser chamada de: " . (fv($id, 'nome') ?: $c['client_name'])
+        . "\nA pessoa prefere ser chamada de: " . (fv($id, 'nome') ?: ($c['client_name'] !== CLIENT_NAME_PENDING ? $c['client_name'] : 'ainda não se identificou'))
+        . (($cap = case_data($c, 'capacidade')) ? "\nSua anotação interna de capacidade de contratação até aqui: " . $cap['nivel'] . ($cap['obs'] ? ' (' . $cap['obs'] . ')' : '') . '. Atualize se a conversa trouxer sinais novos.' : '')
         . ($c['urgency_signal'] ? "\nATENÇÃO: há sinal de urgência registrado; Sidney já foi avisado." : '')
         . "\n\nDADOS JÁ REGISTRADOS (não pergunte de novo; confirme só se houver dúvida):\n" . ($known ? implode("\n", $known) : '- nenhum')
         . "\n\nDADOS MÍNIMOS QUE FALTAM (nesta ordem):\n" . ($missing ? ia_field_spec($missing) : '- nenhum')
@@ -380,6 +407,14 @@ function agent_apply(int $id, array $json): void
         }
     }
     set_case_data($id, 'doc_later', $later);
+    $cap = $json['capacidade'] ?? null;
+    if (is_array($cap) && isset(CAPACITY_LEVELS[(string) ($cap['nivel'] ?? '')])) {
+        $obs = trim(mb_substr(preg_replace('/\s+/u', ' ', (string) ($cap['observacao'] ?? '')), 0, 240));
+        $prev = case_data($c, 'capacidade');
+        if (!$prev || $prev['nivel'] !== $cap['nivel'] || $prev['obs'] !== $obs) {
+            set_case_data($id, 'capacidade', ['nivel' => (string) $cap['nivel'], 'obs' => $obs, 'at' => now_str()]);
+        }
+    }
     $asked = (string) ($json['documento_pedido'] ?? '');
     set_case_data($id, 'agent_doc', scalar("SELECT 1 FROM documents WHERE case_id = ? AND kind = ?", [$id, $asked]) ? $asked : null);
 }
@@ -446,7 +481,7 @@ function agent_privacy_ok(int $id, string $reply): bool
     $names = all("SELECT client_name AS n FROM cases WHERE id <> ? UNION SELECT value FROM case_fields WHERE case_id <> ? AND field IN ('nome_completo','titular_nome') AND state = 'informado'", [$id, $id]);
     foreach ($names as $r) {
         $n = $norm($r['n']);
-        if (mb_strlen($n) >= 8 && substr_count($n, ' ') >= 1 && !in_array($n, $own, true) && !array_filter($own, fn($o) => str_contains($o, $n) || str_contains($n, $o))
+        if ($n !== $norm(CLIENT_NAME_PENDING) && mb_strlen($n) >= 8 && substr_count($n, ' ') >= 1 && !in_array($n, $own, true) && !array_filter($own, fn($o) => str_contains($o, $n) || str_contains($n, $o))
             && preg_match('/(?<!\p{L})' . preg_quote($n, '/') . '(?!\p{L})/u', $text)) {
             return false;
         }

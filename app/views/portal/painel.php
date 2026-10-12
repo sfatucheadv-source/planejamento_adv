@@ -15,7 +15,7 @@ foreach ($files as $f) { $filesByDoc[(int) $f['document_id']][] = $f; }
       <a class="app-back" href="<?= e(url('cliente/conversas')) ?>" aria-label="Voltar para os seus atendimentos"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></a>
       <div class="app-bar-title">
         <strong><?= e(client_case_title($c)) ?></strong>
-        <small>Protocolo <?= e($c['protocol']) ?> · <?= $closed ? 'Caso encerrado' : e(CLIENT_PHASES[$phaseKey]['label']) ?></small>
+        <small><?= e(client_case_meta($c)) ?> · <?= e($c['protocol']) ?> · <?= $closed ? 'Caso encerrado' : e(CLIENT_PHASES[$phaseKey]['label']) ?></small>
       </div>
     </header>
     <div class="app-scroll"><div class="app-scroll-in">
