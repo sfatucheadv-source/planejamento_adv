@@ -78,42 +78,44 @@ $open = is_open();
   </div>
 </section>
 
-<section class="section section-paper" id="como-funciona">
-  <div class="wrap split split-top">
-    <div class="split-media">
-      <figure class="photo-frame">
+<section class="section section-paper how" id="como-funciona">
+  <div class="wrap">
+    <div class="how-intro">
+      <figure class="photo-frame how-photo">
         <img src="<?= e($meeting ?: asset('img/consulta.jpg')) ?>" alt="<?= $meeting ? 'Sidney Fatuche em atendimento' : 'Mesa de reunião com contrato de financiamento, chave do carro e anotações' ?>" loading="lazy" width="800" height="450">
+        <figcaption>A primeira conversa é para ouvir. Áudio, foto do documento ou mensagem longa: do jeito que for mais fácil para você.</figcaption>
       </figure>
-      <p class="photo-note">A primeira conversa é para ouvir. Áudio, foto do documento ou mensagem longa: do jeito que for mais fácil para você.</p>
+      <div class="how-copy">
+        <p class="kicker">Como funciona</p>
+        <h2>Primeiro, o atendimento inicial; depois, a solução</h2>
+        <ol class="how-phases">
+          <li><strong>Atendimento inicial</strong><span>O assistente reúne suas informações e documentos (você pode parar e continuar depois), Sidney analisa o financiamento, vocês conversam por Google Meet, telefone, WhatsApp ou pelo chat do site, e você recebe a proposta.</span></li>
+          <li><strong>Se você contratar</strong><span>A atuação segue nas etapas abaixo, sempre com o próximo passo à vista. Concluir o atendimento inicial não significa que a dívida foi resolvida.</span></li>
+        </ol>
+        <a class="btn btn-gold" href="<?= e(url('comecar', ['origem' => 'home-como-funciona'])) ?>">Começar pelo chat</a>
+      </div>
     </div>
-    <div>
-      <p class="kicker">Como funciona</p>
-      <h2>Primeiro, o atendimento inicial; depois, a solução</h2>
-      <p><strong>Atendimento inicial:</strong> o assistente reúne suas informações e documentos (você pode parar e continuar depois), Sidney analisa o financiamento, vocês conversam por Google Meet, telefone, WhatsApp ou pelo chat do site, e você recebe a proposta. Concluir essa parte não significa que a dívida foi resolvida.</p>
-      <p><strong>Se você contratar,</strong> a atuação segue nas situações abaixo, sempre com o próximo passo à vista:</p>
-      <ol class="journey">
-        <?php
-        $yours = [
-            'entendendo'  => 'Você conta o que está acontecendo. Áudio também vale.',
-            'analisando'  => 'Você envia o que tiver. Dizemos exatamente o que falta e ajudamos a conseguir.',
-            'buscando'    => 'Você escolhe o caminho, sem pressão, depois de entender custos e riscos.',
-            'acontecendo' => 'Você autoriza cada proposta. Nada é aceito em seu nome sem a sua confirmação.',
-            'conferindo'  => 'Você confirma que o boleto, a quitação ou a devolução chegaram certos.',
-        ];
-        $i = 1;
-        foreach (CLIENT_PHASES as $key => $ph): ?>
-          <li>
-            <span class="journey-n"><?= $i++ ?></span>
-            <div>
-              <h3><?= e($ph['label']) ?></h3>
-              <p><?= e($ph['text']) ?></p>
-              <p class="journey-you"><strong>Sua parte:</strong> <?= e($yours[$key]) ?></p>
-            </div>
-          </li>
-        <?php endforeach ?>
-      </ol>
-      <a class="btn btn-ghost" href="<?= e(url('atendimento')) ?>">Ver o atendimento em detalhes</a>
-    </div>
+
+    <ol class="journey" aria-label="Etapas depois da contratação">
+      <?php
+      $yours = [
+          'entendendo'  => 'Você conta o que está acontecendo. Áudio também vale.',
+          'analisando'  => 'Você envia o que tiver. Dizemos exatamente o que falta e ajudamos a conseguir.',
+          'buscando'    => 'Você escolhe o caminho, sem pressão, depois de entender custos e riscos.',
+          'acontecendo' => 'Você autoriza cada proposta. Nada é aceito em seu nome sem a sua confirmação.',
+          'conferindo'  => 'Você confirma que o boleto, a quitação ou a devolução chegaram certos.',
+      ];
+      $i = 1;
+      foreach (CLIENT_PHASES as $key => $ph): ?>
+        <li>
+          <span class="journey-n" aria-hidden="true"><?= $i++ ?></span>
+          <h3><?= e($ph['label']) ?></h3>
+          <p><?= e($ph['text']) ?></p>
+          <p class="journey-you"><strong>Sua parte</strong><?= e($yours[$key]) ?></p>
+        </li>
+      <?php endforeach ?>
+    </ol>
+    <p class="how-more"><a href="<?= e(url('atendimento')) ?>">Ver o atendimento em detalhes →</a></p>
   </div>
 </section>
 
