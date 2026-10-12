@@ -66,6 +66,28 @@
     <p class="small"><strong>Webhook</strong> (Integrações › Webhooks › Adicionar, eventos de cobrança): URL <code><?= e(asaas_webhook_url()) ?></code> · token de autenticação <code><?= e(asaas_webhook_token()) ?></code>. Com ele, pagamentos e vencimentos aparecem sozinhos no atendimento; sem ele, use “Atualizar situação” na proposta.</p>
   <?php endif ?>
   <label class="chk"><input type="checkbox" name="asaas_test" value="1"> Testar a conexão com o Asaas ao salvar</label>
+  <h2 id="email">E-mails de aviso ao cliente</h2>
+  <p class="hint">Quando uma conversa tem novidade que o cliente ainda não viu (mensagem sua, do assistente ou documento disponibilizado), ele recebe um e-mail com um link de acesso válido por <?= ACCESS_LINK_DAYS ?> dias. O e-mail não leva o conteúdo da conversa.</p>
+  <fieldset class="radios at-channels"><legend class="lbl">Envio</legend>
+    <?php foreach (MAIL_DRIVERS as $mk => $ml): ?>
+      <label class="chk"><input type="radio" name="mail_driver" value="<?= e($mk) ?>" <?= checked(mail_driver() === $mk) ?>> <?= e($ml) ?></label>
+    <?php endforeach ?>
+  </fieldset>
+  <div class="var-grid">
+    <label class="fld"><span>Remetente (e-mail)</span><input type="email" name="mail_from" value="<?= e((string) setting('mail_from')) ?>" placeholder="<?= e(mail_from()[0]) ?>"></label>
+    <label class="fld"><span>Nome do remetente</span><input name="mail_from_name" maxlength="80" value="<?= e((string) setting('mail_from_name')) ?>" placeholder="<?= e(office('brand')) ?>"></label>
+    <label class="fld"><span>Servidor SMTP</span><input name="smtp_host" value="<?= e((string) setting('smtp_host')) ?>" placeholder="smtp.hostinger.com" spellcheck="false"></label>
+    <label class="fld"><span>Porta</span><input name="smtp_port" inputmode="numeric" value="<?= e((string) (setting('smtp_port') ?: '465')) ?>"></label>
+    <label class="fld"><span>Usuário SMTP (o e-mail completo)</span><input name="smtp_user" value="<?= e((string) setting('smtp_user')) ?>" autocomplete="off" spellcheck="false"></label>
+    <label class="fld"><span>Senha SMTP <?= setting('smtp_pass') ? '<small>(configurada)</small>' : '<small>(não configurada)</small>' ?></span><input type="password" name="smtp_pass" autocomplete="new-password" placeholder="<?= setting('smtp_pass') ? 'Deixe em branco para manter' : '' ?>"></label>
+    <label class="fld"><span>Esperar antes de avisar (minutos)</span><input name="notify_delay_min" inputmode="numeric" value="<?= notify_delay_min() ?>"></label>
+  </div>
+  <p class="hint">Recomendado: uma caixa de e-mail do domínio do site (no hPanel, Emails › Contas de e-mail), com servidor smtp.hostinger.com, porta 465. Pela função da hospedagem, os e-mails podem cair no spam. A espera evita avisar quem está com a conversa aberta. Para enviar mesmo sem visitas no site, agende no cron da hospedagem, a cada 5 minutos: <code>php <?= e(ROOT_DIR) ?>/scripts/avisos.php</code></p>
+  <label class="fld"><span>Enviar um e-mail de teste para</span><input type="email" name="mail_test_to" placeholder="<?= e((string) ($u['email'] ?? office('email'))) ?>"></label>
+  <?php $mails = all('SELECT * FROM mail_log ORDER BY id DESC LIMIT 5'); if ($mails): ?>
+    <p class="small"><strong>Últimos envios:</strong></p>
+    <ul class="small"><?php foreach ($mails as $m): ?><li><?= e(fmt_datetime($m['created_at'])) ?> · <?= e($m['to_addr']) ?> · <?= $m['ok'] ? 'enviado' : 'falhou: ' . e(mb_strimwidth((string) $m['error'], 0, 120, '…')) ?></li><?php endforeach ?></ul>
+  <?php endif ?>
   <button class="b b-primary" type="submit">Salvar</button>
 </form>
 <div class="box narrow-box">

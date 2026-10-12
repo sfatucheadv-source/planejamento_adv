@@ -10,7 +10,7 @@ unset($_SESSION['bot_old']);
 $oldVal = fn(string $k) => $old && ($old['q'] ?? '') === ($q['key'] ?? '') ? (string) ($k === 'value' ? $old['value'] : ($old['post'][$k] ?? '')) : '';
 $completed = $st === 'completed';
 $openDocs = array_filter($docs, fn($d) => in_array($d['status'], DOC_OPEN, true));
-$areas = ['inicio' => 'Início', 'conversa' => 'Conversa', 'documentos' => 'Documentos', 'reuniao' => 'Reunião e proposta'];
+$areas = ['conversa' => 'Conversa', 'documentos' => 'Documentos', 'reuniao' => 'Reunião e proposta', 'inicio' => 'Situação'];
 $filesByDoc = [];
 foreach ($files as $f) {
     $filesByDoc[(int) $f['document_id']][] = $f;
@@ -47,22 +47,24 @@ $choiceButtons = function (array $q) {
     return $h;
 };
 ?>
-<section class="portal">
-  <div class="wrap">
-    <header class="portal-head">
-      <div>
-        <p class="kicker">Atendimento inicial · protocolo <?= e($c['protocol']) ?></p>
-        <h1>Olá, <?= e(first_name($c['client_name'])) ?></h1>
+<section class="app-pane">
+    <header class="app-bar">
+      <a class="app-back" href="<?= e(url('cliente/conversas')) ?>" aria-label="Voltar para os seus atendimentos"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></a>
+      <div class="app-bar-title">
+        <strong><?= e(client_case_title($c)) ?></strong>
+        <small>Protocolo <?= e($c['protocol']) ?> · <?= e($c['chat_mode'] === 'human' ? 'Sidney está na conversa' : initial_status_label($c, true)) ?></small>
       </div>
-      <?php if ($has_account): ?><a class="btn btn-ghost btn-small" href="<?= e(url('cliente/sair')) ?>">Sair</a><?php endif ?>
     </header>
 
-    <nav class="cv-tabs" aria-label="Áreas do atendimento">
+    <nav class="cv-tabs app-tabs" aria-label="Áreas do atendimento">
       <?php foreach ($areas as $k => $l): ?>
         <a href="<?= e(url('cliente', ['area' => $k])) ?>" class="<?= $area === $k ? 'on' : '' ?>"<?= $area === $k ? ' aria-current="page"' : '' ?>><?= e($l) ?><?php if ($k === 'documentos' && $openDocs && !$completed): ?> <span class="cv-badge"><?= count($openDocs) ?></span><?php endif ?></a>
       <?php endforeach ?>
     </nav>
 
+<?php if ($area !== 'conversa'): ?>
+    <div class="app-scroll"><div class="app-scroll-in">
+<?php endif ?>
 <?php if ($area === 'inicio'): ?>
     <div class="portal-grid">
       <div>
@@ -90,7 +92,7 @@ $choiceButtons = function (array $q) {
         <p class="muted small">“Concluído” encerra o atendimento inicial (análise, conversa e proposta). Não significa que a dívida foi resolvida: a atuação contratada, se houver, continua depois.</p>
       </div>
       <aside>
-        <?php if (!$has_account): ?>
+        <?php if (!$has_password): ?>
           <section class="panel" id="senha">
             <h2>Guarde seu acesso</h2>
             <p class="muted">Crie uma senha para voltar de qualquer aparelho. Seu protocolo é <strong><?= e($c['protocol']) ?></strong>.</p>
@@ -102,20 +104,18 @@ $choiceButtons = function (array $q) {
             </form>
           </section>
         <?php endif ?>
-        <?php if ($others): ?>
-          <section class="panel"><h2>Seus outros atendimentos</h2><ul><?php foreach ($others as $o): ?><li><a href="<?= e(url('cliente/trocar/' . $o['id'])) ?>"><?= e($o['protocol']) ?></a></li><?php endforeach ?></ul></section>
-        <?php endif ?>
         <section class="panel"><h2>Segurança</h2><p class="muted">Sidney só usa o WhatsApp <?= e(office('phone_display')) ?> e o e-mail <?= e(office('email')) ?>. Nunca pedimos senha do banco ou do Gov.br.</p></section>
       </aside>
     </div>
 
 <?php elseif ($area === 'conversa'): ?>
-    <section class="panel cv-panel" aria-labelledby="h-cv">
+    <section class="app-chat" aria-labelledby="h-cv">
       <h2 id="h-cv" class="sr">Conversa</h2>
-      <p class="muted small">Assistente virtual e Sidney aparecem identificados. <?= $c['chat_mode'] === 'human' ? 'Agora é Sidney quem está conversando com você.' : 'O assistente organiza; Sidney confere tudo.' ?></p>
       <div class="cv-log" data-chat-log data-poll="<?= e(url('cliente/conversa/novas')) ?>" data-last="<?= $chat ? (int) end($chat)['id'] : 0 ?>" aria-live="polite">
+        <p class="cv-day-note">Assistente virtual e Sidney aparecem identificados. <?= $c['chat_mode'] === 'human' ? 'Agora é Sidney quem está conversando com você.' : 'O assistente organiza; Sidney confere tudo.' ?></p>
         <?php partial('chat_msgs', ['msgs' => $chat, 'operator' => false, 'c' => $c]) ?>
       </div>
+      <div class="app-compose<?= agent_active($c) ? ' app-compose--ai' : '' ?>">
 
       <?php if (agent_active($c)): $docOpts = array_filter($docs, fn($d) => $d['status'] !== 'dispensado'); ?>
         <div data-agent-bar><?php partial('cv_agent_bar', ['c' => $c]) ?></div>
@@ -238,6 +238,7 @@ $choiceButtons = function (array $q) {
           <form method="post" action="<?= e(url('cliente/conversa/modo')) ?>" class="cv-modo"><?= csrf_field() ?><button class="link-btn" type="submit" name="modo" value="ia">Voltar a conversar livremente com o assistente</button></form>
         <?php endif ?>
       <?php endif ?>
+      </div>
     </section>
 
 <?php elseif ($area === 'documentos'): ?>
@@ -313,5 +314,7 @@ $choiceButtons = function (array $q) {
       </aside>
     </div>
 <?php endif ?>
-  </div>
+<?php if ($area !== 'conversa'): ?>
+    </div></div>
+<?php endif ?>
 </section>

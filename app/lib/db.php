@@ -565,6 +565,35 @@ CREATE INDEX idx_asaas_case ON asaas_charges(case_id);
 CREATE INDEX idx_asaas_id ON asaas_charges(asaas_id);
 SQL;
 
+    // Versão 8 — conversas do cliente: o que ele já viu, avisos por e-mail e link de acesso.
+    $migrations[8] = <<<SQL
+ALTER TABLE cases ADD COLUMN client_seen_msg_id INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE cases ADD COLUMN client_seen_at TEXT;
+ALTER TABLE cases ADD COLUMN client_notified_at TEXT;
+ALTER TABLE client_accounts ADD COLUMN notify_email INTEGER NOT NULL DEFAULT 1;
+CREATE TABLE client_access_links (
+    id INTEGER PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES client_accounts(id) ON DELETE CASCADE,
+    case_id INTEGER REFERENCES cases(id) ON DELETE CASCADE,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    used_at TEXT
+);
+CREATE TABLE mail_log (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER REFERENCES cases(id) ON DELETE SET NULL,
+    to_addr TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    ok INTEGER NOT NULL,
+    error TEXT,
+    created_at TEXT NOT NULL
+);
+UPDATE cases SET client_seen_msg_id = COALESCE((SELECT MAX(id) FROM chat_messages m WHERE m.case_id = cases.id), 0);
+UPDATE cases SET client_seen_at = updated_at;
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             $pdo->beginTransaction();

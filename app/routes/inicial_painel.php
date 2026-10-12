@@ -867,6 +867,34 @@ $router->post('/painel/configuracoes', function () {
             set_setting($k, rtrim(rtrim(number_format($v, 2, '.', ''), '0'), '.'));
         }
     }
+    // E-mails de aviso: a senha SMTP só é trocada quando digitada e nunca volta para a tela.
+    if (isset(MAIL_DRIVERS[(string) input('mail_driver')])) {
+        set_setting('mail_driver', (string) input('mail_driver'));
+    }
+    foreach (['mail_from' => FILTER_VALIDATE_EMAIL, 'smtp_user' => null] as $k => $filter) {
+        $v = trim((string) input($k));
+        if ($v === '' || !$filter || filter_var($v, $filter)) {
+            set_setting($k, $v === '' ? null : mb_substr($v, 0, 160));
+        }
+    }
+    set_setting('mail_from_name', trim(mb_substr(str_replace(["\r", "\n"], '', (string) input('mail_from_name')), 0, 80)) ?: null);
+    $host = trim((string) input('smtp_host'));
+    set_setting('smtp_host', $host !== '' && preg_match('/^[a-z0-9.-]+$/i', $host) ? $host : null);
+    $port = (int) input('smtp_port');
+    set_setting('smtp_port', in_array($port, [25, 465, 587, 2525], true) ? (string) $port : null);
+    $spass = (string) ($_POST['smtp_pass'] ?? '');
+    if ($spass !== '') {
+        set_setting('smtp_pass', $spass);
+        audit('smtp_senha_alterada');
+    }
+    $delay = (int) input('notify_delay_min');
+    set_setting('notify_delay_min', $delay >= 1 && $delay <= 240 ? (string) $delay : null);
+    if (($to = trim((string) input('mail_test_to'))) !== '') {
+        setting('__reset');
+        $lines = ['Este é um teste dos avisos aos clientes.', 'Se chegou, os clientes vão receber os avisos de novidade nas conversas.'];
+        [$okM, $errM] = send_mail($to, 'Teste de e-mail · ' . office('brand'), implode("\n\n", $lines), mail_html('Teste de e-mail', $lines), null, 'teste');
+        flash($okM ? 'ok' : 'error', $okM ? 'E-mail de teste enviado para ' . $to . '. Confira a caixa de entrada e o spam.' : 'O e-mail de teste falhou: ' . $errM);
+    }
     if (input('asaas_test') === '1') {
         setting('__reset');
         [$okA, $msgA] = asaas_test();

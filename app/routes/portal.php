@@ -7,9 +7,8 @@ $router->get('/cliente', function () {
     $c = portal_case();
     if (!$c) {
         $acc = portal_account_id();
-        if ($acc && ($list = account_cases($acc))) {
-            $_SESSION['portal_case'] = (int) $list[0]['id'];
-            redirect('cliente');
+        if ($acc && account_cases($acc)) {
+            redirect('cliente/conversas');
         }
         redirect($acc ? 'cliente/sem-acesso' : 'cliente/entrar');
     }
@@ -17,6 +16,7 @@ $router->get('/cliente', function () {
         portal_initial_view($c);
     }
     $id = (int) $c['id'];
+    mark_case_seen($id);
     view('portal/painel', [
         'meta_title' => 'Seu caso · Área do cliente',
         'noindex' => true,
@@ -28,8 +28,9 @@ $router->get('/cliente', function () {
         'events' => all('SELECT * FROM events WHERE case_id = ? AND visible_to_client = 1 ORDER BY at DESC, id DESC LIMIT 30', [$id]),
         'schedule' => all("SELECT * FROM schedule WHERE case_id = ? ORDER BY due_date", [$id]),
         'feedback' => one("SELECT * FROM feedback WHERE case_id = ? AND kind = 'encerramento'", [$id]),
-        'others' => portal_account_id() ? array_filter(account_cases(portal_account_id()), fn($o) => (int) $o['id'] !== $id) : [],
-    ]);
+        'convs' => client_conversations($c),
+        'has_password' => portal_has_password(),
+    ], 'portal');
 });
 
 $router->get('/cliente/entrar', function () {

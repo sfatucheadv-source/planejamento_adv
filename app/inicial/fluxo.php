@@ -15,7 +15,8 @@ function create_initial_case(array $a, string $source = 'site', ?int $accountId 
     $dup = null;
     $digits = only_digits((string) $a['telefone']);
     if ($digits !== '') {
-        $dup = scalar("SELECT id FROM cases WHERE workflow_version = 'simple_v1' AND client_phone = ? AND initial_status <> 'completed' AND execution_started_at IS NULL ORDER BY id DESC LIMIT 1", [$digits]);
+        // Outro atendimento da mesma conta é um assunto novo da pessoa, não duplicidade.
+        $dup = scalar("SELECT id FROM cases WHERE workflow_version = 'simple_v1' AND client_phone = ? AND initial_status <> 'completed' AND execution_started_at IS NULL AND (? IS NULL OR account_id IS NULL OR account_id <> ?) ORDER BY id DESC LIMIT 1", [$digits, $accountId, $accountId]);
     }
     db()->beginTransaction();
     $id = insert('cases', [

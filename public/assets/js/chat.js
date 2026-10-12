@@ -15,6 +15,7 @@
       fetch(url + (url.indexOf('?') < 0 ? '?' : '&') + 'depois=' + encodeURIComponent(last), { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
         .then(function (r) { return r.ok ? r.json() : null; })
         .then(function (d) {
+          if (d && d.badges && window.convBadges) { window.convBadges(d.badges); }
           if (!d || !d.html || String(d.last) === last) { return; }
           // Evita duplicar mensagens já exibidas (retentativa ou duas abas).
           var tmp = document.createElement('div');
@@ -284,4 +285,45 @@
     for (var j = 0; j < pcm.length; j++) { dv.setInt16(44 + j * 2, pcm[j], true); }
     return new Blob([dv], { type: 'audio/wav' });
   }
+})();
+
+/* Lista de atendimentos: marcação de novidades atualizada sem recarregar,
+   contador no título da aba e avisos que podem ser fechados. */
+(function () {
+  'use strict';
+  var app = document.querySelector('[data-app]');
+  var list = document.querySelector('[data-conv-list]');
+  document.querySelectorAll('[data-flash-close]').forEach(function (b) {
+    b.addEventListener('click', function () { b.parentNode.remove(); });
+  });
+  var flashes = document.querySelector('[data-flashes]');
+  if (flashes && !flashes.querySelector('.flash-error')) { setTimeout(function () { flashes.remove(); }, 6000); }
+  if (!app || !list) { return; }
+  var base = app.getAttribute('data-title') || document.title;
+  window.convBadges = function (badges) {
+    var total = 0;
+    Object.keys(badges).forEach(function (id) {
+      var n = parseInt(badges[id], 10) || 0;
+      var item = list.querySelector('[data-conv="' + id + '"]');
+      if (!item) { return; }
+      if (item.classList.contains('is-on')) { n = 0; }
+      total += n;
+      var b = item.querySelector('[data-badge]');
+      item.classList.toggle('has-new', n > 0);
+      if (b) { b.textContent = String(n); b.hidden = n < 1; }
+    });
+    document.title = (total ? '(' + total + ') ' : '') + base;
+  };
+  // Sem conversa aberta (lista no celular), a lista consulta sozinha.
+  if (document.querySelector('[data-chat-log]') || !window.fetch) { return; }
+  var url = list.getAttribute('data-poll');
+  var tick = function () {
+    if (document.hidden) { return; }
+    fetch(url, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d && d.badges) { window.convBadges(d.badges); } })
+      .catch(function () {});
+  };
+  setInterval(tick, 15000);
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); } });
 })();

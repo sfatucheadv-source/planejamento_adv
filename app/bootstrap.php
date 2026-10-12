@@ -32,6 +32,7 @@ require APP_DIR . '/inicial/fluxo.php';
 require APP_DIR . '/inicial/bot.php';
 require APP_DIR . '/inicial/ia.php';
 require APP_DIR . '/inicial/agente.php';
+require APP_DIR . '/inicial/conversas.php';
 require APP_DIR . '/inicial/kit.php';
 require APP_DIR . '/inicial/diagramacao.php';
 require APP_DIR . '/inicial/migracao.php';

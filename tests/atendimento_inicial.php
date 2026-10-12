@@ -458,7 +458,7 @@ $at = now()->modify('-71 hours')->modify('-59 minutes');
 op($sid, $id2, ['op' => 'comunicar_encerramento', 'channel' => 'WhatsApp', 'at' => $at->format('Y-m-d\TH:i')]);
 $c2 = c($id2);
 ok($c2['closure_communicated_at'] === $at->format('Y-m-d H:i:00') && $c2['access_expires_at'] === dt($at->format('Y-m-d H:i:00'))->modify('+72 hours')->format('Y-m-d H:i:s'), 'S03: carência de 72 horas conta da comunicação registrada');
-$cli2->get('/cliente');
+$cli2->get('/cliente?area=inicio');
 ok($cli2->status === 200 && str_contains($cli2->html, 'Disponível até'), 'S04: um instante antes da expiração o acesso vale, com o prazo visível');
 q('UPDATE cases SET access_expires_at = ? WHERE id = ?', [now_str(), $id2]);
 $cli2->get('/cliente');

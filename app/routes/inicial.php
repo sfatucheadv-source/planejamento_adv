@@ -15,18 +15,12 @@ function intake_start_page(array $errors = [], array $old = []): never
 {
     $c = portal_case();
     if ($c && is_initial($c) && $c['initial_status'] !== 'completed') {
-        redirect('cliente?area=conversa#pergunta');
+        redirect('cliente?area=conversa');
     }
     $acc = portal_account_id();
     if ($acc) {
-        $active = array_filter(account_cases($acc), fn($x) => is_initial($x) && $x['initial_status'] !== 'completed');
-        if ($active) {
-            $_SESSION['portal_case'] = (int) reset($active)['id'];
-            redirect('cliente?area=conversa#pergunta');
-        }
-        if (all('SELECT id FROM cases WHERE account_id = ?', [$acc])) {
-            redirect('cliente/sem-acesso');
-        }
+        // Quem já é cliente continua pelas conversas; de lá abre um novo atendimento.
+        redirect(account_cases($acc) ? 'cliente/conversas' : 'cliente/sem-acesso');
     }
     $_SESSION['triage_started'] = time();
     $_SESSION['intake_form_key'] ??= bin2hex(random_bytes(12));
@@ -53,7 +47,7 @@ function intake_start_post(): never
     // Mesmo envio repetido (ou sessão já com atendimento ativo) não cria outro caso.
     $existing = portal_case();
     if ($existing && is_initial($existing) && $existing['initial_status'] !== 'completed') {
-        redirect('cliente?area=conversa#pergunta');
+        redirect('cliente?area=conversa');
     }
     $errors = [];
     $a['nome'] = preg_replace('/\s+/u', ' ', $a['nome']);
@@ -82,37 +76,23 @@ function intake_start_post(): never
     }
     $key = (string) input('form_key');
     if ($key !== '' && ($done = $_SESSION['intake_done_keys'][$key] ?? null)) {
-        $_SESSION['intake_case'] = $done;
-        redirect('cliente?area=conversa#pergunta');
+        $_SESSION['portal_case'] = $done;
+        redirect('cliente?area=conversa');
     }
     record_attempt('triage:' . client_ip());
     $acc = portal_account_id();
-    $c = create_initial_case($a, 'site', $acc);
-    $id = (int) $c['id'];
+    $id = start_client_case($a, $acc, '');
+    if (!$acc) {
+        // Toda pessoa ganha uma conta (sem senha, por enquanto): é ela que reúne
+        // os atendimentos como conversas e recebe os avisos por e-mail.
+        login_portal($id);
+    }
+    $_SESSION['portal_case'] = $id;
     if ($key !== '') {
         $_SESSION['intake_done_keys'][$key] = $id;
     }
     unset($_SESSION['intake_form_key']);
-    chat_post($id, 'bot', bot_greeting());
-    chat_post($id, 'client', 'Sou ' . $a['nome'] . '. Meu contato é ' . format_phone($digits) . ' e ' . mb_strtolower($a['email']) . '.');
-    set_field($id, 'nome_completo', $a['nome']);
-    if (isset(NOTICE_OPTIONS[$a['aviso']])) {
-        // Reaproveita a seleção feita na página inicial (B02).
-        set_field($id, 'aviso', $a['aviso']);
-        update_urgency_signal($id);
-    }
-    sync_intake_documents($id);
-    if (agent_enabled()) {
-        // A IA conduz: cumprimenta pelo nome e faz a primeira pergunta.
-        set_case_data($id, 'agent_started', now_str());
-        agent_turn(find_case($id), 'Início da conversa: a pessoa acabou de se identificar no site (nome completo, e-mail e telefone já registrados). Cumprimente pelo primeiro nome, diga em uma frase como funciona (ela pode escrever, mandar áudio, fotos ou PDFs) e faça a primeira pergunta.');
-    }
-    session_regenerate_id(true);
-    $_SESSION['intake_case'] = $id;
-    if ($acc) {
-        $_SESSION['portal_case'] = $id;
-    }
-    redirect('cliente?area=conversa#pergunta');
+    redirect('cliente?area=conversa');
 }
 
 /* ---------- Área do cliente: atendimento inicial ---------- */
@@ -121,9 +101,12 @@ function portal_initial_view(array $c, array $extra = []): never
 {
     $id = (int) $c['id'];
     agent_resume($c);
-    $area = (string) input('area', 'inicio');
+    $area = (string) input('area', 'conversa');
     if (!in_array($area, ['inicio', 'conversa', 'documentos', 'reuniao'], true)) {
-        $area = 'inicio';
+        $area = 'conversa';
+    }
+    if ($area === 'conversa') {
+        mark_case_seen($id);
     }
     $published = all("SELECT * FROM case_artifact_versions WHERE case_id = ? AND status = 'publicado' ORDER BY kind, version DESC", [$id]);
     $latestPub = [];
@@ -145,9 +128,10 @@ function portal_initial_view(array $c, array $extra = []): never
         'kitPub' => $latestPub,
         'fields' => case_fields($id),
         'has_account' => (bool) $c['account_id'] && portal_account_id(),
-        'others' => portal_account_id() ? array_values(array_filter(account_cases(portal_account_id()), fn($o) => (int) $o['id'] !== $id)) : [],
+        'has_password' => portal_has_password(),
+        'convs' => client_conversations($c),
         'form_key' => bin2hex(random_bytes(10)),
-    ]);
+    ], 'portal');
 }
 
 function portal_back(string $area, string $anchor = ''): never
@@ -294,6 +278,9 @@ $router->post('/cliente/conversa/modo', function () {
 function chat_ajax_payload(array $c, int $after): array
 {
     $msgs = all('SELECT * FROM chat_messages WHERE case_id = ? AND id > ? ORDER BY id', [$c['id'], $after]);
+    if ($msgs) {
+        mark_case_seen((int) $c['id'], (int) end($msgs)['id']);
+    }
     return [
         'ok' => true,
         'html' => render('partials/chat_msgs', ['msgs' => $msgs, 'operator' => false, 'c' => $c]),
@@ -311,27 +298,59 @@ $router->get('/cliente/conversa/novas', function () {
     }
     $after = (int) input('depois');
     $msgs = all('SELECT * FROM chat_messages WHERE case_id = ? AND id > ? ORDER BY id', [$c['id'], $after]);
+    if ($msgs && input('visivel') !== '0') {
+        mark_case_seen((int) $c['id'], (int) end($msgs)['id']);
+    }
+    $badges = [];
+    foreach (client_conversations($c) as $cv) {
+        $badges[$cv['id']] = $cv['current'] && input('visivel') !== '0' ? 0 : $cv['unread'];
+    }
     json_out([
         'html' => render('partials/chat_msgs', ['msgs' => $msgs, 'operator' => false, 'c' => $c]),
         'last' => $msgs ? (int) end($msgs)['id'] : $after,
         'mode' => $c['chat_mode'],
+        'badges' => $badges,
     ]);
 });
 
 $router->post('/cliente/criar-senha', function () {
-    $c = require_portal();
-    $pass = (string) ($_POST['password'] ?? '');
-    if ($c['account_id'] && portal_account_id()) {
-        redirect('cliente');
+    $acc = portal_account_id();
+    $c = portal_case();
+    $back = (string) input('volta') === 'conversas' ? 'cliente/conversas' : 'cliente?area=inicio';
+    if (!$acc && !$c) {
+        redirect('cliente/entrar');
     }
+    if (portal_has_password()) {
+        redirect($back);
+    }
+    $pass = (string) ($_POST['password'] ?? '');
     if (mb_strlen($pass) < 8 || $pass !== (string) ($_POST['password2'] ?? '')) {
         flash('error', 'Use pelo menos 8 caracteres e repita a mesma senha.');
-        portal_back('inicio', 'senha');
+        redirect($back);
     }
-    add_event((int) $c['id'], 'portal', 'Cliente criou a senha da área do cliente', null, false, 'cliente');
-    login_portal((int) $c['id'], password_hash($pass, PASSWORD_DEFAULT));
-    flash('ok', 'Senha criada. Para voltar, use o protocolo ' . $c['protocol'] . ' e esta senha.');
-    portal_back('inicio');
+    $hash = password_hash($pass, PASSWORD_DEFAULT);
+    if ($acc) {
+        q('UPDATE client_accounts SET pass_hash = ? WHERE id = ?', [$hash, $acc]);
+    } else {
+        login_portal((int) $c['id'], $hash);
+    }
+    if ($c) {
+        add_event((int) $c['id'], 'portal', 'Cliente criou a senha da área do cliente', null, false, 'cliente');
+    }
+    flash('ok', 'Senha criada. Para voltar, use o protocolo de qualquer atendimento' . ($c ? ' (este é ' . $c['protocol'] . ')' : '') . ' e esta senha.');
+    redirect($back);
+});
+
+/** Contadores de novidades da lista de conversas (consulta periódica). */
+$router->get('/cliente/conversas/novidades', function () {
+    if (!portal_account_id() && !portal_case()) {
+        json_out(['error' => 'acesso'], 403);
+    }
+    $badges = [];
+    foreach (client_conversations(portal_case()) as $cv) {
+        $badges[$cv['id']] = $cv['unread'];
+    }
+    json_out(['badges' => $badges]);
 });
 
 $router->get('/cliente/trocar/{id}', function (string $id) {
@@ -341,7 +360,91 @@ $router->get('/cliente/trocar/{id}', function (string $id) {
         forbidden();
     }
     $_SESSION['portal_case'] = (int) $c['id'];
-    redirect('cliente');
+    redirect('cliente?area=conversa');
+});
+
+/* ---------- Conversas: lista, novo atendimento, avisos e acesso por e-mail ---------- */
+
+/** Lista de atendimentos (no celular, a tela das conversas; no computador, a coluna da esquerda). */
+$router->get('/cliente/conversas', function () {
+    $acc = portal_account_id();
+    $c = portal_case();
+    if (!$acc && !$c) {
+        redirect('cliente/entrar');
+    }
+    if ($acc && !account_cases($acc)) {
+        redirect('cliente/sem-acesso');
+    }
+    view('portal/conversas', [
+        'meta_title' => 'Seus atendimentos · Área do cliente',
+        'noindex' => true,
+        'convs' => client_conversations($c),
+        'list_only' => true,
+        'has_password' => portal_has_password(),
+        'notify' => portal_notify_on(),
+    ], 'portal');
+});
+
+$router->post('/cliente/novo', function () {
+    $acc = portal_account_id();
+    if (!$acc) {
+        $c = portal_case();
+        if (!$c) {
+            redirect('cliente/entrar');
+        }
+        login_portal((int) $c['id']);
+        $acc = portal_account_id();
+    }
+    $r = open_client_case($acc);
+    if (is_string($r)) {
+        flash('error', $r);
+        redirect('cliente/conversas');
+    }
+    $_SESSION['portal_case'] = $r;
+    redirect('cliente?area=conversa');
+});
+
+$router->post('/cliente/avisos', function () {
+    $acc = portal_account_id() ?? redirect('cliente/entrar');
+    $on = input('avisos') === '1';
+    q('UPDATE client_accounts SET notify_email = ? WHERE id = ?', [$on ? 1 : 0, $acc]);
+    flash('ok', $on ? 'Pronto: avisamos por e-mail quando houver novidade.' : 'Avisos por e-mail desligados. As novidades continuam marcadas aqui.');
+    redirect('cliente/conversas');
+});
+
+/** Link recebido por e-mail: entra na conta e abre o atendimento. */
+$router->get('/cliente/acesso/{token}', function (string $token) {
+    $bucket = 'acesso:' . client_ip();
+    if (too_many_attempts($bucket, 12, 15)) {
+        flash('error', 'Muitas tentativas seguidas. Aguarde 15 minutos.');
+        redirect('cliente/entrar');
+    }
+    $r = client_access_consume($token);
+    if (!$r) {
+        record_attempt($bucket);
+        flash('error', 'Este link venceu ou não é válido. Peça um novo abaixo, com o seu e-mail.');
+        redirect('cliente/entrar');
+    }
+    [$acc, $caseId] = $r;
+    $c = $caseId ? one('SELECT * FROM cases WHERE id = ? AND account_id = ?', [$caseId, $acc]) : null;
+    login_account($acc, $c && !case_access_expired($c) ? (int) $c['id'] : null);
+    redirect(portal_case() ? 'cliente?area=conversa' : 'cliente/conversas');
+});
+
+$router->post('/cliente/link', function () {
+    $email = trim((string) input('email'));
+    $bucket = 'link:' . client_ip();
+    if (too_many_attempts($bucket, 5, 60)) {
+        flash('error', 'Muitos pedidos seguidos. Aguarde uma hora ou fale com Sidney pelo WhatsApp.');
+        redirect('cliente/entrar');
+    }
+    record_attempt($bucket);
+    if (filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        send_access_links($email);
+    }
+    // Mesma resposta exista ou não a conta: o formulário não revela quem é cliente.
+    flash('ok', 'Se este e-mail estiver em algum atendimento, enviamos agora um link de acesso. Confira também a caixa de spam.');
+    redirect('cliente/entrar');
 });
 
 /** Documento do kit publicado (texto selecionável, imprimível). */

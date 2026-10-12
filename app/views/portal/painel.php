@@ -10,16 +10,15 @@ $clientAlert = case_data($c, 'client_alert');
 $filesByDoc = [];
 foreach ($files as $f) { $filesByDoc[(int) $f['document_id']][] = $f; }
 ?>
-<section class="portal">
-  <div class="wrap">
-    <header class="portal-head">
-      <div>
-        <p class="kicker">Área do cliente · protocolo <?= e($c['protocol']) ?></p>
-        <h1>Olá, <?= e(first_name($c['client_name'])) ?></h1>
+<section class="app-pane">
+    <header class="app-bar">
+      <a class="app-back" href="<?= e(url('cliente/conversas')) ?>" aria-label="Voltar para os seus atendimentos"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M15 18l-6-6 6-6"/></svg></a>
+      <div class="app-bar-title">
+        <strong><?= e(client_case_title($c)) ?></strong>
+        <small>Protocolo <?= e($c['protocol']) ?> · <?= $closed ? 'Caso encerrado' : e(CLIENT_PHASES[$phaseKey]['label']) ?></small>
       </div>
-      <a class="btn btn-ghost btn-small" href="<?= e(url('cliente/sair')) ?>">Sair</a>
     </header>
-
+    <div class="app-scroll"><div class="app-scroll-in">
     <ol class="phase-track" aria-label="Situação do caso">
       <?php $i = 0; foreach (CLIENT_PHASES as $k => $ph): ?>
         <li class="<?= $i < $phaseIdx || $closed ? 'done' : ($i === $phaseIdx ? 'current' : '') ?>"<?= $i === $phaseIdx ? ' aria-current="step"' : '' ?>><?= e($ph['label']) ?></li>
@@ -166,5 +165,5 @@ foreach ($files as $f) { $filesByDoc[(int) $f['document_id']][] = $f; }
         <?php endif ?>
       </aside>
     </div>
-  </div>
+    </div></div>
 </section>

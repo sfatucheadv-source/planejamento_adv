@@ -37,6 +37,22 @@ require APP_DIR . '/routes/panel.php';
 require APP_DIR . '/routes/inicial.php';
 require APP_DIR . '/routes/inicial_painel.php';
 
+// Avisos por e-mail de novidades nas conversas: rodada leve ao fim da
+// requisição (no máximo uma por minuto), depois de entregar a resposta.
+register_shutdown_function(static function (): void {
+    try {
+        if (session_status() === PHP_SESSION_ACTIVE) {
+            session_write_close();
+        }
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
+        notify_tick();
+    } catch (Throwable $e) {
+        error_log('[fatuche] avisos: ' . $e->getMessage());
+    }
+});
+
 try {
     $router->dispatch($_SERVER['REQUEST_METHOD'] ?? 'GET', request_path());
 } catch (Throwable $e) {

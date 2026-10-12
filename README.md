@@ -85,6 +85,12 @@ Com ela ligada, o cliente conversa livremente e manda fotos e PDFs no próprio c
 
 O site prioriza o atendimento pelo chat: botão flutuante “Atendimento online” em todas as páginas e os botões principais levam ao chat. O atendimento começa com um formulário curto (nome completo, e-mail e telefone, mais o consentimento) e segue como um chat de atendimento: envio sem recarregar a página (Enter envia), indicação de “digitando”, respostas sugeridas pela IA como atalhos (o cliente continua livre para escrever), anexos de fotos e PDFs e **áudio** gravado no próprio navegador (WAV 16 kHz) ou anexado como arquivo. O áudio é transcrito pela IA e entra na conversa; sem transcrição, Sidney é avisado para ouvir o arquivo. Com a IA configurada, a conversa conduzida por ela vem ligada por padrão (desliga em *Assistente com IA*).
 
+### Conversas do cliente (vários atendimentos e avisos)
+
+A área do cliente funciona como um aplicativo de conversas: a tela é fixa (rolam só a lista e a conversa aberta), com a lista de atendimentos à esquerda e a conversa à direita; no celular, lista e conversa se alternam, como no WhatsApp. Quem preenche o formulário ganha uma conta (sem senha no início) que reúne os atendimentos. O botão **Novo atendimento** abre outra conversa para outro contrato, reaproveitando nome, e-mail e telefone; nada de um atendimento vai para o outro (limite de 3 em andamento por conta). Cada conversa mostra a marcação de novidades (mensagens de Sidney ou do assistente ainda não vistas; na fase contratada, também as movimentações), atualizada sem recarregar e repetida no título da aba.
+
+Quando uma novidade fica sem ser vista pelo tempo de espera (padrão 10 minutos), o cliente recebe um **e-mail** com o protocolo e um link de acesso válido por 7 dias, sem o conteúdo da conversa. Uma novidade gera um e-mail; a próxima, depois do aviso, gera outro. O cliente desliga os avisos e cria uma senha em “Avisos e acesso”; sem senha, pede o link na tela de entrada informando o e-mail. Envio configurado em *Configurações › E-mails de aviso ao cliente* (SMTP recomendado, por exemplo uma caixa do domínio em smtp.hostinger.com, porta 465; a senha fica só no servidor). Os avisos saem com as próprias visitas ao site; para garantir, agende no cron `php scripts/avisos.php` a cada 5 minutos. Código em `app/inicial/conversas.php`; teste `php tests/conversas.php`.
+
 ### Configuração e implantação
 
 1. Faça backup do banco (com WAL ativo, copie `fatuche.sqlite`, `-wal` e `-shm` juntos, com o site parado, ou use `sqlite3 fatuche.sqlite ".backup copia.sqlite"`).
@@ -147,6 +153,8 @@ php tests/assistente_ia.php         # assistente com IA (simulador local do Open
 php tests/variaveis.php             # variáveis dos documentos e campos do contrato
 php tests/documentos.php            # documentos no timbrado (.docx e HTML paginado)
 php tests/propostas.php             # propostas, parcelamento e cláusulas condicionais
+php tests/assistente_conversa.php   # conversa conduzida pela IA
+php tests/conversas.php             # conversas do cliente, novidades e avisos por e-mail
 ```
 
 ## Publicar na Hostinger
