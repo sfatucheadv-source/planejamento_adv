@@ -296,9 +296,9 @@ function doc_svg(string $file): string
  * 'noprint' (bloqueia imprimir e salvar até a assinatura), 'after' (HTML depois
  * das folhas, ex.: painel de assinatura) e 'scripts' (JS próprios do site).
  */
-function doc_page(string $title, array $blocks, array $actions, ?string $watermark = null, array $opts = []): string
+/** @font-face do Lora e do Poppins (woff2 do formatador). */
+function doc_font_faces(): string
 {
-    $f = fn(string $p) => e(asset('formatador/' . $p));
     $fonts = '';
     foreach ([['Lora', 'lora', 'normal', [400, 700]], ['Lora', 'lora', 'italic', [400, 700]], ['Poppins', 'poppins', 'normal', [400, 500, 600, 700]]] as [$fam, $file, $style, $weights]) {
         foreach ($weights as $w) {
@@ -309,6 +309,13 @@ function doc_page(string $title, array $blocks, array $actions, ?string $waterma
             }
         }
     }
+    return $fonts;
+}
+
+function doc_page(string $title, array $blocks, array $actions, ?string $watermark = null, array $opts = []): string
+{
+    $f = fn(string $p) => e(asset('formatador/' . $p));
+    $fonts = doc_font_faces();
     $cfg = ['folio' => true, 'marcaDagua' => $watermark];
     $bar = '';
     foreach ($actions as $label => $href) {

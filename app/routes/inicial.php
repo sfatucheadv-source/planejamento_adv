@@ -578,10 +578,10 @@ $router->post('/cliente/link', function () {
 });
 
 /**
- * Documento do kit publicado na área do cliente. Antes da assinatura: só
- * leitura (sem baixar, imprimir ou salvar), com "Assinar" e "Pedir
- * retificação". Depois: a via assinada, que pode ser impressa ou salva em PDF.
- * O .docx e a impressão da minuta ficam só no painel do escritório.
+ * Documento do kit publicado na área do cliente. Antes da assinatura: as folhas
+ * como vão sair no PDF, só para leitura (sem baixar, imprimir ou salvar), com
+ * "Assinar" e "Pedir retificação". Depois: a via assinada, com o PDF original
+ * para abrir ou baixar. O .docx e a impressão da minuta ficam no escritório.
  */
 $router->get('/cliente/documento-kit/{id}', function (string $id) {
     $c = require_portal();
@@ -589,16 +589,48 @@ $router->get('/cliente/documento-kit/{id}', function (string $id) {
     header('Cache-Control: private, no-store');
     $label = kit_label($v['kind']);
     if ($sig = sig_for_version((int) $v['id'])) {
-        echo sig_signed_page($c, $v, $sig, true, input('assinado') === '1');
+        if ($sig['pdf_sha256']) {
+            echo sig_view_page($c, $v, $sig, input('assinado') === '1');
+            exit;
+        }
+        // registro anterior à via em PDF: a via .html entregue na época, como foi guardada
+        $orig = sig_original($sig);
+        $orig ? print($orig[0]) : print('A via assinada não está disponível. Fale com Sidney pela conversa.');
         exit;
     }
     if (!in_array($v['kind'], SIGNABLE_KINDS, true)) {
         echo doc_page($label . ' · ' . $c['protocol'] . ' · v' . $v['version'], doc_blocks((string) $v['content']), ['Imprimir / PDF' => 'print']);
         exit;
     }
-    echo doc_page($label . ' · ' . $c['protocol'] . ' · v' . $v['version'], doc_blocks((string) $v['content']), [], null,
-        ['noprint' => true, 'after' => sig_client_panel($c, $v), 'scripts' => [asset('js/assinatura.js')]]);
+    echo sig_sign_page($c, $v);
     exit;
+});
+
+/** Via assinada original (os bytes guardados na assinatura). */
+function sig_send_original(array $sig, bool $download): never
+{
+    $orig = sig_original($sig);
+    if (!$orig) {
+        http_response_code(409);
+        header('Content-Type: text/plain; charset=utf-8');
+        echo 'A via original não confere com o registro e não foi entregue. O escritório foi avisado.';
+        exit;
+    }
+    [$bin, $type, $name] = $orig;
+    header('Content-Type: ' . $type);
+    header('Content-Length: ' . strlen($bin));
+    header('Content-Disposition: ' . ($download ? 'attachment' : 'inline') . '; filename="' . $name . '"');
+    header('X-Content-Type-Options: nosniff');
+    header('Cache-Control: private, no-transform');
+    echo $bin;
+    exit;
+}
+
+$router->get('/cliente/documento-kit/{id}/pdf', function (string $id) {
+    $c = require_portal();
+    $v = one("SELECT * FROM case_artifact_versions WHERE id = ? AND case_id = ? AND status = 'publicado'", [(int) $id, $c['id']]) ?? forbidden();
+    $sig = sig_for_version((int) $v['id']) ?? forbidden();
+    sig_send_original($sig, input('baixar') === '1');
 });
 
 function portal_kit_version(string $id): array
@@ -610,6 +642,16 @@ function portal_kit_version(string $id): array
     }
     return [$c, $v];
 }
+
+/** Passo 1 da assinatura: nome e CPF conferidos antes de posicionar o selo. */
+$router->post('/cliente/documento-kit/{id}/dados', function (string $id) {
+    [$c, $v] = portal_kit_version($id);
+    if (sig_for_version((int) $v['id'])) {
+        json_out(['ok' => false, 'erro' => 'Este documento já foi assinado.']);
+    }
+    [, , $err] = sig_check_identity($c, $_POST);
+    json_out(['ok' => !$err, 'erro' => $err]);
+});
 
 $router->post('/cliente/documento-kit/{id}/codigo', function (string $id) {
     [$c, $v] = portal_kit_version($id);
@@ -629,12 +671,51 @@ $router->post('/cliente/documento-kit/{id}/retificar', function (string $id) {
     json_out(['ok' => !$err, 'erro' => $err, 'msg' => $err ? null : 'Pedido enviado. Sidney vai revisar o documento e avisar você pela conversa.']);
 });
 
-/** Conferência pública da assinatura eletrônica pelo código da via assinada. */
+/** Registro de assinatura pelo código (o mesmo do selo, da faixa e do QR Code). */
+function sig_by_code(string $code): ?array
+{
+    return one('SELECT s.*, v.kind, v.version, v.content, c.protocol FROM doc_signatures s JOIN case_artifact_versions v ON v.id = s.version_id JOIN cases c ON c.id = s.case_id WHERE s.code = ?',
+        [strtoupper(substr(preg_replace('/[^A-Za-z0-9-]/', '', $code), 0, 20))]);
+}
+
+/**
+ * Conferência pública: abre direto o registro do código (vindo do selo, da
+ * faixa ou do QR Code), mostra o estado real e a via original, e confere uma
+ * cópia pelo hash calculado no navegador — o arquivo não sai do aparelho.
+ */
 $router->get('/verificar/{code}', function (string $code) {
-    $sig = one('SELECT s.*, v.kind, v.version, v.content, c.protocol FROM doc_signatures s JOIN case_artifact_versions v ON v.id = s.version_id JOIN cases c ON c.id = s.case_id WHERE s.code = ?',
-        [strtoupper(preg_replace('/[^A-Za-z0-9-]/', '', $code))]);
-    view('site/verificar', ['meta_title' => 'Conferir assinatura', 'noindex' => true, 'sig' => $sig,
-        'intact' => $sig ? hash_equals((string) $sig['doc_hash'], hash('sha256', (string) $sig['content'])) : false]);
+    $sig = sig_by_code($code);
+    $state = null;
+    if ($sig) {
+        [$chain, $log] = sig_log_check((string) $sig['code']);
+        $state = ['original' => sig_original($sig) !== null, 'cadeia' => $chain, 'log' => $log, 'texto' => hash_equals((string) $sig['doc_hash'], hash('sha256', (string) $sig['content']))];
+    }
+    header('Cache-Control: no-store');
+    view('site/verificar', ['meta_title' => 'Conferir assinatura', 'noindex' => true, 'sig' => $sig, 'state' => $state, 'code' => $code]);
+});
+
+/** Endereço curto do QR Code. */
+$router->get('/V/{code}', fn(string $code) => redirect('verificar/' . strtoupper(preg_replace('/[^A-Za-z0-9-]/', '', $code)), 302));
+
+$router->get('/verificar/{code}/original', function (string $code) {
+    $sig = sig_by_code($code) ?? not_found();
+    sig_send_original($sig, input('baixar') === '1');
+});
+
+/** Recebe só o hash (64 caracteres hexadecimais) e diz se é a via registrada. Nada é guardado. */
+$router->post('/verificar/{code}/conferir', function (string $code) {
+    $bucket = 'conferir:' . client_ip();
+    if (too_many_attempts($bucket, 60, 10)) {
+        json_out(['resultado' => 'erro', 'msg' => 'Muitas conferências seguidas. Aguarde alguns minutos.'], 429);
+    }
+    record_attempt($bucket);
+    $sig = sig_by_code($code);
+    $hash = strtolower(trim((string) input('hash')));
+    if (!$sig || !preg_match('/^[0-9a-f]{64}$/', $hash)) {
+        json_out(['resultado' => 'erro']);
+    }
+    $ref = (string) ($sig['pdf_sha256'] ?: $sig['file_hash']);
+    json_out(['resultado' => $ref !== '' && hash_equals($ref, $hash) ? 'identica' : 'diferente']);
 });
 
 /** .docx do documento, no timbrado do escritório. */

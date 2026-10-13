@@ -10,3 +10,4 @@ app/config.local.php
 .DS_Store
 storage/backup-*
 storage/mail/
+storage/assinados/

@@ -6,9 +6,15 @@ declare(strict_types=1);
  * digital: identificação pela conta da área do cliente, confirmação do nome e
  * do CPF, código de uso único enviado ao e-mail do cadastro, rubrica desenhada
  * na tela e o aceite expresso. Ficam registrados o IP, o navegador, a data e
- * hora do servidor, o fuso e, se o cliente permitir, a localização do aparelho,
- * além do hash SHA-256 do texto assinado. A via assinada leva uma folha com
- * todas essas evidências e um código para conferência pública (/verificar).
+ * hora do servidor com o fuso e, se o cliente permitir, a localização.
+ *
+ * A via assinada é um PDF com as páginas normais do documento (sem folha a
+ * mais): o selo — rubrica, nome, "Assinado eletronicamente", data e hora e o
+ * código — fica onde o cliente o arrastou, e a margem esquerda de todas as
+ * páginas leva a faixa de verificação com QR Code. Selo e faixa são links para
+ * /verificar/{código}. O PDF é gerado uma vez, guardado com o hash SHA-256 e
+ * entregue sempre com os mesmos bytes; o histórico de cada registro é
+ * encadeado e não aceita alteração (migração 20).
  *
  * Base: MP 2.200-2/2001, art. 10, § 2º (validade de outros meios de
  * comprovação de autoria e integridade aceitos pelas partes) e Código Civil,
@@ -145,9 +151,374 @@ function sig_geo_text(array $g): string
     };
 }
 
+/* ---------- Selo, faixa lateral e via em PDF ---------- */
+
+const SEAL_W = 64.0;          // selo: 64 × 22 mm
+const SEAL_H = 22.0;
+const SEAL_INK = ['x' => 2.0, 'y' => 2.0, 'w' => 22.0, 'h' => 18.0]; // área da rubrica dentro do selo
+const BAND_X = 7.0;           // faixa lateral: de 7 mm (fora da área que a impressora corta)…
+const BAND_MAX_W = 20.0;      // …até 27 mm, no máximo (o texto começa em 30 mm)
+const BAND_TOP = 22.0;        // o texto da faixa sobe até 22 mm do topo
+const BAND_QR = 20.0;         // QR Code de 20 mm, já com a margem de leitura (módulo de 0,54 mm)
+const BAND_QR_Y = 248.5;      // termina em 268,5 mm, acima do rodapé
+const BAND_SIZES = [8.5, 8.0, 7.5, 7.0];
+const SEAL_MIN_X = 27.5;      // o selo não cobre a faixa lateral
+
+/** Data e hora como aparecem no selo e na faixa. */
+function sig_when(DateTimeImmutable $t): array
+{
+    return [$t->format('d/m/Y \à\s H:i:s'), 'horário de Brasília, UTC' . $t->format('P')];
+}
+
+/** Dados impressos no selo e na faixa (os definitivos ficam guardados no registro). */
+function sig_meta(array $c, array $v, ?array $done = null): array
+{
+    return ['nome' => sig_expected_name($c), 'titulo' => kit_label($v['kind']), 'protocolo' => (string) $c['protocol'], 'versao' => (int) $v['version'],
+        'quando' => $done['quando'] ?? null, 'fuso' => $done['fuso'] ?? null, 'codigo' => $done['codigo'] ?? null, 'url' => $done['url'] ?? null,
+        'host' => preg_replace('#^https?://#', '', rtrim(public_root(), '/'))];
+}
+
+/** Rubrica: traços desenhados no quadro, {"w","h","s":[[[x,y],…],…]} em px do quadro. */
+function sig_strokes(mixed $raw): ?array
+{
+    $j = is_string($raw) ? json_decode($raw, true) : $raw;
+    if (!is_array($j) || !is_numeric($j['w'] ?? null) || !is_numeric($j['h'] ?? null) || !is_array($j['s'] ?? null) || count($j['s']) > 80) {
+        return null;
+    }
+    $out = [];
+    $total = 0;
+    [$minx, $miny, $maxx, $maxy] = [INF, INF, -INF, -INF];
+    foreach ($j['s'] as $st) {
+        if (!is_array($st)) {
+            return null;
+        }
+        $pts = [];
+        foreach ($st as $p) {
+            if (!is_array($p) || !is_numeric($p[0] ?? null) || !is_numeric($p[1] ?? null) || abs((float) $p[0]) > 5000 || abs((float) $p[1]) > 5000) {
+                return null;
+            }
+            $pts[] = [round((float) $p[0], 1), round((float) $p[1], 1)];
+            $minx = min($minx, $pts[count($pts) - 1][0]);
+            $maxx = max($maxx, $pts[count($pts) - 1][0]);
+            $miny = min($miny, $pts[count($pts) - 1][1]);
+            $maxy = max($maxy, $pts[count($pts) - 1][1]);
+        }
+        $total += count($pts);
+        if (count($pts) >= 2) {
+            $out[] = $pts;
+        }
+    }
+    if (!$out || $total > 8000 || max($maxx - $minx, $maxy - $miny) < 8) {
+        return null;
+    }
+    return ['w' => round((float) $j['w'], 1), 'h' => round((float) $j['h'], 1), 's' => $out];
+}
+
+/** Traços encaixados numa caixa, mantendo a proporção (a tela faz a mesma conta). */
+function sig_strokes_fit(array $strokes, array $box): array
+{
+    $all = array_merge(...$strokes['s']);
+    $xs = array_column($all, 0);
+    $ys = array_column($all, 1);
+    $bw = max(max($xs) - min($xs), 1.0);
+    $bh = max(max($ys) - min($ys), 1.0);
+    $sc = min(($box['w'] - 2) / $bw, ($box['h'] - 2) / $bh);
+    $ox = $box['x'] + ($box['w'] - $bw * $sc) / 2 - min($xs) * $sc;
+    $oy = $box['y'] + ($box['h'] - $bh * $sc) / 2 - min($ys) * $sc;
+    return array_map(fn($st) => ['poly', array_map(fn($p) => [$ox + $p[0] * $sc, $oy + $p[1] * $sc], $st), 0.45, PDOC_ACENTO], $strokes['s']);
+}
+
+/** Desloca operações de desenho. */
+function pdoc_move(array $ops, float $dx, float $dy): array
+{
+    foreach ($ops as &$op) {
+        switch ($op[0]) {
+            case 't':
+            case 'rt':
+                $op[1] += $dx;
+                $op[2] += $dy;
+                break;
+            case 'r':
+            case 'rr':
+            case 'link':
+            case 'qr':
+                $op[1] += $dx;
+                $op[2] += $dy;
+                break;
+            case 'img':
+                $op[2] += $dx;
+                $op[3] += $dy;
+                break;
+            case 'l':
+                $op[1] += $dx;
+                $op[2] += $dy;
+                $op[3] += $dx;
+                $op[4] += $dy;
+                break;
+            case 'poly':
+                $op[1] = array_map(fn($p) => [$p[0] + $dx, $p[1] + $dy], $op[1]);
+                break;
+        }
+    }
+    return $ops;
+}
+
+/** Texto de uma linha só, encolhido até caber na largura. [cp1252, pt, largura]. */
+function sig_fit_text(string $text, string $key, float $pt, float $max, float $min = 4.5): array
+{
+    $enc = pdoc_enc($text);
+    while ($pt > $min && pdoc_width($enc, $key, $pt) > $max) {
+        $pt -= 0.25;
+    }
+    return [$enc, $pt, pdoc_width($enc, $key, $pt)];
+}
+
 /**
- * Assina a versão publicada. $in: nome, cpf, codigo, aceite, rubrica (PNG),
- * geo_* e dados do aparelho. Retorna [assinatura, erro].
+ * Selo (em mm, a partir do canto do selo): rubrica, nome por extenso,
+ * "Assinado eletronicamente", data e hora com o fuso e o código. Sem os dados
+ * definitivos (prévia), mostra onde eles vão entrar.
+ */
+function sig_seal_ops(array $m, ?array $strokes): array
+{
+    $ops = [['rr', 0.0, 0.0, SEAL_W, SEAL_H, 2.0, PDOC_ACENTO, 0.35, 'FFFFFF'], ['l', 26.0, 3.0, 26.0, SEAL_H - 3.0, 0.2, PDOC_REGUA]];
+    if ($strokes) {
+        array_push($ops, ...sig_strokes_fit($strokes, SEAL_INK));
+    }
+    $x = 28.0;
+    $w = SEAL_W - $x - 2.0;
+    $lines = [];
+    $lines[] = [...sig_fit_text('ASSINADO ELETRONICAMENTE', 'poppinssb', 5.8, $w), 'poppinssb', PDOC_ACENTO];
+    // nome por extenso: até duas linhas, diminuindo o corpo se preciso
+    foreach ([7.5, 7.0, 6.5, 6.0] as $pt) {
+        $nl = pdoc_break(pdoc_items([[$m['nome'], pdoc_style(['f' => 'poppins', 'w' => 700, 's' => $pt])]]), $w, $w, pdoc_style(['f' => 'poppins', 's' => $pt]));
+        if (count($nl) <= 2) {
+            break;
+        }
+    }
+    foreach (array_slice($nl, 0, 2) as $l) {
+        $enc = implode(' ', array_map(fn($sg) => implode('', array_column($sg[1][1], 0)), $l['segs']));
+        $lines[] = [...sig_fit_text(pdoc_utf8($enc), 'poppinsb', $pt, $w), 'poppinsb', PDOC_TINTA];
+    }
+    $lines[] = [...sig_fit_text($m['quando'] ?? 'Data e hora: registradas ao concluir', 'poppins', 6.5, $w), 'poppins', $m['quando'] ? PDOC_TINTA : PDOC_SECUNDARIA];
+    $lines[] = [...sig_fit_text($m['fuso'] ?? 'pelo relógio do servidor, com o fuso', 'poppins', 5.5, $w), 'poppins', PDOC_SECUNDARIA];
+    $lines[] = [...sig_fit_text($m['codigo'] ? 'Código ' . $m['codigo'] : 'Código: gerado ao concluir', 'poppinssb', 6.2, $w), 'poppinssb', $m['codigo'] ? PDOC_ACENTO : PDOC_SECUNDARIA];
+    $lines[] = [...sig_fit_text('Confira: clique no selo ou leia o QR Code', 'poppins', 5.0, $w, 3.5), 'poppins', PDOC_SECUNDARIA];
+    $lh = fn(float $pt) => $pt * PDOC_PT * 1.32;
+    $total = array_sum(array_map(fn($l) => $lh($l[1]), $lines));
+    $y = (SEAL_H - $total) / 2;
+    foreach ($lines as [$enc, $pt, $tw, $key, $color]) {
+        $ops[] = ['t', $x, $y + $pt * PDOC_PT * 1.02, $key, $pt, $color, $enc, $tw, false];
+        $y += $lh($pt);
+    }
+    return $ops;
+}
+
+/**
+ * Faixa da margem esquerda (de baixo para cima): assinatura eletrônica,
+ * signatário, data e hora com o fuso, documento e versão, código, endereço de
+ * conferência e página. O corpo começa em 8,5 pt; a faixa cresce até 20 mm
+ * antes de a letra diminuir. QR Code embaixo; a faixa toda é um link.
+ */
+function sig_band_ops(array $m, int $page, int $total): array
+{
+    $done = (bool) $m['codigo'];
+    $parts = $done
+        ? [['Documento assinado eletronicamente', 600, PDOC_ACENTO], ['por ' . $m['nome'], 700, PDOC_TINTA], ['em ' . $m['quando'] . ' (' . $m['fuso'] . ')', 400, PDOC_TINTA],
+            [$m['titulo'] . ', versão ' . $m['versao'] . ' · atendimento ' . $m['protocolo'], 400, PDOC_TINTA], ['Código de verificação ' . $m['codigo'], 600, PDOC_TINTA],
+            ['Confira em ' . $m['url'], 400, PDOC_TINTA], ['Página ' . $page . ' de ' . $total, 400, PDOC_SECUNDARIA]]
+        : [['Prévia da assinatura eletrônica', 600, PDOC_ACENTO], ['por ' . $m['nome'], 700, PDOC_TINTA], ['data, hora e código de verificação registrados ao concluir', 400, PDOC_SECUNDARIA],
+            [$m['titulo'] . ', versão ' . $m['versao'] . ' · atendimento ' . $m['protocolo'], 400, PDOC_TINTA], ['Página ' . $page . ' de ' . $total, 400, PDOC_SECUNDARIA]];
+    $len = BAND_QR_Y - 3.0 - BAND_TOP;
+    foreach (BAND_SIZES as $pt) {
+        $runs = [];
+        foreach ($parts as $i => [$t, $wt, $color]) {
+            if ($i) {
+                $runs[] = [' · ', pdoc_style(['f' => 'poppins', 's' => $pt, 'c' => PDOC_SECUNDARIA])];
+            }
+            $runs[] = [$t, pdoc_style(['f' => 'poppins', 'w' => $wt, 's' => $pt, 'c' => $color])];
+        }
+        $lines = pdoc_break(pdoc_items($runs), $len, $len, pdoc_style(['f' => 'poppins', 's' => $pt]));
+        $lh = $pt * PDOC_PT * 1.4;
+        if (count($lines) * $lh <= BAND_MAX_W) {
+            break;
+        }
+    }
+    $ops = [];
+    $em = $pt * PDOC_PT;
+    foreach ($lines as $i => $l) {
+        $bx = BAND_X + $i * $lh + $em * 1.05;
+        $d = 0.0;
+        foreach ($l['segs'] as [$gap, $word]) {
+            $d += $gap;
+            foreach ($word[1] as [$enc, $s, $w, $key]) {
+                $ops[] = ['rt', $bx, BAND_QR_Y - 3.0 - $d, $key, $s['s'], $s['c'], $enc, $w];
+                $d += $w;
+            }
+        }
+    }
+    if ($done) {
+        $ops[] = ['qr', BAND_X, BAND_QR_Y, BAND_QR, pdoc_qr(sig_qr_text($m['url'], $m['codigo']))];
+        $ops[] = ['link', BAND_X - 0.5, BAND_TOP - 1.0, BAND_MAX_W + 1.0, BAND_QR_Y + BAND_QR - BAND_TOP + 1.0, $m['url']];
+    } else {
+        $ops[] = ['rr', BAND_X, BAND_QR_Y, BAND_QR, BAND_QR, 1.2, PDOC_REGUA, 0.3, 'F4F5F7'];
+        [$enc, $p2, $w2] = sig_fit_text('QR Code', 'poppins', 6.0, BAND_QR - 2);
+        $ops[] = ['t', BAND_X + (BAND_QR - $w2) / 2, BAND_QR_Y + BAND_QR / 2 + 0.8, 'poppins', $p2, PDOC_SECUNDARIA, $enc, $w2, false];
+    }
+    return $ops;
+}
+
+/**
+ * Conteúdo do QR Code: o mesmo registro por um endereço curto e em maiúsculas
+ * (HTTPS://HOST/V/CÓDIGO), que cabe no modo alfanumérico — menos módulos,
+ * módulos maiores, leitura mais fácil no papel. /V/{código} leva a /verificar.
+ */
+function sig_qr_text(string $url, string $code): string
+{
+    $u = parse_url($url);
+    $root = strtoupper(($u['scheme'] ?? 'https') . '://' . ($u['host'] ?? '') . (isset($u['port']) ? ':' . $u['port'] : ''));
+    $path = preg_replace('#/verificar/[^/]*$#', '', (string) ($u['path'] ?? ''));
+    return $root . $path . '/V/' . $code;
+}
+
+/** Diagramação do documento (cache por versão: o texto publicado não muda). */
+function sig_doc_layout(array $v): array
+{
+    static $cache = [];
+    return $cache[$v['id'] . ':' . sig_doc_hash($v)] ??= pdoc_chrome(pdoc_layout(doc_blocks((string) $v['content']), SEAL_H + 2.5));
+}
+
+/**
+ * Posição sugerida do selo: logo acima da linha de assinatura do cliente (ou da
+ * última), descendo sobre a linha se o texto de cima estiver perto.
+ */
+function sig_seal_default(array $c, array $v): array
+{
+    $L = sig_doc_layout($v);
+    $want = sig_norm_name(sig_expected_name($c));
+    $pick = null;
+    foreach ($L['sigs'] as $s) {
+        if ($want !== '' && str_contains(sig_norm_name($s[4]), $want)) {
+            $pick = $s;
+            break;
+        }
+    }
+    $pick ??= end($L['sigs']) ?: null;
+    if (!$pick) {
+        return sig_seal_clamp(['pagina' => count($L['pages']), 'x' => (PDOC_W - SEAL_W) / 2, 'y' => 200.0], count($L['pages']));
+    }
+    // Centro da linha; se o texto de cima atrapalhar, à esquerda ou à direita da mancha.
+    $best = null;
+    foreach ([($pick[1] + $pick[2]) / 2 - SEAL_W / 2, PDOC_LEFT, PDOC_LEFT + PDOC_TEXT_W - SEAL_W] as $x) {
+        $free = PDOC_TOP;
+        foreach ($L['pages'][$pick[0] - 1] as $op) {
+            if ($op[0] === 't' && $op[2] < $pick[3] - 0.5 && $op[2] + $op[4] * PDOC_PT * 0.3 > $free && $op[1] < $x + SEAL_W && $op[1] + $op[7] > $x) {
+                $free = $op[2] + $op[4] * PDOC_PT * 0.3;
+            }
+        }
+        $y = min(max($free + 1.0, $pick[3] - SEAL_H - 1.0), $pick[3] - SEAL_H + 1.0);
+        $over = max(0.0, $free + 1.0 - $y);
+        if (!$best || $over < $best[2] - 0.01) {
+            $best = [$x, $y, $over];
+        }
+    }
+    return sig_seal_clamp(['pagina' => $pick[0], 'x' => $best[0], 'y' => $best[1]], count($L['pages']));
+}
+
+function sig_seal_clamp(array $s, int $pages): array
+{
+    return ['pagina' => max(1, min($pages, (int) $s['pagina'])),
+        'x' => round(max(SEAL_MIN_X, min(PDOC_W - SEAL_W - 2.0, (float) $s['x'])), 2),
+        'y' => round(max(2.0, min(PDOC_H - SEAL_H - 2.0, (float) $s['y'])), 2)];
+}
+
+/** Páginas com a faixa em todas e o selo no lugar escolhido. Sem $strokes: a prévia (sem selo). */
+function sig_signed_layout(array $v, array $m, ?array $strokes, ?array $seal): array
+{
+    $L = sig_doc_layout($v);
+    $n = count($L['pages']);
+    foreach ($L['pages'] as $i => $ops) {
+        $L['pages'][$i] = array_merge($ops, sig_band_ops($m, $i + 1, $n));
+    }
+    if ($seal && $strokes) {
+        $p = $seal['pagina'] - 1;
+        $L['pages'][$p] = array_merge($L['pages'][$p], pdoc_move(sig_seal_ops($m, $strokes), $seal['x'], $seal['y']));
+        if ($m['url']) {
+            $L['pages'][$p][] = ['link', $seal['x'], $seal['y'], SEAL_W, SEAL_H, $m['url']];
+        }
+    }
+    return $L;
+}
+
+function sig_storage_dir(): string
+{
+    $dir = config('storage_dir') . '/assinados';
+    is_dir($dir) || mkdir($dir, 0700, true);
+    return $dir;
+}
+
+/* ---------- Histórico encadeado ---------- */
+
+function sig_log(string $code, string $event, array|string $detail = ''): void
+{
+    $detail = is_array($detail) ? json_encode($detail, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) : $detail;
+    $prev = (string) (scalar('SELECT hash FROM sig_log ORDER BY id DESC LIMIT 1') ?: str_repeat('0', 64));
+    $at = now_str();
+    insert('sig_log', ['code' => $code, 'event' => $event, 'detail' => $detail, 'at' => $at, 'prev_hash' => $prev, 'hash' => sig_log_hash($prev, $code, $event, $detail, $at)]);
+}
+
+/** Confere a corrente inteira. [íntegra?, entradas do código]. */
+function sig_log_check(string $code): array
+{
+    $prev = str_repeat('0', 64);
+    $ok = true;
+    $mine = [];
+    foreach (all('SELECT * FROM sig_log ORDER BY id') as $r) {
+        if ($r['prev_hash'] !== $prev || !hash_equals($r['hash'], sig_log_hash($prev, $r['code'], $r['event'], $r['detail'], $r['at']))) {
+            $ok = false;
+        }
+        $prev = $r['hash'];
+        if ($r['code'] === $code) {
+            $mine[] = $r;
+        }
+    }
+    return [$ok, $mine];
+}
+
+/**
+ * Bytes da via original, conferidos com o hash registrado antes de sair.
+ * [bytes, tipo, nome] ou null (arquivo ausente ou alterado: fica no histórico).
+ */
+function sig_original(array $sig): ?array
+{
+    $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$sig['version_id']]);
+    $c = one('SELECT protocol FROM cases WHERE id = ?', [$sig['case_id']]);
+    $base = doc_filename(kit_label((string) ($v['kind'] ?? 'documento')), (string) ($c['protocol'] ?? $sig['code']), (int) ($v['version'] ?? 0)) . '-assinado';
+    if ($sig['pdf_sha256']) {
+        $path = sig_storage_dir() . '/' . basename((string) $sig['pdf_path']);
+        $bin = is_file($path) ? (string) file_get_contents($path) : null;
+        $want = (string) $sig['pdf_sha256'];
+        [$type, $name] = ['application/pdf', $base . '.pdf'];
+    } else {
+        $f = $sig['file_id'] ? one('SELECT * FROM files WHERE id = ?', [$sig['file_id']]) : null;
+        $path = $f ? config('storage_dir') . '/uploads/' . $sig['case_id'] . '/' . $f['stored_name'] : '';
+        $bin = $path !== '' && is_file($path) ? (string) file_get_contents($path) : null;
+        $want = (string) $sig['file_hash'];
+        [$type, $name] = ['text/html; charset=UTF-8', $base . '.html'];
+    }
+    if ($bin === null || $want === '' || !hash_equals($want, hash('sha256', $bin))) {
+        $last = one("SELECT at FROM sig_log WHERE code = ? AND event = 'divergencia_arquivo' ORDER BY id DESC LIMIT 1", [$sig['code']]);
+        if (!$last || (dt($last['at'])?->getTimestamp() ?? 0) < time() - 3600) {
+            sig_log((string) $sig['code'], 'divergencia_arquivo', ['arquivo' => $bin === null ? 'ausente' : 'conteúdo diferente do registrado', 'hash_encontrado' => $bin === null ? null : hash('sha256', $bin)]);
+        }
+        return null;
+    }
+    return [$bin, $type, $name];
+}
+
+/**
+ * Assina a versão publicada. $in: nome, cpf, codigo, aceite, tracos (rubrica
+ * desenhada), rubrica (PNG do quadro, guardada como prova), selo (posição),
+ * geo_* e dados do aparelho. Gera e guarda a via em PDF. Retorna [assinatura, erro].
  */
 function sig_sign(array $c, array $v, array $in): array
 {
@@ -161,125 +532,122 @@ function sig_sign(array $c, array $v, array $in): array
     if (($in['aceite'] ?? '') !== '1') {
         return [null, 'Marque que leu e concorda com o documento.'];
     }
-    $nome = trim(preg_replace('/\s+/u', ' ', (string) ($in['nome'] ?? '')));
-    if (sig_norm_name($nome) !== sig_norm_name(sig_expected_name($c))) {
-        return [null, 'Digite o seu nome completo exatamente como está no documento: ' . sig_expected_name($c) . '.'];
+    [$nome, $cpf, $err] = sig_check_identity($c, $in);
+    if ($err) {
+        return [null, $err];
     }
-    $cpf = only_digits((string) ($in['cpf'] ?? ''));
-    $cpfFicha = only_digits((string) fv($id, 'cpf'));
-    if (!valid_cpf($cpf) || ($cpfFicha !== '' && $cpf !== $cpfFicha)) {
-        return [null, $cpfFicha !== '' ? 'O CPF não confere com o do cadastro.' : 'Informe um CPF válido.'];
-    }
-    $png = (string) ($in['rubrica'] ?? '');
-    if (!sig_image_ok($png)) {
+    $strokes = sig_strokes($in['tracos'] ?? null);
+    if (!$strokes) {
         return [null, 'Faça a sua rubrica no quadro de assinatura.'];
     }
+    $png = (string) ($in['rubrica'] ?? '');
+    $png = sig_image_ok($png) ? $png : null;
+    $L = sig_doc_layout($v);
+    $pages = count($L['pages']);
+    $posIn = is_string($in['selo'] ?? null) ? json_decode((string) $in['selo'], true) : null;
+    $seal = is_array($posIn) && is_numeric($posIn['pagina'] ?? null) && is_numeric($posIn['x'] ?? null) && is_numeric($posIn['y'] ?? null)
+        ? sig_seal_clamp($posIn, $pages) : sig_seal_default($c, $v);
     [$otp, $err] = sig_check_code($v, (string) ($in['codigo'] ?? ''));
     if (!$otp) {
         return [null, $err];
     }
-    if ($cpfFicha === '') {
+    if (only_digits((string) fv($id, 'cpf')) === '') {
         set_field($id, 'cpf', $cpf, 'informado', 'cliente');
     }
     $now = now();
     $utc = $now->setTimezone(new DateTimeZone('UTC'));
     $geo = sig_geo($in);
-    $code = strtoupper(implode('-', str_split(substr(bin2hex(random_bytes(6)), 0, 12), 4)));
+    do {
+        $code = strtoupper(implode('-', str_split(substr(bin2hex(random_bytes(6)), 0, 12), 4)));
+    } while (one('SELECT 1 FROM doc_signatures WHERE code = ?', [$code]) || one('SELECT 1 FROM sig_log WHERE code = ?', [$code]));
+    [$quando, $fuso] = sig_when($now);
+    $url = public_link('verificar/' . $code);
+    $m = sig_meta($c, $v, ['quando' => $quando, 'fuso' => $fuso, 'codigo' => $code, 'url' => $url]);
+    // A via definitiva: as páginas do documento, a faixa em todas e o selo onde o cliente pôs.
+    $pdf = pdoc_pdf(sig_signed_layout($v, $m, $strokes, $seal), ['titulo' => $m['titulo'] . ' · ' . $m['protocolo'] . ' · v' . $m['versao'] . ' · assinado',
+        'assunto' => 'Assinado eletronicamente por ' . $m['nome'] . ' em ' . $quando . ' (' . $fuso . ')', 'palavras' => 'verificação ' . $code . ' ' . $url, 'autor' => office('lawyer') ?: 'Sidney Fatuche']);
+    $sha = hash('sha256', $pdf);
+    $file = $code . '.pdf';
+    $path = sig_storage_dir() . '/' . $file;
+    if (file_exists($path) || file_put_contents($path . '.tmp', $pdf, LOCK_EX) !== strlen($pdf) || !rename($path . '.tmp', $path)) {
+        return [null, 'Não foi possível guardar a via assinada. Tente de novo.'];
+    }
+    @chmod($path, 0440);
     $ua = mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 400);
+    $view = is_array($posIn) ? array_intersect_key($posIn, array_flip(['largura_folha_px', 'zoom', 'dpr', 'orientacao', 'tela'])) : [];
     $evidence = [
-        'documento' => ['tipo' => $v['kind'], 'titulo' => kit_label($v['kind']), 'versao' => (int) $v['version'], 'publicado_em' => $v['published_at'], 'hash_sha256' => sig_doc_hash($v)],
+        'documento' => ['tipo' => $v['kind'], 'titulo' => kit_label($v['kind']), 'versao' => (int) $v['version'], 'publicado_em' => $v['published_at'], 'hash_sha256_texto' => sig_doc_hash($v),
+            'via_pdf' => ['hash_sha256' => $sha, 'bytes' => strlen($pdf), 'paginas' => $pages]],
         'assinante' => ['nome' => sig_expected_name($c), 'nome_digitado' => $nome, 'cpf' => $cpf, 'conta' => portal_account_id(), 'email' => $otp['to']],
+        'autenticacao' => ['meio' => 'conta da área do cliente (acesso por link enviado ao e-mail do cadastro)', 'conta' => portal_account_id(), 'sessao' => hash('sha256', session_id())],
         'email_confirmado' => ['para' => $otp['to'], 'codigo_enviado_em' => $otp['sent_at'], 'confirmado_em' => $now->format('Y-m-d H:i:s')],
-        'momento' => ['brasilia' => $now->format('Y-m-d H:i:s'), 'utc' => $utc->format('Y-m-d\TH:i:s\Z')],
+        'momento' => ['brasilia' => $now->format('Y-m-d H:i:s'), 'utc' => $utc->format('Y-m-d\TH:i:s\Z'), 'fuso' => $now->format('P')],
         'rede' => ['ip' => client_ip(), 'encaminhado_por' => mb_substr((string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''), 0, 200) ?: null],
         'aparelho' => ['navegador' => $ua, 'idioma' => mb_substr((string) ($_SERVER['HTTP_ACCEPT_LANGUAGE'] ?? ''), 0, 100),
             'fuso' => mb_substr((string) ($in['fuso'] ?? ''), 0, 60), 'tela' => mb_substr((string) ($in['tela'] ?? ''), 0, 40),
             'plataforma' => mb_substr((string) ($in['plataforma'] ?? ''), 0, 60)],
         'localizacao' => $geo,
-        'sessao' => hash('sha256', session_id()),
+        'selo' => $seal + ['largura_mm' => SEAL_W, 'altura_mm' => SEAL_H, 'folha_mm' => [PDOC_W, PDOC_H], 'rotacao_folha' => 0, 'visualizacao' => $view],
         'aceite' => SIGN_CONSENT,
     ];
     $sid = insert('doc_signatures', [
         'case_id' => $id, 'version_id' => $v['id'], 'code' => $code, 'signer_name' => sig_expected_name($c), 'signer_cpf' => $cpf, 'signer_email' => $otp['to'],
-        'doc_hash' => sig_doc_hash($v), 'ip' => client_ip(), 'user_agent' => $ua, 'geo' => json_encode($geo),
+        'doc_hash' => sig_doc_hash($v), 'file_hash' => $sha, 'ip' => client_ip(), 'user_agent' => $ua, 'geo' => json_encode($geo),
         'evidence' => json_encode($evidence, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'signature_image' => $png, 'signed_at' => $now->format('Y-m-d H:i:s'),
+        'pdf_path' => $file, 'pdf_sha256' => $sha, 'pdf_size' => strlen($pdf), 'pages' => $pages, 'verify_url' => $url,
+        'seal' => json_encode($seal + ['meta' => $m], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), 'strokes' => json_encode($strokes),
     ]);
-    $sig = one('SELECT * FROM doc_signatures WHERE id = ?', [$sid]);
-    // Via assinada (documento + folha de evidências), guardada nos arquivos do atendimento.
-    $html = sig_signed_page($c, $v, $sig, false);
+    sig_log($code, 'assinatura_registrada', ['versao_id' => (int) $v['id'], 'versao' => (int) $v['version'], 'hash_texto' => sig_doc_hash($v), 'hash_pdf' => $sha,
+        'bytes' => strlen($pdf), 'paginas' => $pages, 'assinante' => sig_expected_name($c), 'assinado_em' => $now->format('Y-m-d H:i:s') . ' (' . $now->format('P') . ')', 'selo' => $seal]);
+    // Cópia idêntica (mesmos bytes) nos arquivos do atendimento, que também vai para o Drive.
     $dir = config('storage_dir') . '/uploads/' . $id;
     is_dir($dir) || mkdir($dir, 0700, true);
-    $stored = bin2hex(random_bytes(16)) . '.html';
-    file_put_contents($dir . '/' . $stored, $html);
-    $name = doc_filename(kit_label($v['kind']), (string) $c['protocol'], (int) $v['version']) . ' - assinado.html';
-    $fid = insert('files', ['case_id' => $id, 'original_name' => $name, 'stored_name' => $stored, 'mime' => 'text/html', 'size' => strlen($html),
-        'uploaded_by_client' => 1, 'uploaded_at' => now_str(), 'kind' => 'assinado', 'internal' => 0]);
-    q('UPDATE doc_signatures SET file_id = ?, file_hash = ? WHERE id = ?', [$fid, hash('sha256', $html), $sid]);
+    $stored = bin2hex(random_bytes(16)) . '.pdf';
+    file_put_contents($dir . '/' . $stored, $pdf);
+    $fid = insert('files', ['case_id' => $id, 'original_name' => doc_filename(kit_label($v['kind']), (string) $c['protocol'], (int) $v['version']) . '-assinado.pdf', 'stored_name' => $stored,
+        'mime' => 'application/pdf', 'size' => strlen($pdf), 'uploaded_by_client' => 1, 'uploaded_at' => now_str(), 'kind' => 'assinado', 'internal' => 0]);
+    q('UPDATE doc_signatures SET file_id = ? WHERE id = ?', [$fid, $sid]);
     q('UPDATE case_artifact_versions SET signed_file_id = ? WHERE id = ?', [$fid, $v['id']]);
     add_event($id, 'assinatura', 'Cliente assinou eletronicamente: ' . kit_label($v['kind']) . ' v' . $v['version'],
-        'Código ' . $code . ' · IP ' . client_ip() . ' · localização: ' . sig_geo_text($geo) . '. Confira e registre a contratação.', true, 'cliente');
+        'Código ' . $code . ' · IP ' . client_ip() . ' · localização: ' . sig_geo_text($geo) . ' · selo na página ' . $seal['pagina'] . '. Confira e registre a contratação.', true, 'cliente');
     set_next($id, 'Conferir a assinatura eletrônica (' . kit_label($v['kind']) . ') e registrar a contratação', in_business_days(1));
     $sig = one('SELECT * FROM doc_signatures WHERE id = ?', [$sid]);
-    sig_mail_copy($c, $v, $sig, $html);
+    sig_mail_copy($c, $v, $sig, $pdf);
     case_sync_later($id, false);
     return [$sig, null];
 }
 
-/** Folha de evidências, em marcação de documento. */
-function sig_certificate_markup(array $c, array $v, array $sig): string
+/** Nome e CPF conferidos com o documento e o cadastro. [nome, cpf, erro]. */
+function sig_check_identity(array $c, array $in): array
 {
-    $ev = json_decode((string) $sig['evidence'], true) ?: [];
-    $s = dt($sig['signed_at']);
-    $rows = [
-        'Documento' => kit_label($v['kind']) . ' · versão ' . $v['version'] . ' · atendimento ' . $c['protocol'],
-        'Código de verificação' => $sig['code'],
-        'Conferência' => public_link('verificar/' . $sig['code']),
-        'Hash SHA-256 do texto assinado' => $sig['doc_hash'],
-        'Assinante' => $sig['signer_name'],
-        'CPF' => sig_fmt_cpf((string) $sig['signer_cpf']),
-        'E-mail confirmado' => sig_mask_email((string) $sig['signer_email']) . ' (código enviado em ' . fmt_datetime((string) ($ev['email_confirmado']['codigo_enviado_em'] ?? '')) . ' e confirmado na assinatura)',
-        'Data e hora' => $s->format('d/m/Y \à\s H:i:s') . ' (Brasília) · ' . ($ev['momento']['utc'] ?? ''),
-        'IP' => $sig['ip'],
-        'Navegador' => $ev['aparelho']['navegador'] ?? '',
-        'Fuso e tela do aparelho' => trim(($ev['aparelho']['fuso'] ?? '') . ' · ' . ($ev['aparelho']['tela'] ?? ''), ' ·'),
-        'Localização' => sig_geo_text($ev['localizacao'] ?? []),
-    ];
-    $dados = '';
-    foreach ($rows as $k => $val) {
-        $dados .= $k . ': ' . sig_plain((string) $val) . "\n";
+    $nome = trim(preg_replace('/\s+/u', ' ', (string) ($in['nome'] ?? '')));
+    if (sig_norm_name($nome) !== sig_norm_name(sig_expected_name($c))) {
+        return [$nome, '', 'Digite o seu nome completo exatamente como está no documento: ' . sig_expected_name($c) . '.'];
     }
-    return "@quebra\n## Registro de assinatura eletrônica\n\n@dados\n" . trim($dados)
-        . "\n\n@observacao Aceite registrado: “" . SIGN_CONSENT . "”"
-        . "\n\nA autoria foi confirmada pela conta do assinante na área do cliente, pelo nome e CPF digitados e pelo código de uso único enviado ao e-mail do cadastro. A integridade do texto pode ser conferida pelo hash acima e pelo código de verificação no endereço indicado. Rubrica desenhada pelo assinante:";
+    $cpf = only_digits((string) ($in['cpf'] ?? ''));
+    $cpfFicha = only_digits((string) fv((int) $c['id'], 'cpf'));
+    if (!valid_cpf($cpf) || ($cpfFicha !== '' && $cpf !== $cpfFicha)) {
+        return [$nome, $cpf, $cpfFicha !== '' ? 'O CPF não confere com o do cadastro.' : 'Informe um CPF válido.'];
+    }
+    return [$nome, $cpf, null];
 }
 
-/** Página da via assinada: documento, folha de evidências e rubrica. */
-function sig_signed_page(array $c, array $v, array $sig, bool $withPrint, bool $justSigned = false): string
-{
-    $blocks = doc_blocks((string) $v['content'] . "\n\n" . sig_certificate_markup($c, $v, $sig));
-    $img = '<p class="doc-centro assin-rubrica"><img src="' . e((string) $sig['signature_image']) . '" alt="Rubrica de ' . e($sig['signer_name']) . '"></p>'
-        . '<p class="doc-centro assin-rubrica__nome">' . e($sig['signer_name']) . ' · ' . e(fmt_datetime((string) $sig['signed_at'])) . ' · ' . e($sig['code']) . '</p>';
-    return doc_page(kit_label($v['kind']) . ' · ' . $c['protocol'] . ' · v' . $v['version'] . ' · assinado', $blocks,
-        ['Imprimir / salvar em PDF' => 'print'], null, ['append' => $img, 'base' => $withPrint ? null : rtrim(public_root(), '/') . '/',
-            'after' => $justSigned ? '<div class="assin-feito"><span><strong>Documento assinado.</strong> Uma cópia foi para o seu e-mail. Salve a sua via em PDF agora.</span><button class="assin-btn" type="button" data-imprimir>Salvar em PDF</button></div>' : '']);
-}
-
-/** Cópia da via assinada para o e-mail do cliente (anexo .html, que abre e imprime em PDF). */
-function sig_mail_copy(array $c, array $v, array $sig, string $html): void
+/** Cópia da via assinada (o mesmo PDF guardado) para o e-mail do cliente. */
+function sig_mail_copy(array $c, array $v, array $sig, string $pdf): void
 {
     $to = (string) $sig['signer_email'];
     $label = kit_label($v['kind']);
     $lines = ['Olá, ' . first_name((string) $c['client_name']) . '! Recebemos a sua assinatura eletrônica do documento “' . $label . '” (versão ' . $v['version'] . ').',
         'Assinado em ' . fmt_datetime((string) $sig['signed_at']) . ' (horário de Brasília). Código de verificação: ' . $sig['code'] . '.',
-        'A sua via assinada vai em anexo: abra o arquivo no navegador e use “Imprimir / salvar em PDF”. Ela também fica disponível na sua área do cliente.',
-        'Para conferir a autenticidade: ' . public_link('verificar/' . $sig['code'])];
+        'A sua via assinada vai em anexo, em PDF. Ela também fica disponível na sua área do cliente.',
+        'Para conferir a autenticidade, abra o endereço abaixo ou leia o QR Code impresso na margem do documento: ' . $sig['verify_url']];
     $href = $c['account_id'] ? client_access_link((int) $c['account_id'], (int) $c['id']) : public_link('cliente');
     [$ok, $err] = send_mail($to, 'Documento assinado: ' . $label . ' · ' . $c['protocol'], implode("\n\n", $lines) . "\n\nÁrea do cliente: " . $href,
         mail_html('Documento assinado', $lines, 'Abrir a área do cliente', $href), (int) $c['id'], 'assinatura',
-        [[doc_filename($label, (string) $c['protocol'], (int) $v['version']) . ' - assinado.html', 'text/html; charset=UTF-8', $html]]);
+        [[doc_filename($label, (string) $c['protocol'], (int) $v['version']) . '-assinado.pdf', 'application/pdf', $pdf]]);
     add_event((int) $c['id'], 'assinatura', $ok ? 'Via assinada enviada ao cliente por e-mail' : 'A via assinada não foi enviada por e-mail', $ok ? sig_mask_email($to) : $err);
+    sig_log((string) $sig['code'], $ok ? 'via_enviada_email' : 'via_nao_enviada_email', ['para' => sig_mask_email($to), 'hash_anexo' => hash('sha256', $pdf)] + ($ok ? [] : ['erro' => $err]));
 }
-
 /* ---------- Retificação pedida pelo cliente ---------- */
 
 function rect_open(int $caseId): array
@@ -339,7 +707,64 @@ const RECT_AVALIACAO = ['procedente' => 'Procede', 'parcial' => 'Procede em part
 /** Tipos de documento que o cliente assina (o parecer é só para leitura). */
 const SIGNABLE_KINDS = ['honorarios', 'procuracao', 'hipossuficiencia'];
 
-/** Barra e janelas de assinatura e retificação na página do documento (área do cliente). */
+/** Folhas em SVG (a mesma diagramação do PDF). */
+function sig_sheets_html(array $L, bool $links = false): string
+{
+    $out = '';
+    foreach ($L['pages'] as $i => $ops) {
+        $out .= '<div class="folha" data-pagina="' . ($i + 1) . '"><svg viewBox="0 0 ' . PDOC_W . ' ' . PDOC_H . '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Página ' . ($i + 1) . ' de ' . count($L['pages']) . '">'
+            . pdoc_svg($ops, ['links' => $links]) . '</svg></div>';
+    }
+    return $out;
+}
+
+/** Página com as folhas: o documento como sai no PDF. */
+function sig_sheet_page(string $title, string $body, array $opts = []): string
+{
+    return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+        . '<meta name="robots" content="noindex, nofollow"><title>' . e($title) . '</title><style>' . doc_font_faces() . '</style>'
+        . '<link rel="stylesheet" href="' . e(asset('formatador/documento.css')) . '"><link rel="stylesheet" href="' . e(asset('css/folhas.css')) . '"></head>'
+        . '<body class="folhas-pagina' . (!empty($opts['noprint']) ? ' -sem-impressao' : '') . '">' . $body
+        . implode('', array_map(fn($u) => '<script src="' . e($u) . '"></script>', $opts['scripts'] ?? [])) . '</body></html>';
+}
+
+/**
+ * Documento para assinar (área do cliente): as folhas como vão sair no PDF, a
+ * prévia da faixa lateral e, ao assinar, o selo para arrastar até o lugar.
+ */
+function sig_sign_page(array $c, array $v): string
+{
+    $m = sig_meta($c, $v);
+    $L = sig_signed_layout($v, $m, null, null);
+    $seal = sig_seal_default($c, $v);
+    $label = kit_label($v['kind']);
+    $dados = ['selo' => ['w' => SEAL_W, 'h' => SEAL_H, 'minX' => SEAL_MIN_X, 'folhaW' => PDOC_W, 'folhaH' => PDOC_H, 'tinta' => SEAL_INK] + $seal, 'paginas' => count($L['pages'])];
+    $json = json_encode($dados, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
+    $sealSvg = '<svg viewBox="0 0 ' . SEAL_W . ' ' . SEAL_H . '" xmlns="http://www.w3.org/2000/svg">' . pdoc_svg(sig_seal_ops($m, null)) . '<g data-rubrica></g></svg>';
+    return sig_sheet_page($label . ' · ' . $c['protocol'] . ' · v' . $v['version'],
+        '<header class="folhas-topo"><strong>' . e($label) . '</strong><span>versão ' . (int) $v['version'] . ' · atendimento ' . e($c['protocol']) . ' · ' . count($L['pages']) . ' ' . (count($L['pages']) === 1 ? 'página' : 'páginas') . '</span></header>'
+        . '<main class="folhas" data-folhas>' . sig_sheets_html($L) . '</main>'
+        . '<template id="selo-modelo">' . $sealSvg . '</template>'
+        . '<script type="application/json" id="assin-dados">' . $json . '</script>'
+        . sig_client_panel($c, $v),
+        ['noprint' => true, 'scripts' => [asset('js/assinatura.js')]]);
+}
+
+/** Via assinada na área do cliente: as folhas com o selo e a faixa, e o PDF original para baixar. */
+function sig_view_page(array $c, array $v, array $sig, bool $justSigned): string
+{
+    $seal = json_decode((string) $sig['seal'], true) ?: [];
+    $L = sig_signed_layout($v, $seal['meta'] ?? sig_meta($c, $v), json_decode((string) $sig['strokes'], true), $seal);
+    $base = url('cliente/documento-kit/' . $v['id'] . '/pdf');
+    $top = '<header class="folhas-topo -assinado"><strong>' . e(kit_label($v['kind'])) . ' · assinado</strong><span>' . e(fmt_datetime((string) $sig['signed_at'])) . ' · código ' . e($sig['code']) . '</span>'
+        . '<nav><a class="assin-btn" href="' . e($base . '?baixar=1') . '">Baixar o PDF assinado</a><a class="assin-btn -sec" href="' . e($base) . '" target="_blank" rel="noopener">Abrir o PDF</a>'
+        . '<a class="assin-btn -sec" href="' . e((string) $sig['verify_url']) . '" target="_blank" rel="noopener">Conferir</a></nav></header>';
+    $done = $justSigned ? '<div class="assin-feito"><span><strong>Documento assinado.</strong> Uma cópia em PDF foi para o seu e-mail. Baixe a sua via agora, se quiser.</span>'
+        . '<a class="assin-btn" href="' . e($base . '?baixar=1') . '">Baixar o PDF</a></div>' : '';
+    return sig_sheet_page(kit_label($v['kind']) . ' · ' . $c['protocol'] . ' · assinado', $done . $top . '<main class="folhas">' . sig_sheets_html($L, true) . '</main>');
+}
+
+/** Barra e janelas: dados e rubrica → posicionar o selo → código e aceite. Retificação à parte. */
 function sig_client_panel(array $c, array $v): string
 {
     $base = url('cliente/documento-kit/' . $v['id']);
@@ -348,24 +773,34 @@ function sig_client_panel(array $c, array $v): string
     $rect = one("SELECT * FROM doc_rectifications WHERE version_id = ? AND status = 'aberta' ORDER BY id DESC LIMIT 1", [$v['id']]);
     $tok = csrf_field();
     return '<div class="assin" data-assin data-base="' . e($base) . '">'
-        . '<div class="assin-barra"><p>' . ($rect ? '<strong>Retificação enviada em ' . e(fmt_datetime($rect['created_at'])) . '.</strong> Sidney vai revisar; você ainda pode assinar se preferir.'
+        . '<div class="assin-barra" data-barra="inicio"><p>' . ($rect ? '<strong>Retificação enviada em ' . e(fmt_datetime($rect['created_at'])) . '.</strong> Sidney vai revisar; você ainda pode assinar se preferir.'
             : 'Leia o documento com atenção. Você pode <strong>assinar</strong> ou <strong>pedir retificação</strong>.') . '</p>'
         . '<div class="assin-acoes"><button type="button" class="assin-btn -sec" data-abrir="retificar">Pedir retificação</button>'
         . '<button type="button" class="assin-btn" data-abrir="assinar">Assinar documento</button></div></div>'
 
+        . '<div class="assin-barra -selo" data-barra="selo" hidden><p><strong>Arraste o selo</strong> até o lugar da sua assinatura — em qualquer página. <span data-selo-onde></span></p>'
+        . '<div class="assin-acoes"><button type="button" class="assin-btn -sec" data-voltar>Voltar</button><button type="button" class="assin-btn" data-confirmar-selo>Confirmar a posição</button></div></div>'
+
         . '<div class="assin-modal" data-janela="assinar" hidden role="dialog" aria-modal="true" aria-labelledby="assin-t"><form class="assin-caixa" data-form="assinar" novalidate>' . $tok
-        . '<h2 id="assin-t">Assinar: ' . e(kit_label($v['kind'])) . '</h2>'
+        . '<p class="assin-passo">Passo 1 de 3</p><h2 id="assin-t">Assinar: ' . e(kit_label($v['kind'])) . '</h2>'
         . '<p class="assin-sub">Versão ' . (int) $v['version'] . ' · atendimento ' . e($c['protocol']) . '. Assinatura eletrônica com confirmação por e-mail.</p>'
         . '<label class="assin-fld"><span>Seu nome completo</span><input name="nome" autocomplete="name" required placeholder="' . e(sig_expected_name($c)) . '"></label>'
         . '<label class="assin-fld"><span>CPF</span><input name="cpf" inputmode="numeric" autocomplete="off" required' . ($cpf ? ' placeholder="•••.•••.' . e(substr($cpf, 6, 3)) . '-' . e(substr($cpf, 9)) . '"' : '') . '></label>'
         . '<div class="assin-fld"><span>Rubrica <small>(desenhe com o dedo ou o mouse)</small></span><canvas class="assin-pad" width="600" height="180" data-pad aria-label="Quadro para desenhar a rubrica"></canvas>'
         . '<button type="button" class="assin-link" data-limpar>Limpar</button></div>'
+        . '<p class="assin-erro" data-erro role="alert"></p>'
+        . '<div class="assin-acoes"><button type="button" class="assin-btn -sec" data-fechar>Cancelar</button><button type="submit" class="assin-btn">Continuar: posicionar o selo</button></div>'
+        . '</form></div>'
+
+        . '<div class="assin-modal" data-janela="confirmar" hidden role="dialog" aria-modal="true" aria-labelledby="conf-t"><form class="assin-caixa" data-form="confirmar" novalidate>' . $tok
+        . '<p class="assin-passo">Passo 3 de 3</p><h2 id="conf-t">Confirmar a assinatura</h2>'
+        . '<p class="assin-sub" data-selo-resumo></p>'
         . '<div class="assin-fld"><span>Código enviado para ' . e($email ? sig_mask_email($email) : 'o seu e-mail') . '</span>'
         . '<div class="assin-codigo"><input name="codigo" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000"><button type="button" class="assin-btn -sec" data-codigo>Enviar código</button></div></div>'
         . '<label class="assin-ok"><input type="checkbox" name="aceite" value="1"> ' . e(SIGN_CONSENT) . '</label>'
-        . '<p class="assin-geo" data-geo>Ao assinar, o navegador pode pedir para usar a sua localização. Ela é guardada como prova da assinatura.</p>'
+        . '<p class="assin-geo" data-geo>Ao assinar, o navegador pode pedir para usar a sua localização. Ela é guardada como prova da assinatura. A data e a hora são as do servidor no momento da conclusão.</p>'
         . '<p class="assin-erro" data-erro role="alert"></p>'
-        . '<div class="assin-acoes"><button type="button" class="assin-btn -sec" data-fechar>Cancelar</button><button type="submit" class="assin-btn">Assinar agora</button></div>'
+        . '<div class="assin-acoes"><button type="button" class="assin-btn -sec" data-ajustar>Ajustar o selo</button><button type="submit" class="assin-btn">Assinar agora</button></div>'
         . '</form></div>'
 
         . '<div class="assin-modal" data-janela="retificar" hidden role="dialog" aria-modal="true" aria-labelledby="ret-t"><form class="assin-caixa" data-form="retificar" novalidate>' . $tok

@@ -25,7 +25,7 @@ if ($missing) {
 header('X-Content-Type-Options: nosniff');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('X-Frame-Options: SAMEORIGIN');
-header('Permissions-Policy: camera=(), microphone=(self), geolocation=()');
+header('Permissions-Policy: camera=(), microphone=(self), geolocation=(self)'); // localização: prova opcional da assinatura eletrônica
 header("Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; frame-ancestors 'self'; base-uri 'self'; form-action 'self'");
 
 start_session();

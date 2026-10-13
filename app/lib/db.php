@@ -696,6 +696,25 @@ CREATE TABLE IF NOT EXISTS doc_rectifications (
 CREATE INDEX IF NOT EXISTS idx_rectifications_case ON doc_rectifications(case_id, status);
 SQL;
 
+    // Versão 20 — via assinada em PDF (selo posicionado e faixa lateral), guardada
+    // byte a byte com o hash; histórico encadeado que não aceita alteração nem exclusão.
+    $migrations[20] = <<<SQL
+CREATE TABLE IF NOT EXISTS sig_log (
+    id INTEGER PRIMARY KEY,
+    code TEXT NOT NULL,
+    event TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    at TEXT NOT NULL,
+    prev_hash TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE
+);
+CREATE INDEX IF NOT EXISTS idx_sig_log_code ON sig_log(code);
+CREATE TRIGGER IF NOT EXISTS sig_log_sem_alteracao BEFORE UPDATE ON sig_log
+BEGIN SELECT RAISE(ABORT, 'O histórico da assinatura não pode ser alterado.'); END;
+CREATE TRIGGER IF NOT EXISTS sig_log_sem_exclusao BEFORE DELETE ON sig_log
+BEGIN SELECT RAISE(ABORT, 'O histórico da assinatura não pode ser apagado.'); END;
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -730,6 +749,9 @@ SQL;
                         $pdo->exec("ALTER TABLE case_meetings ADD COLUMN $col $type");
                     }
                 }
+            }
+            if ($v === 20) {
+                migrate_signatures_pdf($pdo);
             }
             if ($v === 17) {
                 $st = $pdo->prepare('SELECT body FROM doc_templates WHERE key = ?');
@@ -778,6 +800,45 @@ SQL;
  * Migração 2: cada senha de área do cliente que existia por caso vira uma conta,
  * ligada apenas ao próprio caso. Nada é mesclado por telefone, nome ou CPF.
  */
+/**
+ * Versão 20: colunas da via em PDF e proteção do registro. As assinaturas já
+ * existentes (via .html, sem PDF) ficam como estão; o histórico ganha uma
+ * entrada explicando que o hash publicado antes era o do texto aceito, e não o
+ * do arquivo entregue — os dois passam a aparecer com o nome certo.
+ */
+function migrate_signatures_pdf(PDO $pdo): void
+{
+    $cols = array_column($pdo->query('PRAGMA table_info(doc_signatures)')->fetchAll(), 'name');
+    foreach (['pdf_path' => 'TEXT', 'pdf_sha256' => 'TEXT', 'pdf_size' => 'INTEGER', 'pages' => 'INTEGER', 'seal' => 'TEXT', 'strokes' => 'TEXT', 'verify_url' => 'TEXT'] as $col => $type) {
+        if (!in_array($col, $cols, true)) {
+            $pdo->exec("ALTER TABLE doc_signatures ADD COLUMN $col $type");
+        }
+    }
+    $pdo->exec("CREATE TRIGGER IF NOT EXISTS doc_signatures_protegido BEFORE UPDATE ON doc_signatures
+        WHEN (OLD.pdf_sha256 IS NOT NULL AND (NEW.pdf_sha256 IS NOT OLD.pdf_sha256 OR NEW.pdf_path IS NOT OLD.pdf_path OR NEW.pdf_size IS NOT OLD.pdf_size
+              OR NEW.seal IS NOT OLD.seal OR NEW.strokes IS NOT OLD.strokes OR NEW.verify_url IS NOT OLD.verify_url))
+          OR NEW.code IS NOT OLD.code OR NEW.doc_hash IS NOT OLD.doc_hash OR NEW.evidence IS NOT OLD.evidence OR NEW.signed_at IS NOT OLD.signed_at
+          OR NEW.signer_name IS NOT OLD.signer_name OR NEW.signer_cpf IS NOT OLD.signer_cpf OR NEW.version_id IS NOT OLD.version_id
+          OR (OLD.file_hash IS NOT NULL AND NEW.file_hash IS NOT OLD.file_hash)
+        BEGIN SELECT RAISE(ABORT, 'O registro da assinatura é protegido e não pode ser alterado.'); END");
+    $prev = (string) ($pdo->query('SELECT hash FROM sig_log ORDER BY id DESC LIMIT 1')->fetchColumn() ?: str_repeat('0', 64));
+    $at = now_str();
+    foreach ($pdo->query('SELECT code, doc_hash, file_hash, signed_at FROM doc_signatures WHERE pdf_sha256 IS NULL ORDER BY id')->fetchAll() as $r) {
+        $detail = json_encode(['nota' => 'Registro anterior à via em PDF. A página de conferência mostrava como “hash do texto assinado” o hash do texto aceito; '
+            . 'a via entregue por e-mail era um arquivo .html, com hash próprio. Os dois passam a ser exibidos separadamente, sem alterar o registro.',
+            'hash_texto_aceito' => $r['doc_hash'], 'hash_via_entregue_html' => $r['file_hash'], 'assinado_em' => $r['signed_at']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $hash = sig_log_hash($prev, (string) $r['code'], 'registro_legado', $detail, $at);
+        $pdo->prepare('INSERT INTO sig_log (code, event, detail, at, prev_hash, hash) VALUES (?, ?, ?, ?, ?, ?)')->execute([$r['code'], 'registro_legado', $detail, $at, $prev, $hash]);
+        $prev = $hash;
+    }
+}
+
+/** Elo do histórico encadeado: cada entrada carrega o hash da anterior. */
+function sig_log_hash(string $prev, string $code, string $event, string $detail, string $at): string
+{
+    return hash('sha256', $prev . '|' . $code . '|' . $event . '|' . $detail . '|' . $at);
+}
+
 function migrate_portal_accounts(PDO $pdo): void
 {
     $rows = $pdo->query('SELECT id, client_name, client_phone, client_email, portal_pass_hash, created_at FROM cases WHERE portal_pass_hash IS NOT NULL')->fetchAll();

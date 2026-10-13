@@ -1,0 +1,36 @@
+/* Documento como sai no PDF: folhas A4 em SVG (mesma diagramação do arquivo),
+   selo para arrastar e as barras de assinatura. */
+html { background: #E9EBEF; }
+body.folhas-pagina { margin: 0; font-family: "Poppins", Arial, sans-serif; color: #222831; padding-bottom: 130px; }
+.folhas-topo { position: sticky; top: 0; z-index: 40; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; padding: 10px 16px; background: #fff; box-shadow: 0 1px 8px rgba(34,40,49,.12); font-size: 14px; }
+.folhas-topo span { color: #6E747E; font-size: 13px; }
+.folhas-topo nav { margin-left: auto; display: flex; flex-wrap: wrap; gap: 8px; }
+.folhas-topo nav .assin-btn { text-decoration: none; padding: 8px 14px; font-size: 13px; }
+.folhas { max-width: 860px; margin: 18px auto 0; padding: 0 16px; display: grid; gap: 18px; }
+.folha { position: relative; background: #fff; aspect-ratio: 210 / 297; box-shadow: 0 2px 12px rgba(34,40,49,.16); overflow: hidden; }
+.folha > svg { display: block; width: 100%; height: 100%; }
+body.-sem-impressao .folha > svg { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.folha text { white-space: pre; }
+
+/* Selo arrastável (posição e tamanho em % da folha: vale em qualquer zoom) */
+.selo-movel { position: absolute; z-index: 5; cursor: grab; touch-action: none; border-radius: 1%; outline: 2px dashed rgba(24,0,173,.55); outline-offset: 2px;
+  box-shadow: 0 6px 18px rgba(24,0,173,.22); animation: selo-entra .35s ease-out; }
+.selo-movel:focus-visible { outline: 3px solid #1800AD; }
+.selo-movel.-arrastando { cursor: grabbing; box-shadow: 0 10px 28px rgba(24,0,173,.35); }
+.selo-movel > svg { display: block; width: 100%; height: 100%; pointer-events: none; }
+@keyframes selo-entra { from { transform: scale(.85); opacity: 0; } to { transform: none; opacity: 1; } }
+.assin-barra.-selo { background: #F1EFFF; }
+.assin-passo { margin: 0 0 2px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #1800AD; }
+.assin-feito { position: static; }
+.assin-barra[hidden] { display: none; }
+@media (max-width: 640px) {
+  .folhas { padding: 0 8px; gap: 10px; margin-top: 10px; }
+  .folhas-topo nav { margin-left: 0; width: 100%; }
+}
+@media print {
+  body.-sem-impressao * { display: none !important; }
+  body.-sem-impressao::before { content: "A impressão e o PDF ficam disponíveis depois da assinatura."; display: block; font: 16px Arial, sans-serif; padding: 40px; }
+  body:not(.-sem-impressao) .folhas-topo, body:not(.-sem-impressao) .assin-feito { display: none !important; }
+  body:not(.-sem-impressao) .folhas { max-width: none; padding: 0; gap: 0; }
+  body:not(.-sem-impressao) .folha { box-shadow: none; page-break-after: always; }
+}

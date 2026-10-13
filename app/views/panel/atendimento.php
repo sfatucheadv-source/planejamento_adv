@@ -623,12 +623,12 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
         <div class="fk-flags">
           <?php if ($t && !$t['approved_at']): ?><span class="tag tag-gray" title="Publicação bloqueada até a aprovação do modelo">modelo não aprovado</span><?php endif ?>
           <?php if ($v && $v['signed_file_id']): ?><span class="tag tag-green">assinado</span><?php endif ?>
-          <?php $vsig = $v ? sig_for_version((int) $v['id']) : null; if ($vsig): ?><a class="tag tag-green" href="<?= e(url('arquivo/' . $vsig['file_id'])) ?>" target="_blank" rel="noopener" title="Via assinada com a folha de evidências">assinatura eletrônica · <?= e(fmt_datetime($vsig['signed_at'])) ?></a><?php endif ?>
+          <?php $vsig = $v ? sig_for_version((int) $v['id']) : null; if ($vsig): ?><a class="tag tag-green" href="<?= e(url('verificar/' . $vsig['code'] . '/original')) ?>" target="_blank" rel="noopener" title="<?= $vsig['pdf_sha256'] ? 'Via original em PDF, com o selo e a faixa de verificação' : 'Via assinada (registro anterior ao PDF)' ?>">assinatura eletrônica · <?= e(fmt_datetime($vsig['signed_at'])) ?></a><a class="tag tag-blue" href="<?= e(url('verificar/' . $vsig['code'])) ?>" target="_blank" rel="noopener">conferência</a><?php endif ?>
           <?php if ($v && !empty($noDrive[$v['id']])): ?><a class="tag tag-blue" href="https://drive.google.com/file/d/<?= e(rawurlencode((string) $noDrive[$v['id']])) ?>/view" target="_blank" rel="noopener">.docx no Drive</a><?php endif ?>
         </div>
         <?php if ($it['stale']): ?><p class="fk-aviso">Os dados mudaram depois desta versão: gere uma nova.</p><?php endif ?>
         <?php if ($vsig): $vev = json_decode((string) $vsig['evidence'], true) ?: []; ?>
-          <p class="fk-assin">Assinado por <strong><?= e($vsig['signer_name']) ?></strong> · código <?= e($vsig['code']) ?> · IP <?= e($vsig['ip']) ?> · local: <?= e(sig_geo_text($vev['localizacao'] ?? [])) ?></p>
+          <p class="fk-assin">Assinado por <strong><?= e($vsig['signer_name']) ?></strong> · código <?= e($vsig['code']) ?> · IP <?= e($vsig['ip']) ?> · local: <?= e(sig_geo_text($vev['localizacao'] ?? [])) ?><?= isset($vev['selo']['pagina']) ? ' · selo na página ' . (int) $vev['selo']['pagina'] : '' ?><?= $vsig['pdf_sha256'] ? '<br><span class="hint">SHA-256 do PDF: ' . e($vsig['pdf_sha256']) . '</span>' : '' ?></p>
         <?php endif ?>
         <?php foreach ($rects[$k] ?? [] as $rq): $an = json_decode((string) $rq['ai_note'], true) ?: null; ?>
           <div class="fk-ret is-<?= e($rq['status']) ?>">
