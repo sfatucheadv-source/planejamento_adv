@@ -345,7 +345,7 @@ $choiceButtons = function (array $q) {
           <?php if (!$kitPub): ?><p class="muted">Quando Sidney disponibilizar a proposta ou os documentos, eles aparecem aqui.</p><?php endif ?>
           <ul class="cv-kit">
             <?php foreach ($kitPub as $kind => $v): ?>
-              <li><a href="<?= e(url('cliente/documento-kit/' . $v['id'])) ?>" target="_blank" rel="noopener"><?= e(KIT_ITEMS[$kind]['label']) ?></a> <small class="muted">versão <?= (int) $v['version'] ?> · <?= e(fmt_date($v['published_at'])) ?></small></li>
+              <li><a href="<?= e(url('cliente/documento-kit/' . $v['id'])) ?>" target="_blank" rel="noopener"><?= e(kit_label($kind)) ?></a> <small class="muted">versão <?= (int) $v['version'] ?> · <?= e(fmt_date($v['published_at'])) ?></small></li>
             <?php endforeach ?>
           </ul>
           <?php if ($st === 'awaiting_decision'): ?>

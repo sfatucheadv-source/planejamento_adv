@@ -571,6 +571,19 @@ function initial_panel_action(array $c, string $op): string
             flash($r ? 'ok' : 'error', $r ? 'Contexto do caso atualizado.' : 'Não foi possível atualizar com a IA agora.');
             return 'resumo';
 
+        case 'parecer_ia':
+            @set_time_limit(240);
+            [$done, $find, $aviso] = parecer_fill($id);
+            flash($done || $find ? 'ok' : 'error', ($done ? 'Preenchidos: ' . implode(', ', array_map(fn($k) => field_def($k)['label'], $done)) . '. ' : '')
+                . ($find ? count($find) . ' a localizar (veja a explicação de cada um). ' : '') . ($aviso ?: '') ?: 'Nada a preencher.');
+            return 'parecer-ia';
+
+        case 'parecer_comando':
+            @set_time_limit(240);
+            [$done, $err] = parecer_command($id, (string) input('comando'));
+            flash($err && !$done ? 'error' : 'ok', ($done ? 'Alterados pela IA: ' . implode(', ', array_map(fn($k) => field_def($k)['label'], $done)) . '. Confira. ' : '') . ($err ?? ''));
+            return 'parecer-ia';
+
         case 'ia_sugerir':
             [$done, $err] = analysis_ai_suggest($id);
             flash($err ? 'error' : 'ok', $err ?: 'A IA sugeriu ' . plural(count($done), 'campo', 'campos') . ' (marcados “IA · conferir”). Revise antes de validar.');

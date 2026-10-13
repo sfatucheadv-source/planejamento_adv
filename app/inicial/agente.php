@@ -303,6 +303,7 @@ function agent_system_prompt(): string
         . "- Deduza o que for óbvio pelos documentos e pela conversa em vez de perguntar (ex.: o contrato está no nome da pessoa, então ela é a titular; o banco do contrato é o banco do financiamento).\n"
         . "- Pergunte só o que está em \"DADOS MÍNIMOS QUE FALTAM\". Nunca pergunte o que está em \"OUTROS DADOS\": esses você só registra se a pessoa contar.\n"
         . "- Para poupar tempo, junte numa mesma mensagem até 2 dados mínimos curtos do mesmo assunto (ex.: estado civil e profissão).\n"
+        . "- A profissão vai sempre em \"profissao\" (mesmo que também apareça como atividade ou fonte de renda).\n"
         . "- Não há formulário de entrada: depois de ouvir o problema, peça o nome completo, o WhatsApp ou telefone com DDD e o e-mail (é por ele que vão os avisos). Peça de forma direta, dizendo em poucas palavras para que serve. Pergunte também o veículo (marca, modelo e placa) e o banco: cada atendimento é identificado pelo carro.\n"
         . "- Siga a lista \"DADOS MÍNIMOS QUE FALTAM\" na ordem, mas aproveite o que a pessoa contar fora de ordem.\n"
         . "- Peça os documentos mínimos que faltam; explique em uma frase para que servem. Com o documento, você não precisa perguntar o que já estiver nele.\n"
@@ -368,7 +369,7 @@ function agent_context(int $id, string $event): string
         . "\n\nOUTROS DADOS (não pergunte; registre só se a pessoa disser):\n" . ia_field_spec(array_keys($others))
         . "\n\nDOCUMENTOS (use o tipo antes dos dois-pontos):\n" . ($docs ? implode("\n", $docs) : '- nenhum')
         . "\nDocumentos mínimos que faltam: " . ($missDocs ? implode(', ', array_column($missDocs, 'kind')) : 'nenhum')
-        . "\n\nSITUAÇÃO DA COLETA: " . (!$missing && !$missDocs ? 'tudo o que é mínimo já foi reunido; o resumo para conferir já está na tela da pessoa (não escreva resumo).' : 'em andamento.')
+        . "\n\nSITUAÇÃO DA COLETA: " . (!$missing && !$missDocs ? agent_closing_note($id) : 'em andamento.')
         . "\n\nCONVERSA RECENTE:\n" . implode("\n", array_map(fn($m) => ($who[$m['author']] ?? 'Assistente') . ': ' . mb_substr(str_replace("\n", ' ', $m['body']), 0, 500), $recent))
         . "\n\nAGORA:\n" . $event;
 }
@@ -909,5 +910,22 @@ function case_summary_save(int $id, array $in): array
         mark_client_activity($id);
     }
     return $errors;
+}
+
+/**
+ * Coleta mínima completa: antes do resumo, uma única pergunta com os dados
+ * simples da qualificação (estado civil, profissão, nacionalidade, CPF ou RG).
+ * Feita uma vez; o que não vier fica de lembrete para Sidney na reunião.
+ */
+function agent_closing_note(int $id): string
+{
+    $c = find_case($id);
+    $q = qualif_missing($id);
+    if ($q && !case_data($c, 'qualif_pedida')) {
+        set_case_data($id, 'qualif_pedida', now_str());
+        return 'o mínimo já foi reunido. ANTES DO RESUMO, faça UMA única pergunta curta pedindo de uma vez: ' . implode(', ', qualif_labels($q))
+            . ' (são para a procuração e o contrato). Se a pessoa não souber ou não quiser responder agora, não insista: siga e diga que Sidney confirma na conversa.';
+    }
+    return 'tudo o que é mínimo já foi reunido; o resumo para conferir já está na tela da pessoa (não escreva resumo e não pergunte mais nada sobre qualificação).';
 }
 

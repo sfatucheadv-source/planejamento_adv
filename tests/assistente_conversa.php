@@ -385,6 +385,18 @@ ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND author = 'bo
 $cli4->get('/cliente?area=conversa');
 ok(!str_contains($cli4->html, 'Quero falar com Sidney'), 'o chat não mostra botão para falar com Sidney');
 
+echo "\nA8c. Parecer preenchido pela IA (contrato, conversa, internet e BCB)\n";
+$GLOBALS['bcb_http'] = fn(string $url) => [200, '[{"data":"01/06/2026","valor":"1.89"}]'];
+set_field($id4, 'contrato_data', '2026-06-10', 'informado', 'cliente');
+[$pd, $pf, $pe] = parecer_fill($id4);
+case_fields($id4, true);
+ok(fv($id4, 'bacen_periodo') === '06/2026' && (float) fv($id4, 'bacen_taxa') === 1.89, 'taxa média do BCB do mês da contratação');
+ok($pf && !array_filter($pf, fn($x) => trim($x) === '') && isset($pf['metodo']), 'o que a IA não achou vem com a explicação do que se pretende no campo');
+ok((bool) case_data(c($id4), 'parecer_at') && str_contains(parecer_find_prompt(c($id4), $pf), 'Preciso localizar'), 'texto pronto para pesquisar em outra IA');
+[$cd, $ce] = parecer_command($id4, 'A taxa mensal correta é 2,15%.');
+ok($ce !== null, 'comando de correção sem resposta válida da IA não altera nada');
+unset($GLOBALS['bcb_http']);
+
 echo "\nA9. Desligado\n";
 $sid->get('/painel/assistente');
 $sid->post('/painel/assistente', ['agent_enabled' => '', 'campos' => $campos, 'documentos' => ['identidade']]);

@@ -455,7 +455,8 @@ function agenda_book(array $c, string $origin = 'pedido', ?DateTimeImmutable $at
     $desc = $R['why']
         . "\nProtocolo " . $c['protocol'] . ' · ' . client_case_title($c)
         . "\nTelefone: " . ($c['client_phone'] ? format_phone((string) $c['client_phone']) : 'não informado')
-        . "\nFicha: " . public_link('painel/atendimento/' . $id);
+        . "\nFicha: " . public_link('painel/atendimento/' . $id)
+        . (($qm = qualif_missing($id)) ? "\nPerguntar na conversa: " . implode(', ', qualif_labels($qm)) . '.' : '');
     $ev = null;
     $link = null;
     if (google_connected() && !$gerr) {

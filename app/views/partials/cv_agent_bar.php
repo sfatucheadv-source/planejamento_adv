@@ -25,6 +25,8 @@ $sug = $c['intake_done_at'] ? [] : (array) case_data($c, 'agent_suggestions', []
     <?php if (meeting_ready($id)): ?>
       <p class="cv-libera"><span aria-hidden="true">📅</span> Já dá para agendar com Sidney. <a href="<?= e(url('cliente', ['area' => 'reuniao'])) ?>#h-reu">Escolher horário</a></p>
     <?php endif ?>
+  <?php elseif (qualif_waiting($c)): ?>
+    <p class="cv-libera" id="pergunta"><span aria-hidden="true">✍️</span> Só mais uma pergunta rápida e o resumo do seu caso abre para você conferir.</p>
   <?php else: ?>
     <div class="cv-pronto" id="pergunta">
       <span class="cv-pronto-t"><span aria-hidden="true">✓</span> <strong>100%</strong> · Tudo o que Sidney precisa já está aqui.</span>

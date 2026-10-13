@@ -13,7 +13,6 @@ declare(strict_types=1);
  * escritório; Sidney revisa e aprova cada um antes da primeira publicação.
  */
 const TEMPLATE_TITLES = [
-    'proposta' => 'Proposta de atendimento',
     'honorarios' => 'Contrato de honorários',
     'procuracao' => 'Procuração',
     'hipossuficiencia' => 'Declaração de hipossuficiência',
@@ -58,6 +57,7 @@ function builtin_var_labels(): array
         'atendimento.protocolo' => 'Protocolo', 'data.hoje' => 'Data de hoje', 'data.cidade' => 'Cidade do escritório', 'kit.versao' => 'Versão do documento',
         'cliente.nome_completo' => 'Nome completo', 'cliente.cpf' => 'CPF', 'cliente.nacionalidade' => 'Nacionalidade', 'cliente.estado_civil' => 'Estado civil',
         'cliente.profissao' => 'Profissão', 'cliente.identificacao' => 'Documento de identificação', 'cliente.endereco' => 'Endereço completo',
+        'cliente.documentos' => 'CPF ou documento de identificação', 'cliente.doc_assinatura' => 'CPF ou documento de identificação',
         'cliente.telefone' => 'Telefone', 'cliente.email' => 'E-mail', 'titular.nome' => 'Titular do contrato',
         'contrato.banco' => 'Banco', 'contrato.numero' => 'Número do contrato', 'contrato.data' => 'Data do contrato', 'contrato.capital' => 'Valor financiado',
         'contrato.prazo' => 'Prazo', 'contrato.parcela' => 'Parcela', 'contrato.taxa_mensal' => 'Taxa mensal', 'contrato.cet' => 'CET',
@@ -105,8 +105,14 @@ function kit_vars(int $caseId, ?array $proposal = null): array
         'cliente.nacionalidade' => $d('nacionalidade'),
         'cliente.estado_civil' => $d('estado_civil') ? gendered_marital($d('estado_civil'), fv($caseId, 'genero')) : null,
         'cliente.genero' => fv($caseId, 'genero'),
-        'cliente.profissao' => $d('profissao'),
+        'cliente.profissao' => $d('profissao') ?? profession_fallback($caseId),
         'cliente.identificacao' => $d('identificacao'),
+        // CPF ou RG bastam: o que faltar sai do texto, sem virar pendência.
+        'cliente.documentos' => implode(', ', array_filter([
+            $d('cpf') ? flex_word('inscrito', 'inscrita', fv($caseId, 'genero')) . ' no CPF sob o n.º ' . $d('cpf') : null,
+            $d('identificacao') ? 'documento de identificação ' . $d('identificacao') : null,
+        ])) ?: null,
+        'cliente.doc_assinatura' => $d('cpf') ? 'CPF ' . $d('cpf') : ($d('identificacao') ?: null),
         'cliente.endereco' => full_address($caseId),
         'cliente.telefone' => $d('telefone'),
         'cliente.email' => $d('email'),
@@ -178,6 +184,16 @@ function kit_vars(int $caseId, ?array $proposal = null): array
 }
 
 /**
+ * Profissão quando o campo próprio está vazio: a atividade informada na
+ * justiça gratuita (o assistente às vezes registra só lá).
+ */
+function profession_fallback(int $caseId): ?string
+{
+    $a = trim((string) fv($caseId, 'renda_atividade'));
+    return $a !== '' && mb_strlen($a) <= 80 ? $a : null;
+}
+
+/**
  * Situação do financiamento para o contrato: a escolhida por Sidney ou, sem
  * ela, a que decorre do que o cliente informou (quitado, em atraso ou em dia).
  */
@@ -189,9 +205,12 @@ function financing_standing(int $caseId): ?string
     if (fv($caseId, 'situacao_contrato') === 'quitado') {
         return 'quitado';
     }
+    if ((int) fv($caseId, 'atraso_qtd') > 0) {
+        return 'inadimplente';
+    }
     return match (fv($caseId, 'atraso')) {
         'sim' => 'inadimplente',
-        'nao' => in_array(fv($caseId, 'situacao_contrato'), ['ativo', 'renegociado'], true) ? 'adimplente' : null,
+        'nao' => 'adimplente', // sem atraso e sem notícia de quitação: em dia
         default => null,
     };
 }
@@ -222,6 +241,15 @@ function render_template(string $body, array $vars): array
         if ($v === null || trim((string) $v) === '') {
             if (array_key_exists(2, $m)) {
                 return trim($m[2]);
+            }
+            // Fixos no contrato (Sidney): sem valor, não aparecem nem viram pendência.
+            if (in_array($key, ['escritorio.prazo_resposta', 'escritorio.orientacao_urgencias'], true)) {
+                return '';
+            }
+            // CPF e documento de identificação se substituem: com um deles, o outro não é pendência.
+            $par = ['cliente.cpf' => 'cliente.identificacao', 'cliente.identificacao' => 'cliente.cpf'][$key] ?? null;
+            if ($par && trim((string) ($vars[$par] ?? '')) !== '') {
+                return '';
             }
             $missing[] = $labels[$key];
             return '[[FALTA: ' . $labels[$key] . ']]';
@@ -514,7 +542,7 @@ function kit_generate(array $c, string $kind): ?string
         bump_case($id, ['contract_state' => 'minuta']);
     }
     db()->commit();
-    add_event($id, 'kit', KIT_ITEMS[$kind]['label'] . ': minuta v' . $next, $missing ? 'Falta: ' . implode('; ', $missing) : null);
+    add_event($id, 'kit', kit_label($kind) . ': minuta v' . $next, $missing ? 'Falta: ' . implode('; ', $missing) : null);
     return null;
 }
 
@@ -531,7 +559,7 @@ function kit_edit(array $c, int $vid, string $content): ?string
     }
     $content = str_replace("\r\n", "\n", mb_substr($content, 0, 60000));
     q("UPDATE case_artifact_versions SET content = ?, missing = ?, status = 'minuta', reviewed_at = NULL WHERE id = ?", [$content, json_encode(content_markers($content), JSON_UNESCAPED_UNICODE), $vid]);
-    add_event((int) $c['id'], 'kit', KIT_ITEMS[$v['kind']]['label'] . ': minuta v' . $v['version'] . ' editada por Sidney');
+    add_event((int) $c['id'], 'kit', kit_label($v['kind']) . ': minuta v' . $v['version'] . ' editada por Sidney');
     return null;
 }
 
@@ -549,7 +577,7 @@ function kit_review(array $c, int $vid): ?string
         return 'Os dados mudaram depois desta minuta. Gere uma nova versão.';
     }
     q("UPDATE case_artifact_versions SET status = 'revisado', reviewed_at = ? WHERE id = ?", [now_str(), $vid]);
-    add_event((int) $c['id'], 'kit', KIT_ITEMS[$v['kind']]['label'] . ' v' . $v['version'] . ' revisado');
+    add_event((int) $c['id'], 'kit', kit_label($v['kind']) . ' v' . $v['version'] . ' revisado');
     return null;
 }
 
@@ -573,7 +601,7 @@ function kit_publish(array $c, int $vid): ?string
     if (in_array($v['kind'], ['honorarios', 'procuracao'], true) && in_array($c['contract_state'], ['nao_preparado', 'minuta'], true)) {
         bump_case((int) $c['id'], ['contract_state' => 'enviado']);
     }
-    $label = KIT_ITEMS[$v['kind']]['label'];
+    $label = kit_label($v['kind']);
     add_event((int) $c['id'], 'kit', 'Disponível para você: ' . $label, 'Versão ' . $v['version'] . '.', true);
     chat_post((int) $c['id'], 'operator', 'Disponibilizei para você: ' . $label . ' (versão ' . $v['version'] . '). Veja em “Reunião e proposta”.');
     return null;
@@ -597,7 +625,7 @@ function kit_not_applicable(array $c, string $kind, string $reason): ?string
     }
     $next = ((int) scalar('SELECT MAX(version) FROM case_artifact_versions WHERE case_id = ? AND kind = ?', [$id, $kind])) + 1;
     insert('case_artifact_versions', ['case_id' => $id, 'kind' => $kind, 'version' => $next, 'content' => trim($reason), 'status' => 'nao_aplicavel', 'created_at' => now_str(), 'created_by' => current_user()['id'] ?? null]);
-    add_event($id, 'kit', KIT_ITEMS[$kind]['label'] . ': não se aplica', trim($reason));
+    add_event($id, 'kit', kit_label($kind) . ': não se aplica', trim($reason));
     return null;
 }
 

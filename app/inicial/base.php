@@ -137,14 +137,24 @@ const MEETING_CHANNELS = [
 
 /* ---------- Seção 10 — itens do kit ---------- */
 
+/** Documentos do kit. A proposta de atendimento e a ficha para a inicial saíram (Sidney não as gera). */
 const KIT_ITEMS = [
-    'proposta'         => ['label' => 'Proposta de atendimento',           'template' => true],
     'honorarios'       => ['label' => 'Contrato de honorários',            'template' => true],
     'procuracao'       => ['label' => 'Procuração',                        'template' => true],
     'hipossuficiencia' => ['label' => 'Declaração de hipossuficiência',    'template' => true],
     'parecer'          => ['label' => 'Parecer de cálculos',               'template' => true],
-    'ficha_inicial'    => ['label' => 'Ficha para adequação da inicial',   'template' => false],
 ];
+
+/** Nomes de todos os tipos, inclusive os que saíram do kit (versões antigas continuam legíveis). */
+const KIT_LABELS = KIT_ITEMS + [
+    'proposta'      => ['label' => 'Proposta de atendimento',         'template' => true],
+    'ficha_inicial' => ['label' => 'Ficha para adequação da inicial', 'template' => false],
+];
+
+function kit_label(string $kind): string
+{
+    return KIT_LABELS[$kind]['label'] ?? $kind;
+}
 
 const KIT_STATES = [
     'nao_preparado' => 'Não preparado',

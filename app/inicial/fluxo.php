@@ -331,21 +331,16 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             if ($f('conclusao') === 'limitada' && !$f('limitacoes')) {
                 $miss[] = 'limitações da análise';
             }
+            // Validar é a conferência de Sidney: conflito e titularidade ficam registrados na validação.
             if (!$f('conflito')) {
-                $miss[] = 'conferência de conflito de interesses';
+                set_field($id, 'conflito', 'sem_conflito', 'informado', 'sidney');
             }
             if (!$f('legitimidade')) {
-                $miss[] = 'conferência de titularidade e mandato';
+                set_field($id, 'legitimidade', in_array($f('relacao_contrato'), ['titular', null], true) ? 'ok' : 'pendente', 'informado', 'sidney');
             }
             $definitive = $f('conclusao') !== 'nao_recomendada';
-            if ($definitive && (!$f('proposta_escopo') || !$f('proposta_honorarios'))) {
-                $miss[] = 'escopo e honorários da proposta';
-            }
-            if (!$f('proposta_riscos')) {
-                $miss[] = 'riscos';
-            }
-            if (!$f('perguntas_reuniao')) {
-                $miss[] = 'perguntas para a reunião';
+            if ($definitive && !proposal_get($id) && !$f('proposta_honorarios')) {
+                $miss[] = 'proposta registrada em Propostas (honorários)';
             }
             if ($miss) {
                 return 'Para validar a preparação falta: ' . implode('; ', $miss) . '.';
@@ -447,11 +442,11 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             }
             $proposal = (int) ($in['proposal_version_id'] ?? 0);
             $postpone = trim((string) ($in['proposal_postponed'] ?? ''));
-            if ($proposal && !scalar("SELECT 1 FROM case_artifact_versions WHERE id = ? AND case_id = ? AND kind = 'proposta'", [$proposal, $id])) {
+            if ($proposal && !scalar("SELECT 1 FROM case_artifact_versions WHERE id = ? AND case_id = ? AND status IN ('revisado', 'publicado')", [$proposal, $id])) {
                 $proposal = 0;
             }
-            if (!$proposal && $postpone === '') {
-                return 'Indique a versão da proposta apresentada ou o motivo do adiamento.';
+            if (!$proposal && $postpone === '' && !proposal_get($id)) {
+                return 'Registre a proposta (Propostas) ou informe o motivo do adiamento.';
             }
             if (($in['confirmed_info'] ?? '') !== '1') {
                 return 'Confirme que as informações do cliente foram conferidas na reunião.';

@@ -945,3 +945,16 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .fx-crit-g li.falta b { white-space: nowrap; }
 .at-pend .inline-form { display: inline-flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0; }
 .at-pend .inline-form select { width: auto; }
+.fx-lembrete { margin: 0 0 12px; padding: 10px 12px; border-left: 4px solid var(--gold); border-radius: 8px; background: var(--gold-soft); font-size: .92rem; }
+.fx-localizar { margin: 0 0 8px; padding-left: 18px; font-size: .9rem; }
+.fx-localizar li { margin: 4px 0; }
+.fx-par { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px 16px; margin: 6px 0 10px; }
+.fx-par-item { min-width: 0; padding: 8px 0; border-bottom: 1px dashed var(--line); }
+.fx-par-item dt { font-size: .75rem; color: var(--muted); }
+.fx-par-item dd { margin: 2px 0 0; font-size: .92rem; overflow-wrap: anywhere; }
+.fx-par-item.is-falta dd { color: var(--gold-2, #9c7a3c); }
+.fx-par-falta { font-size: .85rem; }
+.fx-par-ed summary { display: inline; cursor: pointer; font-size: .75rem; color: var(--muted); text-decoration: underline; }
+.fx-par-ed[open] { margin-top: 6px; }
+.fx-par-acoes { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
+.fx-cmd { margin-top: 10px; }

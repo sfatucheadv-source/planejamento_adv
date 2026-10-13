@@ -96,7 +96,7 @@ function llm_key_format_ok(string $provider, string $key): bool
  * Gemini elas são convertidas para generateContent.
  * Retorna ['ok' => bool, 'content' => string, 'error' => ?string, 'usage' => array].
  */
-function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 1200, int $timeout = 90): array
+function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 1200, int $timeout = 90, bool $web = false): array
 {
     $provider = llm_provider();
     $key = llm_key();
@@ -106,10 +106,18 @@ function llm_chat(array $messages, ?int $caseId, string $kind, int $maxTokens = 
     $model = llm_model();
     if ($provider === 'gemini') {
         [$url, $headers, $payload] = gemini_request($model, $key, $messages, $maxTokens);
+        if ($web) {
+            // busca na internet (Google): não combina com a resposta forçada em JSON
+            $payload['tools'] = [['google_search' => (object) []]];
+            unset($payload['generationConfig']['responseMimeType']);
+        }
     } else {
         $url = llm_endpoint() . '/chat/completions';
         $headers = ['Authorization: Bearer ' . $key, 'Content-Type: application/json', 'HTTP-Referer: ' . office('base_url'), 'X-Title: Fatuche Atendimento'];
         $payload = ['model' => $model, 'messages' => $messages, 'temperature' => 0, 'max_tokens' => $maxTokens, 'usage' => ['include' => true]];
+        if ($web) {
+            $payload['plugins'] = [['id' => 'web', 'max_results' => 5]]; // busca na internet do OpenRouter
+        }
     }
     $ch = curl_init($url);
     curl_setopt_array($ch, [

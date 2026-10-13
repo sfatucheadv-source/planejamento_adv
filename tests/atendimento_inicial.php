@@ -312,22 +312,22 @@ $sid->get('/painel/atendimento/' . $id);
 ok(str_contains($sid->html, 'Calculadora de apoio') && str_contains($sid->html, 'Estimativa técnica'), 'calculadora de apoio exibida como estimativa');
 
 echo "\nP3. Kit, modelos e versões (T19, T20, S13)\n";
-op($sid, $id, ['op' => 'kit_gerar', 'kind' => 'proposta']);
-$pv = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'proposta' ORDER BY version DESC", [$id]);
-ok($pv && $pv['status'] === 'minuta' && str_contains($pv['content'], 'Maria da Silva Teste') && $pv['data_snapshot'], 'minuta preenchida com os dados da ficha e fotografia dos dados');
-op($sid, $id, ['op' => 'kit_revisar', 'kind' => 'proposta', 'vid' => $pv['id']]);
-op($sid, $id, ['op' => 'kit_publicar', 'kind' => 'proposta', 'vid' => $pv['id']]);
+op($sid, $id, ['op' => 'kit_gerar', 'kind' => 'parecer']);
+$pv = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'parecer' ORDER BY version DESC", [$id]);
+ok($pv && $pv['status'] === 'minuta' && str_contains($pv['content'], 'A negociação é o caminho prioritário') && $pv['data_snapshot'], 'minuta preenchida com os dados da ficha e fotografia dos dados');
+op($sid, $id, ['op' => 'kit_revisar', 'kind' => 'parecer', 'vid' => $pv['id']]);
+op($sid, $id, ['op' => 'kit_publicar', 'kind' => 'parecer', 'vid' => $pv['id']]);
 ok(str_contains(flash_error($sid), 'modelo') && scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$pv['id']]) === 'revisado', 'publicação bloqueada enquanto o modelo não foi aprovado por Sidney');
 $sid->get('/painel/modelos-documentos');
 foreach (array_keys(default_templates()) as $k) {
     $sid->post('/painel/modelos-documentos', ['key' => $k, 'op' => 'aprovar']);
 }
-op($sid, $id, ['op' => 'kit_publicar', 'kind' => 'proposta', 'vid' => $pv['id']]);
-ok(scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$pv['id']]) === 'publicado', 'proposta publicada antes da reunião');
+op($sid, $id, ['op' => 'kit_publicar', 'kind' => 'parecer', 'vid' => $pv['id']]);
+ok(scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$pv['id']]) === 'publicado', 'parecer publicado antes da reunião');
 $cli->get('/cliente?area=reuniao');
-ok(str_contains($cli->html, 'Proposta de atendimento') && str_contains($cli->html, 'Escolha o melhor horário') && str_contains($cli->html, 'Como vai ser a conversa'), 'T13: cliente vê a proposta e, sem reunião marcada, as opções de horário');
+ok(str_contains($cli->html, 'Parecer de cálculos') && str_contains($cli->html, 'Escolha o melhor horário') && str_contains($cli->html, 'Como vai ser a conversa'), 'T13: cliente vê a proposta e, sem reunião marcada, as opções de horário');
 $cli->get('/cliente/documento-kit/' . $pv['id']);
-ok($cli->status === 200 && str_contains($cli->html, 'Negociação extrajudicial') && str_contains($cli->html, '· v' . $pv['version'] . '</title>') && str_contains($cli->html, 'paginar.js') && str_contains($cli->html, 'Baixar .docx'), 'S13: documento em texto selecionável, no timbrado, com versão identificada');
+ok($cli->status === 200 && str_contains($cli->html, 'A negociação é o caminho prioritário') && str_contains($cli->html, '· v' . $pv['version'] . '</title>') && str_contains($cli->html, 'paginar.js') && str_contains($cli->html, 'Baixar .docx'), 'S13: documento em texto selecionável, no timbrado, com versão identificada');
 
 echo "\nP3. Reunião pelos quatro canais (T14, T15, T16, T17, T18)\n";
 $when = now()->modify('+2 days')->setTime(15, 0)->format('Y-m-d\TH:i');
@@ -384,7 +384,7 @@ ok(str_contains(implode(' ', json_decode($prv['missing'], true)), 'Endereço do 
 op($sid, $id, ['op' => 'kit_revisar', 'kind' => 'procuracao', 'vid' => $prv['id']]);
 ok(scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$prv['id']]) === 'minuta', 'minuta com variável ausente não pode ser revisada');
 set_setting('office_address', 'Rua do Escritório, 1, Centro, São José dos Pinhais/PR');
-foreach (['proposta', 'honorarios', 'procuracao', 'parecer', 'ficha_inicial'] as $k) {
+foreach (['honorarios', 'procuracao', 'parecer'] as $k) {
     op($sid, $id, ['op' => 'kit_gerar', 'kind' => $k]);
 }
 $hv = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'honorarios' ORDER BY version DESC", [$id]);
@@ -397,14 +397,11 @@ ok(scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$hv['id']])
 $prv = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'procuracao' ORDER BY version DESC", [$id]);
 op($sid, $id, ['op' => 'kit_revisar', 'kind' => 'procuracao', 'vid' => $prv['id']]);
 ok($prv['version'] === 2 && scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$prv['id']]) === 'revisado' && scalar("SELECT status FROM case_artifact_versions WHERE case_id = ? AND kind = 'procuracao' AND version = 1", [$id]) === 'substituido', 'nova versão gerada; a anterior é preservada como substituída');
-foreach (['proposta', 'parecer', 'ficha_inicial'] as $k) {
-    $v = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = ? ORDER BY version DESC", [$id, $k]);
-    op($sid, $id, ['op' => 'kit_revisar', 'kind' => $k, 'vid' => $v['id']]);
-}
-$fi = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'ficha_inicial' ORDER BY version DESC", [$id]);
-ok(str_contains($fi['content'], 'Autor, representação e endereço') && str_contains($fi['content'], '(não informado)') && $fi['status'] === 'revisado', 'T26: ficha da inicial organizada; desconhecidos indicados, sem fundamentos inventados');
-$pub = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'proposta' AND status = 'publicado'", [$id]);
-ok($pub && (int) $pub['id'] === (int) $pv['id'], 'proposta publicada permanece na versão apresentada');
+$v = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'parecer' ORDER BY version DESC", [$id]);
+op($sid, $id, ['op' => 'kit_revisar', 'kind' => 'parecer', 'vid' => $v['id']]);
+ok(!isset(KIT_ITEMS['proposta']) && !isset(KIT_ITEMS['ficha_inicial']) && kit_label('proposta') === 'Proposta de atendimento', 'proposta de atendimento e ficha da inicial saíram do kit (versões antigas continuam legíveis)');
+$pub = one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = 'parecer' AND status = 'publicado'", [$id]);
+ok($pub && (int) $pub['id'] === (int) $pv['id'], 'documento publicado permanece na versão apresentada');
 $kit = kit_status(c($id));
 ok($kit['items']['hipossuficiencia']['state'] === 'nao_aplicavel', 'T09: declaração de hipossuficiência marcada como não aplicável');
 ok($kit["ready"], 'kit pronto quando os itens aplicáveis estão revisados e a reunião foi registrada');

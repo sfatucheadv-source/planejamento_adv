@@ -84,7 +84,7 @@ case_fields($id, true);
 echo "\nD2. Preenchimento dos modelos\n";
 $c = find_case($id);
 $docs = [];
-foreach (['procuracao', 'hipossuficiencia', 'honorarios', 'proposta', 'parecer'] as $k) {
+foreach (['procuracao', 'hipossuficiencia', 'honorarios', 'parecer'] as $k) {
     $err = kit_generate($c, $k);
     $v = kit_latest($id, $k);
     $docs[$k] = $v;
@@ -92,7 +92,7 @@ foreach (['procuracao', 'hipossuficiencia', 'honorarios', 'proposta', 'parecer']
     ok($err === null && !$miss && !doc_pending((string) $v['content']), KIT_ITEMS[$k]['label'] . ': gerado sem pendências' . ($miss ? ' (' . implode('; ', $miss) . ')' : '') . (doc_pending((string) $v['content']) ? ' [' . implode(' ', doc_pending((string) $v['content'])) . ']' : ''));
 }
 $p = $docs['procuracao']['content'];
-ok(str_contains($p, 'inscrita junto ao CPF/MF: 529.982.247-25') && str_contains($p, 'residente e domiciliada à Rua XV de Novembro, 1000'), 'procuração: concordância no feminino e endereço completo');
+ok(str_contains($p, 'inscrita no CPF sob o n.º 529.982.247-25') && str_contains($p, 'residente e domiciliada à Rua XV de Novembro, 1000'), 'procuração: concordância no feminino e endereço completo');
 ok(str_contains($p, '^^Ana Paula Ribeiro Teste^^, casada, professora'), 'procuração: estado civil concordando com o gênero');
 ok(str_contains($p, 'contrato de financiamento de veículo n.º 123456789, celebrado com Banco Exemplo S.A.') && !str_contains($p, 'S.A..'), 'procuração: finalidade padrão com as variáveis do contrato preenchidas (sem ponto duplo)');
 ok(str_contains($p, '**PODERES ESPECÍFICOS**') && str_contains($p, 'Para representar os interesses da outorgante em juízo') && str_contains($p, 'em especial para representar os interesses da outorgante'), 'procuração: poderes do modelo do escritório, com concordância');
@@ -104,7 +104,7 @@ $ct = $docs['honorarios']['content'];
 ok(str_contains($ct, 'Veículo: Fiat Argo Drive 1.0, ano 2022/2023, placa BRA2E19, Renavam 00639884962'), 'contrato: veículo');
 ok(str_contains($ct, 'Situação atual: adimplente') && str_contains($ct, 'Processos ou notificações existentes: Não há processo'), 'contrato: situação e processos');
 ok(str_contains($ct, 'a chave informada é o e-mail: **sidney@fatuche.adv.br**, de titularidade de **Sidney Fatuche Sociedade Individual de Advocacia**'), 'contrato: PIX pelas variáveis do escritório');
-ok(str_contains($ct, 'Canal oficial do escritório: (41) 99906-2936 e sidney@fatuche.adv.br') && str_contains($ct, 'Prazo usual de resposta: 2 (dois) dias úteis'), 'contrato: canal e prazo de resposta');
+ok(str_contains($ct, 'Canal oficial do escritório: (41) 99906-2936 e sidney@fatuche.adv.br') && !str_contains($ct, 'Prazo usual de resposta') && !str_contains($ct, 'situações urgentes:'), 'contrato: canal oficial; prazo de resposta e urgências ficam fixos no texto (sem variável)');
 ok(str_contains($ct, 'em até 5 (cinco) dias úteis após') && str_contains($ct, 'foro da **Comarca de Curitiba/PR**'), 'contrato: repasse e foro');
 ok(str_contains($ct, 'inscrita no CPF sob o n.º') && str_contains($ct, 'doravante denominada **CONTRATANTE**'), 'contrato: concordância no feminino');
 ok(str_contains($ct, '@assinatura Carlos Testemunha | CPF 111.444.777-35') && str_contains($ct, '@assinatura Nome: | CPF ____________________'), 'contrato: testemunha preenchida e a segunda em branco para assinatura física');
@@ -114,7 +114,7 @@ echo "\nD3. Gênero não informado\n";
 q("DELETE FROM case_fields WHERE case_id = ? AND field = 'genero'", [$id]);
 case_fields($id, true);
 [$alt] = render_template(doc_template('procuracao')['body'], kit_vars($id));
-ok(str_contains($alt, 'inscrito(a) junto ao CPF') && str_contains($alt, 'casado(a)') && str_contains($alt, 'interesses do(a) outorgante'), 'sem gênero, sai a forma dupla “inscrito(a)”');
+ok(str_contains($alt, 'inscrito(a) no CPF') && str_contains($alt, 'casado(a)') && str_contains($alt, 'interesses do(a) outorgante'), 'sem gênero, sai a forma dupla “inscrito(a)”');
 set_field($id, 'genero', 'feminino', 'informado', 'sidney');
 case_fields($id, true);
 

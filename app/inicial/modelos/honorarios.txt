@@ -4,7 +4,7 @@
 
 @qualificacao Pelo presente instrumento particular, de um lado, **{{escritorio.nome}}**, sociedade de advocacia registrada na **{{escritorio.oab}}**, inscrita no CNPJ sob o n.º **{{escritorio.cnpj}}**, com endereço profissional em **{{escritorio.endereco}}**, representada por **{{escritorio.advogado}}**, advogado inscrito na **{{escritorio.advogado_oab}}**, doravante denominada **CONTRATADA**;
 
-@qualificacao e, de outro lado, **{{cliente.nome_completo}}**, de nacionalidade **{{cliente.nacionalidade}}**, estado civil **{{cliente.estado_civil}}**, profissão **{{cliente.profissao}}**, {{flex:inscrito/inscrita}} no CPF sob o n.º **{{cliente.cpf}}**, documento de identificação **{{cliente.identificacao}}**, residente e {{flex:domiciliado/domiciliada}} em **{{cliente.endereco}}**, telefone **{{cliente.telefone}}** e endereço eletrônico **{{cliente.email}}**, doravante {{flex:denominado/denominada}} **CONTRATANTE**;
+@qualificacao e, de outro lado, **{{cliente.nome_completo}}**, de nacionalidade **{{cliente.nacionalidade}}**, estado civil **{{cliente.estado_civil}}**, profissão **{{cliente.profissao}}**, {{cliente.documentos}}, residente e {{flex:domiciliado/domiciliada}} em **{{cliente.endereco}}**, telefone **{{cliente.telefone}}** e endereço eletrônico **{{cliente.email}}**, doravante {{flex:denominado/denominada}} **CONTRATANTE**;
 
 têm entre si justo e contratado o presente instrumento, regido pelas cláusulas seguintes.
 
@@ -216,8 +216,6 @@ O CONTRATANTE deverá fornecer documentos e informações verdadeiras, atender �
 
 @dados
 Canal oficial do escritório: {{escritorio.telefone}} e {{escritorio.email}}
-Prazo usual de resposta: {{escritorio.prazo_resposta}} dias úteis
-Procedimento para situações urgentes: {{escritorio.orientacao_urgencias}}
 
 ### Cláusula # — dos acordos e da procuração
 
@@ -313,7 +311,7 @@ E, por estarem de comum acordo, as partes firmam o presente instrumento.
 
 @assinatura {{escritorio.nome}} | CNPJ {{escritorio.cnpj}} | Contratada, representada por {{escritorio.advogado}} ({{escritorio.advogado_oab}})
 
-@assinatura {{cliente.nome_completo}} | CPF {{cliente.cpf}} | Contratante
+@assinatura {{cliente.nome_completo}} | {{cliente.doc_assinatura}} | Contratante
 
 #### Testemunhas, se utilizadas
 

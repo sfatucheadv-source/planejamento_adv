@@ -586,7 +586,7 @@ $router->get('/cliente/documento-kit/{id}', function (string $id) {
 /** .docx do documento, no timbrado do escritório. */
 function kit_download(array $c, array $v): never
 {
-    $label = KIT_ITEMS[$v['kind']]['label'];
+    $label = kit_label($v['kind']);
     $bin = doc_docx(doc_blocks((string) $v['content']), ['titulo' => $label, 'assunto' => 'Atendimento ' . $c['protocol'] . ' · versão ' . $v['version'], 'autor' => office('lawyer') ?: 'Sidney Fatuche']);
     header('Content-Type: application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     header('Content-Disposition: attachment; filename="' . doc_filename($label, (string) $c['protocol'], (int) $v['version']) . '.docx"');
@@ -599,7 +599,7 @@ function kit_download(array $c, array $v): never
 /** Documento do kit diagramado: folhas A4 com o timbrado, prontas para imprimir ou salvar em PDF. */
 function kit_page(array $c, array $v, string $docxUrl, bool $client): never
 {
-    $label = KIT_ITEMS[$v['kind']]['label'];
+    $label = kit_label($v['kind']);
     header('Cache-Control: private, no-store');
     echo doc_page($label . ' · ' . $c['protocol'] . ' · v' . $v['version'], doc_blocks((string) $v['content']),
         ['Baixar .docx' => $docxUrl, 'Imprimir / PDF' => 'print'], !$client && $v['status'] === 'minuta' ? 'MINUTA' : null);

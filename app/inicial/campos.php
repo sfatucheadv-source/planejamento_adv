@@ -433,6 +433,10 @@ function set_field(int $caseId, string $key, ?string $raw, string $state = 'info
     if ($state === 'informado' && $value !== null && in_array($key, ['nome_completo', 'nome', 'telefone', 'email'], true)) {
         sync_identity($caseId, $key, $value);
     }
+    // A atividade contada na justiça gratuita também é a profissão, se ela ainda não foi informada.
+    if ($state === 'informado' && $key === 'renda_atividade' && $value !== null && mb_strlen($value) <= 80 && !isset(case_fields($caseId)['profissao'])) {
+        set_field($caseId, 'profissao', $value, 'informado', $source, $docId);
+    }
 
     $c = one('SELECT preparation_at, review_flag FROM cases WHERE id = ?', [$caseId]);
     if ($old && !empty($def['material']) && $c && $c['preparation_at']) {

@@ -644,6 +644,11 @@ SQL;
 CREATE INDEX IF NOT EXISTS idx_files_case ON files(case_id, id);
 SQL;
 
+    // Versão 16 — CPF ou RG bastam nos documentos; prazo de resposta e urgências fixos no contrato.
+    $migrations[16] = <<<SQL
+CREATE INDEX IF NOT EXISTS idx_versions_case_kind ON case_artifact_versions(case_id, kind, version);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -669,6 +674,9 @@ SQL;
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_at TEXT');
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_by INTEGER REFERENCES users(id)');
                 }
+            }
+            if ($v === 16) {
+                migrate_templates_v16($pdo);
             }
             if ($v === 15) {
                 $cols = array_column($pdo->query('PRAGMA table_info(files)')->fetchAll(), 'name');
@@ -889,4 +897,43 @@ function migrate_agent_v3(PDO $pdo): void
         $del->execute(['agent_greeting', $old]);
     }
     $del->execute(['agent_name', AGENT_NAME_PREVIOUS]);
+}
+
+/**
+ * Migração 16: nos modelos guardados, a qualificação passa a usar
+ * {{cliente.documentos}} (CPF e/ou documento de identificação, o que houver) e
+ * saem do contrato as linhas de prazo de resposta e de urgências (fixas no
+ * texto). Só troca os trechos iguais aos do modelo padrão; a aprovação é
+ * mantida (o sentido do texto não muda).
+ */
+function migrate_templates_v16(PDO $pdo): void
+{
+    $now = (new DateTimeImmutable('now', new DateTimeZone('America/Sao_Paulo')))->format('Y-m-d H:i:s');
+    $rules = [
+        ['honorarios', '/\{\{flex:inscrito\/inscrita\}\}[ \x{00A0}]no[ \x{00A0}]CPF[ \x{00A0}]sob[ \x{00A0}]o[ \x{00A0}]n\.º[ \x{00A0}]\*\*\{\{cliente\.cpf\}\}\*\*,[ \x{00A0}]documento[ \x{00A0}]de[ \x{00A0}]identificação[ \x{00A0}]\*\*\{\{cliente\.identificacao\}\}\*\*/u', '{{cliente.documentos}}'],
+        ['honorarios', '/Prazo usual de resposta: \{\{escritorio\.prazo_resposta\}\}[ \x{00A0}]dias[ \x{00A0}]úteis\n/u', ''],
+        ['honorarios', '/Procedimento para situações urgentes: \{\{escritorio\.orientacao_urgencias\}\}\n/u', ''],
+        ['honorarios', '/\|[ \x{00A0}]CPF[ \x{00A0}]\{\{cliente\.cpf\}\}[ \x{00A0}]\|/u', '| {{cliente.doc_assinatura}} |'],
+        ['procuracao', '/\{\{flex:inscrito\/inscrita\}\}[ \x{00A0}]junto[ \x{00A0}]ao[ \x{00A0}]CPF\/MF:[ \x{00A0}]\{\{cliente\.cpf\}\}/u', '{{cliente.documentos}}'],
+        ['procuracao', '/\|[ \x{00A0}]CPF\/MF:[ \x{00A0}]\{\{cliente\.cpf\}\}/u', '| {{cliente.doc_assinatura}}'],
+        ['hipossuficiencia', '/\{\{flex:inscrito\/inscrita\}\}[ \x{00A0}]no[ \x{00A0}]CPF[ \x{00A0}]sob[ \x{00A0}]o[ \x{00A0}]nº[ \x{00A0}]\{\{cliente\.cpf\}\}/u', '{{cliente.documentos}}'],
+        ['hipossuficiencia', '/\|[ \x{00A0}]CPF\/MF:[ \x{00A0}]\{\{cliente\.cpf\}\}/u', '| {{cliente.doc_assinatura}}'],
+    ];
+    foreach (['honorarios', 'procuracao', 'hipossuficiencia'] as $key) {
+        $st = $pdo->prepare('SELECT body FROM doc_templates WHERE key = ?');
+        $st->execute([$key]);
+        $cur = $st->fetchColumn();
+        if ($cur === false) {
+            continue;
+        }
+        $body = str_replace("\r\n", "\n", (string) $cur);
+        foreach ($rules as [$k, $re, $to]) {
+            if ($k === $key) {
+                $body = (string) preg_replace($re, $to, $body);
+            }
+        }
+        if ($body !== $cur) {
+            $pdo->prepare('UPDATE doc_templates SET body = ?, updated_at = ? WHERE key = ?')->execute([$body, $now, $key]);
+        }
+    }
 }

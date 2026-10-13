@@ -67,6 +67,12 @@ function case_sync_later(int $id, bool $context = true): void
     after_response(function () use ($id, $context) {
         if ($context) {
             case_context_refresh($id);
+            // Com o contrato recebido, o parecer é preenchido pela IA uma vez, sozinho (Sidney só confere).
+            $c = find_case_or_null($id);
+            if ($c && !case_data($c, 'parecer_at') && llm_enabled()
+                && scalar("SELECT 1 FROM documents WHERE case_id = ? AND kind = 'contrato' AND status IN ('recebido', 'conferido')", [$id])) {
+                parecer_fill($id);
+            }
         }
         drive_sync_case($id);
     });

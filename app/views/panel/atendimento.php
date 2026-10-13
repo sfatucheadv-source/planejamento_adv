@@ -51,7 +51,7 @@ foreach ($files as $f) {
     $filesByDoc[(int) $f['document_id']][] = $f;
 }
 $internal = array_filter($files, fn($f) => (int) $f['internal'] === 1 || $f['kind'] === 'assinado');
-$proposalVersions = array_filter($versions, fn($v) => $v['kind'] === 'proposta' && in_array($v['status'], ['revisado', 'publicado'], true));
+$proposalVersions = array_filter($versions, fn($v) => in_array($v['status'], ['revisado', 'publicado'], true));
 $canMeet = $c['preparation_at'] && !$c['review_flag'] && in_array($st, ['analysis', 'meeting_scheduled', 'awaiting_decision'], true);
 $calc = null;
 $P = fv($id, 'capital') !== null ? ((int) fv($id, 'capital')) / 100 : null;
@@ -235,7 +235,7 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
     </div>
   <?php endif ?>
 
-  <?php foreach (['abertura', 'urgencia', 'situacao', 'qualificacao', 'endereco', 'relacao', 'financiamento', 'veiculo', 'pagamentos', 'contexto', 'gratuidade', 'reuniao'] as $g):
+  <?php foreach (array_merge(['abertura', 'urgencia', 'situacao', 'qualificacao', 'endereco', 'relacao', 'financiamento', 'veiculo', 'pagamentos', 'contexto', 'gratuidade', 'reuniao'], !empty($groupFields['personalizadas']) ? ['personalizadas'] : []) as $g):
     $keys = $groupFields[$g];
     $answered = count(array_filter($keys, fn($k) => isset($fields[$k])));
   ?>
@@ -399,76 +399,48 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
     <?php endif ?>
   </div>
 
-  <?php if (llm_enabled()): ?>
-    <?= $form('ia_sugerir', 'analise', false, 'inline-form fx-ia') ?><button class="b b-xs" type="submit">Sugerir com IA</button><span class="hint">Preenche só o que está vazio (escopo, riscos, exclusões, processos relatados e perguntas da reunião) a partir da conversa e dos documentos. Tudo fica marcado “IA · conferir”.</span></form>
-  <?php endif ?>
-
-  <?= $form('analise', 'analise') ?>
-    <div class="fx-sec">
-      <h3>Conclusão</h3>
-      <div class="row2"><div><?= $input('conclusao', false) ?></div><div><?= $input('revisao_data', false) ?></div></div>
-      <?= $input('conclusao_texto', false) ?>
-      <div class="row2"><div><?= $input('conflito', false) ?></div><div><?= $input('legitimidade', false) ?></div></div>
-      <?= $input('impedimento_motivo', false) ?>
+  <?php
+    $parK = array_merge(['data_base', 'bacen_codigo', 'bacen_periodo', 'bacen_taxa', 'bacen_fonte'], PARECER_FIELDS);
+    $find = array_filter((array) case_data($c, 'parecer_localizar', []), fn($k) => !isset($fields[$k]), ARRAY_FILTER_USE_KEY);
+    $parOk = count(array_filter($parK, fn($k) => isset($fields[$k])));
+    $parAt = case_data($c, 'parecer_at');
+  ?>
+  <div class="fx-card fx-parecer" id="parecer-ia">
+    <div class="fx-card-head"><h2>Parecer de cálculos</h2><span class="hint"><?= $parOk ?>/<?= count($parK) ?> preenchidos<?= $parAt ? ' · IA em ' . e(fmt_datetime((string) $parAt)) : '' ?></span></div>
+    <p class="hint">Tudo vem da IA: taxa média do site do Banco Central (série <?= BCB_SERIE ?>, mês da contratação), contrato e documentos anexos e o que o cliente informou. Confira; para corrigir, edite o campo ou peça à IA abaixo.</p>
+    <dl class="fx-par">
+      <?php foreach ($parK as $k): $def = field_def($k); if (!$def) { continue; } $has = isset($fields[$k]); ?>
+        <div class="fx-par-item <?= $has ? '' : 'is-falta' ?>" id="par-<?= e($k) ?>">
+          <dt><?= e($def['label']) ?> <?= $has ? $src($k) : '' ?></dt>
+          <dd>
+            <?php if ($has): ?><span class="fx-par-v"><?= nl2br(e($val($k))) ?></span>
+            <?php else: ?><span class="fx-par-falta">A localizar<?= isset($find[$k]) ? ': ' . e($find[$k]) : '' ?></span><?php endif ?>
+            <details class="fx-par-ed"><summary>editar</summary>
+              <?= $form('dados', 'par-' . $k) ?><?= $input($k, false) ?><input type="hidden" name="source" value="sidney"><button class="b b-xs" type="submit">Salvar</button></form>
+            </details>
+          </dd>
+        </div>
+      <?php endforeach ?>
+    </dl>
+    <div class="fx-par-acoes">
+      <?= $form('parecer_ia', 'parecer-ia', false, 'inline-form') ?><button class="b b-xs b-primary" type="submit"><?= $parAt ? 'Buscar de novo o que falta' : 'Preencher com IA' ?></button></form>
+      <?php if ($find): ?><details class="fx-msg"><summary class="small">Texto pronto para pesquisar o que falta em outra IA</summary><pre><?= e(parecer_find_prompt($c, $find)) ?></pre></details><?php endif ?>
     </div>
+    <?php if (llm_enabled()): ?>
+      <?= $form('parecer_comando', 'parecer-ia', false, 'stack fx-cmd') ?>
+        <label class="fld"><span>Pedir uma correção à IA</span><textarea name="comando" rows="2" maxlength="1500" placeholder="Ex.: a taxa mensal correta é 2,15% (cláusula 4 do contrato); refaça os resultados e a conclusão." required></textarea></label>
+        <button class="b b-xs" type="submit">Aplicar com IA</button>
+      </form>
+    <?php endif ?>
+  </div>
 
-    <div class="fx-sec">
-      <h3>Proposta</h3>
-      <p class="hint prop-ficha"><?php if ($prop): $pt = proposal_totals($prop['data']); ?>Honorários, êxito, pagamento e despesas vêm da <a href="<?= e(url('painel/propostas/' . $id)) ?>">proposta</a>: <?= e(brl($pt['total'])) ?><?= $prop['data']['exito']['ativo'] ? ' + êxito de ' . e(percent_extenso($prop['data']['exito']['percentual'])) : '' ?>.<?php else: ?>Sem proposta registrada. <a href="<?= e(url('painel/propostas/' . $id)) ?>">Montar a proposta</a> preenche honorários, êxito, pagamento e despesas.<?php endif ?></p>
-      <?= $input('proposta_escopo', false) ?>
-      <div class="row2"><div><?= $input('proposta_riscos', false) ?></div><div><?= $input('proposta_exclusoes', false) ?></div></div>
-      <details class="fx-mais-campos"><summary>Campos manuais da proposta<?= $prop ? ' (a proposta registrada prevalece)' : '' ?></summary>
-        <?php foreach (['proposta_honorarios', 'proposta_base_exito', 'proposta_pagamento', 'proposta_despesas'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
-        <div class="row2"><div><?= $input('proposta_validade', false) ?></div><div><?= $input('proposta_prazo_repasse', false) ?></div></div>
-        <?= $input('proposta_percentual_exito', false) ?>
-      </details>
-    </div>
-
-    <details class="fx-sec fx-sec-d">
-      <summary><h3>Procuração e contrato</h3><span class="hint">em branco, valem os padrões do escritório e o que o cliente informou</span></summary>
-      <?= $input('procuracao_finalidade', false) ?>
-      <?= $input('procuracao_poderes', false) ?>
-      <?php $standing = financing_standing($id); ?>
-      <div class="row2">
-        <div><?= $input('contrato_situacao', false) ?><?php if (!isset($fields['contrato_situacao'])): ?><p class="hint"><?= $standing ? 'Em branco: ' . e(mb_strtolower(FINANCING_STANDING[$standing])) . ' (informado pelo cliente).' : 'O que o cliente informou não basta para definir.' ?></p><?php endif ?></div>
-        <div><?= $input('foro', false) ?><?php if (!isset($fields['foro'])): ?><p class="hint"><?= setting('default_foro') ? 'Em branco: ' . e(setting('default_foro')) . '.' : 'Sem padrão: defina em Variáveis.' ?></p><?php endif ?></div>
-      </div>
-      <?= $input('processos_notificacoes', false) ?>
-      <?php $relato = array_filter([isset($fields['aviso']) ? $val('aviso') : null, $val('aviso_data') ?: null, $val('aviso_descricao') ?: null, isset($fields['processo_existente']) ? 'processo sobre o financiamento: ' . mb_strtolower($val('processo_existente')) : null]); ?>
-      <?php if ($relato): ?><p class="hint">Relato do cliente: <?= e(implode(' · ', $relato)) ?></p><?php endif ?>
-      <div class="row2"><div><?= $input('testemunha1_nome', false) ?></div><div><?= $input('testemunha1_cpf', false) ?></div></div>
-      <div class="row2"><div><?= $input('testemunha2_nome', false) ?></div><div><?= $input('testemunha2_cpf', false) ?></div></div>
-      <?php if ($customKeys = $groupFields['personalizadas'] ?? []): ?>
-        <h3>Variáveis personalizadas</h3>
-        <?php foreach ($customKeys as $k): $cv = custom_vars()[field_def($k)['var']] ?? null; ?>
-          <?= $input($k, false) ?>
-          <p class="hint"><code>{{<?= e(field_def($k)['var']) ?>}}</code><?= $cv && $cv['help'] ? ' · ' . e($cv['help']) : '' ?><?= $cv && $cv['value'] !== null && !isset($fields[$k]) ? ' · em branco, vale o padrão: “' . e(mb_strimwidth($cv['value'], 0, 120, '…')) . '”' : '' ?></p>
-        <?php endforeach ?>
-      <?php endif ?>
-    </details>
-
-    <details class="fx-sec fx-sec-d">
-      <summary><h3>Referência (BCB) e memória do cálculo</h3><span class="hint">para o parecer de cálculos</span></summary>
-      <div class="row3"><?php foreach (['data_base', 'bacen_codigo', 'bacen_periodo'] as $k): ?><div><?= $input($k, false) ?></div><?php endforeach ?></div>
-      <div class="row2"><div><?= $input('bacen_taxa', false) ?></div><div><?= $input('bacen_fonte', false) ?></div></div>
-      <p class="hint">Série 25471 do BCB: taxa média mensal para aquisição de veículos por pessoa física (% a.m.).</p>
-      <?php foreach (['metodo', 'resultados', 'memoria', 'limitacoes'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
-    </details>
-
-    <details class="fx-sec fx-sec-d" <?= !isset($fields['perguntas_reuniao']) ? '' : 'open' ?>>
-      <summary><h3>Para a reunião e a inicial</h3></summary>
-      <?= $input('perguntas_reuniao', false) ?>
-      <?= $input('encargos_discutidos', false) ?>
-      <?= $input('obs_juridicas', false) ?>
-    </details>
-
-    <div class="inline-form fx-salvar">
-      <button class="b" type="submit">Salvar</button>
-      <?php if (in_array($st, ['analysis', 'meeting_scheduled', 'awaiting_decision'], true)): ?>
-        <button class="b b-primary" type="submit" name="op" value="aprovar_preparacao">Salvar e validar análise</button>
-      <?php endif ?>
-      <span class="hint">Validar exige conclusão, resultados, conferência de conflito e de titularidade, escopo, honorários, riscos e perguntas para a reunião.</span>
-    </div>
+  <?= $form('aprovar_preparacao', 'analise', false, 'inline-form fx-salvar') ?>
+    <?php if (in_array($st, ['analysis', 'meeting_scheduled', 'awaiting_decision'], true)): ?>
+      <button class="b b-primary" type="submit">Conferi: validar a análise</button>
+      <span class="hint">Exige a conclusão e os resultados do parecer e a proposta registrada em <a href="<?= e(url('painel/propostas/' . $id)) ?>">Propostas</a>.</span>
+    <?php else: ?>
+      <span class="hint">A validação da análise fica disponível depois da suficiência dos documentos.</span>
+    <?php endif ?>
   </form>
 
   <h3>Arquivos internos (memória, planilhas)</h3>
@@ -492,6 +464,9 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
   <div class="box-head"><h2 id="h-reu">Reunião</h2>
     <span class="hint">Preferência do cliente: <?= e($val('reuniao_canal') ?: 'não informada') ?><?= $val('reuniao_disponibilidade') ? ' · ' . e($val('reuniao_disponibilidade')) : '' ?></span></div>
 
+  <?php if ($qm = qualif_missing($id)): ?>
+    <div class="fx-lembrete"><strong>Lembrete para a conversa:</strong> perguntar <?= e(implode(', ', qualif_labels($qm))) ?>. <span class="hint">O assistente perguntou uma vez e não insistiu. Registre as respostas no <a href="#criticas">Resumo</a>.</span></div>
+  <?php endif ?>
   <?php if ($meeting): ?>
     <div class="at-meet">
       <strong><?= e(MEETING_CHANNELS[$meeting['channel']]['label']) ?></strong> · <?= e(brasilia($meeting['starts_at'])) ?> · <?= (int) $meeting['duration_min'] ?> min
@@ -551,8 +526,8 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
             <label class="fld"><span>Pendências pontuais restantes</span><textarea name="pending_left" rows="2"></textarea></label>
           </div>
           <div class="row2">
-            <label class="fld"><span>Proposta apresentada</span><select name="proposal_version_id"><option value="">—</option><?php foreach ($proposalVersions as $v): ?><option value="<?= (int) $v['id'] ?>">Versão <?= (int) $v['version'] ?> (<?= e(KIT_STATES[$v['status']]) ?>)</option><?php endforeach ?></select></label>
-            <label class="fld"><span>…ou motivo do adiamento da proposta</span><input name="proposal_postponed"></label>
+            <?php if ($proposalVersions): ?><label class="fld"><span>Documento apresentado</span><select name="proposal_version_id"><option value="">—</option><?php foreach ($proposalVersions as $v): ?><option value="<?= (int) $v['id'] ?>"><?= e(kit_label($v['kind'])) ?> v<?= (int) $v['version'] ?> (<?= e(KIT_STATES[$v['status']]) ?>)</option><?php endforeach ?></select></label><?php else: ?><p class="hint"><?= proposal_get($id) ? 'Proposta registrada em Propostas.' : 'Sem proposta registrada em Propostas.' ?></p><?php endif ?>
+            <label class="fld"><span>Motivo, se a proposta foi adiada</span><input name="proposal_postponed"></label>
           </div>
           <div class="row2">
             <label class="fld"><span>Reação do cliente</span><select name="reaction"><option value="pensar">Vai pensar</option><option value="aceitou">Aceitou (aceite preliminar)</option><option value="recusou">Recusou</option><option value="complemento">Precisa de complemento</option></select></label>
@@ -614,7 +589,7 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
           <?php if ($v && $v['status'] === 'minuta'): ?>
             <?= $form('kit_revisar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input type="hidden" name="vid" value="<?= (int) $v['id'] ?>"><button class="b b-xs b-primary" type="submit" <?= $miss ? 'disabled' : '' ?> title="Versão final: o .docx vai para o Drive">Versão final</button></form>
           <?php endif ?>
-          <?php if ($v && $v['status'] === 'revisado' && $k !== 'ficha_inicial'): ?>
+          <?php if ($v && $v['status'] === 'revisado'): ?>
             <?= $form('kit_publicar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input type="hidden" name="vid" value="<?= (int) $v['id'] ?>"><button class="b b-xs b-primary" type="submit">Publicar ao cliente</button></form>
           <?php endif ?>
           <?php if ($v): ?>

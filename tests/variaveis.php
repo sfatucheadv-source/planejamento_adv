@@ -207,7 +207,7 @@ ok(custom_vars()['contrato.multa_rescisoria']['label'] === 'Multa rescisória' &
 
 echo "\nV4. Ficha: veículo, contrato de honorários e personalizadas\n";
 $sid->get('/painel/atendimento/' . $id);
-ok(str_contains($sid->html, 'Procuração e contrato') && str_contains($sid->html, 'f[var_' . $multa['id'] . ']'), 'ficha mostra o bloco do contrato e a variável personalizada');
+ok(str_contains($sid->html, 'id="g-personalizadas"') && str_contains($sid->html, 'f[var_' . $multa['id'] . ']'), 'ficha mostra a variável personalizada (aba Dados)');
 ok(str_contains($sid->html, 'id="g-veiculo"'), 'ficha tem o grupo Veículo');
 op($sid, $id, ['op' => 'dados', 'source' => 'contrato', 'f' => ['veiculo_marca' => 'Fiat', 'veiculo_modelo' => 'Argo Drive 1.0', 'veiculo_ano' => '2020/21', 'veiculo_placa' => 'abc-1d2', 'veiculo_renavam' => '12345678901']]);
 ok(str_contains(flash_error($sid), 'placa') && str_contains(flash_error($sid), 'Renavam'), 'placa e Renavam inválidos são recusados');
