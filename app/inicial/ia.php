@@ -337,6 +337,11 @@ function ia_extract_document(int $caseId, int $docId): ?array
         }
     }
     $note = trim((string) ($json['observacao'] ?? ''));
+    // Guarda o que a leitura trouxe: entra no contexto do caso (arquivo .md).
+    $notas = (array) case_data(find_case($caseId), 'doc_notas', []);
+    $notas[$doc['kind']] = ['label' => $doc['label'], 'at' => now_str(), 'obs' => mb_substr($note, 0, 400),
+        'lidos' => $filled, 'divergencias' => $divergent];
+    set_case_data($caseId, 'doc_notas', $notas);
     $legible = ($json['legivel'] ?? true) !== false;
     $typeOk = ($json['tipo_confere'] ?? true) !== false;
     add_event($caseId, 'ia', 'IA leu: ' . $doc['label'],

@@ -6,7 +6,7 @@ $intro = [
     'ia' => 'Fornecedor, modelo e chave da inteligência artificial usada no atendimento e na leitura dos documentos.',
     'email' => 'Como saem os e-mails que avisam o cliente de novidade na conversa.',
     'asaas' => 'Conta do Asaas para criar as cobranças do contrato assinado.',
-    'agenda' => 'Conversa de 30 minutos marcada pelo assistente, na sua agenda do Google, quando o cliente insiste em falar com você.',
+    'agenda' => 'Agenda: conversas com Sidney marcadas no Google Agenda, com Meet. Drive: uma pasta por atendimento com os arquivos e o resumo do caso (.md).',
     'precos' => 'Tabela da OAB (referência dos honorários), acréscimo para quem vem por indicação e taxas do Asaas usadas no simulador de vendas da proposta.',
 ][$secao];
 ?>
@@ -94,7 +94,7 @@ $intro = [
     <summary>Como criar o acesso no Google (uma vez)</summary>
     <ol class="small">
       <li>Em <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>, crie um projeto (ex.: “Atendimento Fatuche”).</li>
-      <li>Em APIs e serviços › Biblioteca, ative a <strong>Google Calendar API</strong>.</li>
+      <li>Em APIs e serviços › Biblioteca, ative a <strong>Google Calendar API</strong> e a <strong>Google Drive API</strong>.</li>
       <li>Em Tela de consentimento OAuth, escolha “Externo”, preencha nome e e-mail e, em “Usuários de teste”, inclua o seu Gmail. Depois clique em “Publicar app” para a autorização não expirar em 7 dias.</li>
       <li>Em Credenciais › Criar credenciais › ID do cliente OAuth, tipo “Aplicativo da Web”. Em “URIs de redirecionamento autorizados”, cole: <code><?= e(google_redirect_uri()) ?></code></li>
       <li>Copie o ID do cliente e a chave secreta para os campos abaixo, salve e clique em “Conectar ao Google Agenda”.</li>
@@ -110,6 +110,13 @@ $intro = [
     <?php if (google_client_id() !== '' && setting('google_client_secret')): ?><a class="b b-primary" href="<?= e(url('painel/google/conectar')) ?>"><?= google_connected() ? 'Conectar de novo' : 'Conectar ao Google Agenda' ?></a><?php endif ?>
     <?php if (google_connected()): ?><label class="chk"><input type="checkbox" name="google_desconectar" value="1"> Desconectar ao salvar</label><?php endif ?>
   </p>
+  <h3>Google Drive</h3>
+  <?php if (google_connected() && !str_contains((string) setting('google_scopes', ''), 'auth/drive')): ?>
+    <p class="small"><strong>Falta liberar o Drive:</strong> ative a Google Drive API no projeto e clique em “Conectar de novo” acima, autorizando o acesso ao Drive.</p>
+  <?php endif ?>
+  <label class="chk"><input type="checkbox" name="drive_on" value="1" <?= checked(setting('drive_off') !== '1') ?>> Gravar os atendimentos no Google Drive</label>
+  <label class="fld"><span>Pasta em Meu Drive</span><input name="google_drive_pasta" value="<?= e(drive_path()) ?>" spellcheck="false"></label>
+  <p class="hint">Cada atendimento ganha uma subpasta com o protocolo como nome (ex.: <?= e(drive_path()) ?>/SF-65HPP2), com os arquivos enviados e o <code>SF-65HPP2.md</code>: todas as variáveis conhecidas, o contexto do caso, as principais necessidades, os pontos relevantes, os documentos e a conversa. A gravação acontece a cada arquivo recebido, ao confirmar o resumo e ao marcar a reunião. As pastas que não existirem são criadas.</p>
   <h3>Regras do horário</h3>
   <div class="var-grid">
     <label class="fld"><span>Expediente: início</span><input type="time" name="agenda_inicio" value="<?= e(agenda_hhmm($ini)) ?>" step="300"></label>

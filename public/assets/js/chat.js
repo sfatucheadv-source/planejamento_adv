@@ -380,22 +380,41 @@
   if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', conferir); } else { conferir(); }
 })();
 
-/* Aba de documentos: anexar envia na hora; "Vou procurar" marca e desmarca. */
+/* Aba de documentos: anexar envia na hora, com contador circular do envio;
+   depois do envio, o servidor lê o arquivo com a IA e a página atualiza. */
 (function () {
   'use strict';
   document.documentElement.classList.add('js');
-  function enviar(form, choice) {
-    var h = form.querySelector('[data-choice]');
-    if (h) { h.value = choice; }
-    var btns = form.querySelectorAll('button[name=choice]');
-    Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
+  function ring(form, pct, msg) {
+    var r = form.querySelector('[data-ring]');
+    var m = form.querySelector('[data-ring-msg]');
+    if (!r) { return; }
+    r.hidden = false;
+    r.setAttribute('aria-valuenow', String(pct));
+    r.querySelector('.docs-ring-fg').setAttribute('stroke-dasharray', pct + ' 100');
+    r.querySelector('[data-ring-n]').textContent = pct + '%';
+    if (m && msg) { m.hidden = false; m.textContent = msg; }
+    if (pct >= 100) { r.classList.add('is-lendo'); }
+  }
+  function enviar(form) {
+    if (!window.XMLHttpRequest || !window.FormData) { form.submit(); return; }
     form.classList.add('is-enviando');
-    form.submit();
+    ring(form, 0, 'Enviando…');
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', form.action);
+    xhr.upload.onprogress = function (ev) {
+      if (ev.lengthComputable) { ring(form, Math.min(100, Math.round(ev.loaded / ev.total * 100)), 'Enviando…'); }
+    };
+    xhr.upload.onload = function () { ring(form, 100, 'Lendo o documento…'); };
+    xhr.onload = function () { window.location.href = xhr.responseURL || window.location.href; };
+    xhr.onerror = function () {
+      form.classList.remove('is-enviando');
+      ring(form, 0, 'Não foi possível enviar. Confira a conexão e tente de novo.');
+    };
+    xhr.send(new FormData(form));
   }
   document.addEventListener('change', function (ev) {
-    var form = ev.target.closest && ev.target.closest('form[data-auto-envio]');
-    if (!form) { return; }
-    if (ev.target.type === 'file' && ev.target.files && ev.target.files.length) { enviar(form, 'enviar'); }
-    if (ev.target.hasAttribute('data-auto-check')) { enviar(form, ev.target.getAttribute('data-auto-check')); }
+    var form = ev.target.closest && ev.target.closest('form[data-upload]');
+    if (form && ev.target.type === 'file' && ev.target.files && ev.target.files.length) { enviar(form); }
   });
 })();

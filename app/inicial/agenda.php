@@ -24,7 +24,7 @@ const AGENDA_DEFAULTS = [
     'agenda_dias' => 14,         // até onde procurar
 ];
 
-const GOOGLE_SCOPES = 'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy';
+const GOOGLE_SCOPES = 'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy https://www.googleapis.com/auth/drive';
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
@@ -141,11 +141,15 @@ function google_http(string $method, string $url, ?array $body = null, bool $for
     if ($token) {
         $headers[] = 'Authorization: Bearer ' . $token;
     }
-    if ($body !== null) {
+    if ($body !== null && isset($body['_raw'])) {
+        // Corpo pronto (upload de arquivo para o Drive): ['_raw' => bytes, '_type' => content-type]
+        $headers[] = 'Content-Type: ' . $body['_type'];
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $body['_raw']);
+    } elseif ($body !== null) {
         $headers[] = $form ? 'Content-Type: application/x-www-form-urlencoded' : 'Content-Type: application/json';
         curl_setopt($ch, CURLOPT_POSTFIELDS, $form ? http_build_query($body) : json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
-    curl_setopt_array($ch, [CURLOPT_CUSTOMREQUEST => $method, CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 25, CURLOPT_HTTPHEADER => $headers]);
+    curl_setopt_array($ch, [CURLOPT_CUSTOMREQUEST => $method, CURLOPT_RETURNTRANSFER => true, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_TIMEOUT => 60, CURLOPT_HTTPHEADER => $headers]);
     $raw = curl_exec($ch);
     $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $err = curl_error($ch);
@@ -188,6 +192,9 @@ function google_exchange_code(string $code): ?string
 
 function google_store_access(array $d): void
 {
+    if (!empty($d['scope'])) {
+        set_setting('google_scopes', (string) $d['scope']);
+    }
     set_setting('google_access_token', (string) $d['access_token']);
     set_setting('google_access_expires', (string) (now()->getTimestamp() + max(60, (int) ($d['expires_in'] ?? 3600)) - 60));
 }
@@ -218,11 +225,18 @@ function google_access_token(): array
 
 function google_api(string $method, string $path, ?array $body = null): array
 {
+    return google_api_url($method, GOOGLE_API_URL . $path, $body);
+}
+
+/** Chamada autenticada a qualquer API do Google (Agenda ou Drive). [ok, dados, erro]. */
+function google_api_url(string $method, string $url, ?array $body = null): array
+{
+    $path = parse_url($url, PHP_URL_PATH);
     [$tok, $err] = google_access_token();
     if (!$tok) {
         return [false, [], $err];
     }
-    [$st, $d] = google_http($method, GOOGLE_API_URL . $path, $body, false, $tok);
+    [$st, $d] = google_http($method, $url, $body, false, $tok);
     $ok = $st >= 200 && $st < 300;
     if (!$ok) {
         error_log('[fatuche][google] ' . $method . ' ' . $path . ': ' . google_error($st, $d));
@@ -473,6 +487,7 @@ function agenda_book(array $c, string $origin = 'pedido', ?DateTimeImmutable $at
     add_event($id, 'reuniao', $R['event'], $R['why'] . ' '
         . MEETING_CHANNELS[$channel]['short'] . ' ' . fmt_datetime($start->format('Y-m-d H:i:s')) . ($ev ? ' · Google Agenda' : ' · só no sistema') . '.', true);
     set_next($id, $R['next'], $start->format('Y-m-d H:i:s'));
+    case_sync_later($id, false);
     return one('SELECT * FROM case_meetings WHERE id = ?', [$mid]);
 }
 
@@ -513,14 +528,17 @@ function docs_all_resolved(int $id): bool
     return true;
 }
 
+const MEETING_UNLOCK_PCT = 70;
+
 /**
- * Depois de confirmar o resumo: com cada documento anexado ou com o
- * compromisso de procurar, o cliente já pode escolher o horário da conversa.
+ * O agendamento com Sidney é liberado a partir de 70% das informações e
+ * documentos mínimos: o que falta não impede a conversa.
  */
 function meeting_ready(int $id): bool
 {
     $c = find_case($id);
-    return (bool) $c['intake_done_at'] && $c['initial_status'] !== 'completed' && !current_meeting($id) && docs_all_resolved($id);
+    return $c['initial_status'] !== 'completed' && !current_meeting($id)
+        && ($c['intake_done_at'] || agent_progress_pct($id) >= MEETING_UNLOCK_PCT);
 }
 
 /** Texto de engajamento da reunião, com os dados do caso. */

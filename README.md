@@ -102,6 +102,12 @@ O que a IA lê dos documentos entra na ficha como informação recebida e vai pa
 
 ### Fim da coleta: resumo, documentos e reunião
 
+O agendamento com Sidney é liberado a partir de 70% das informações e documentos mínimos (`MEETING_UNLOCK_PCT`): o chat avisa e a aba Documentos mostra o botão "Próximo passo". Na aba Documentos, o que não foi enviado aparece só como "Falta" (não bloqueia), e cada anexo mostra um contador circular do envio; o arquivo é lido pela IA, que preenche as variáveis pendentes e alimenta o contexto do caso.
+
+### Google Drive e resumo do caso (.md)
+
+Com o Google conectado (mesma conexão da agenda, com permissão do Drive), cada atendimento ganha uma pasta com o protocolo como nome em "Meu Drive/000 - Sites/Atendimentos Site" (ajustável). Vão para lá os arquivos enviados e o `<protocolo>.md`, com todas as variáveis conhecidas (e a fonte), o contexto do caso, as principais necessidades e os pontos relevantes (montados pela IA a partir da ficha, das leituras e da conversa), os documentos, a reunião e a conversa completa. A gravação roda depois da resposta ao cliente, a cada arquivo, ao confirmar o resumo e ao marcar a reunião; no painel, a ficha tem "Baixar .md", "Abrir a pasta no Drive" e "Enviar ao Drive agora". Teste: `php tests/drive.php`.
+
 Com a coleta em 100%, o chat não muda de layout: aparece "Revisar e enviar" e abre um pop-up com o que o Sid-LEX entendeu do caso e todos os dados por seção (seus dados, endereço, veículo, contrato, situação). O cliente corrige o que precisar, envia para Sidney ou volta a conversar. Ao enviar, vai para a aba **Documentos**, numa lista enxuta: anexa o que tem e marca "Vou procurar" no que não tem (fica pendente). Com todos resolvidos, a aba **Reunião** oferece duas opções de horário (o primeiro livre, de preferência no mesmo dia, e o primeiro do dia útil seguinte), com as mesmas regras da agenda e conferência de conflito na hora da escolha, e um texto curto sobre como vai ser a conversa. Escolhido o horário, a reunião é criada no Google Agenda com o link do Meet. Falha da IA não troca mais o chat pelas perguntas com botões, e a opção "Prefiro responder com perguntas e botões" saiu.
 
 ### Agenda de Sidney (Google Agenda com Meet)
@@ -192,6 +198,7 @@ php tests/negociacao.php            # proposta em abas: simulador do Asaas, guia
 php tests/limpeza.php               # migração que zerou os atendimentos (cópia de segurança)
 php tests/agenda.php                # agenda de Sidney: regra do horário, 3 pedidos, Google simulado
 php tests/deducao.php               # o que veio nos documentos não é perguntado de novo
+php tests/drive.php                 # pasta do atendimento no Google Drive e o .md do caso
 ```
 
 ## Publicar na Hostinger

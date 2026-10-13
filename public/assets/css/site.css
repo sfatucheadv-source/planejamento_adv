@@ -808,8 +808,6 @@ body.app-body { height: 100%; height: 100dvh; margin: 0; overflow: hidden; backg
 .docs-acoes { display: flex; align-items: center; gap: 10px; margin: 0; flex-wrap: nowrap; }
 .docs-anexar { position: relative; overflow: hidden; cursor: pointer; }
 .docs-anexar input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-.docs-procurar { display: none; align-items: center; gap: 5px; font-size: .85rem; color: var(--ink-2); white-space: nowrap; cursor: pointer; }
-.js .docs-procurar { display: inline-flex; }
 .js .docs-enviar { display: none; }
 .docs-acoes.is-enviando { opacity: .55; pointer-events: none; }
 .docs-rodape { margin: 8px 0 0; }
@@ -831,3 +829,23 @@ body.app-body { height: 100%; height: 100dvh; margin: 0; overflow: hidden; backg
 .reu-pitch h3 { margin: 0 0 4px; font-size: .8rem; letter-spacing: .06em; text-transform: uppercase; color: var(--teal-2); }
 .reu-pitch p { margin: 4px 0; }
 .reu-pitch ul { margin: 4px 0; padding-left: 20px; }
+
+.docs-falta { color: var(--gold-2); font-weight: 700; }
+.docs-ring { position: relative; display: inline-grid; place-items: center; width: 42px; height: 42px; flex: none; }
+.docs-ring[hidden] { display: none; }
+.docs-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+.docs-ring circle { fill: none; stroke-width: 3.2; }
+.docs-ring-bg { stroke: var(--line); }
+.docs-ring-fg { stroke: var(--teal); stroke-linecap: round; transition: stroke-dasharray .2s; }
+.docs-ring b { position: relative; font-size: .68rem; color: var(--ink); }
+.docs-ring.is-lendo svg { animation: docs-gira 1.2s linear infinite; }
+.docs-ring.is-lendo .docs-ring-fg { stroke-dasharray: 70 100; }
+@keyframes docs-gira { to { transform: rotate(270deg); } }
+@media (prefers-reduced-motion: reduce) { .docs-ring.is-lendo svg { animation: none; } }
+.docs-lendo { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.docs-lendo[hidden] { display: none; }
+.docs-acoes.is-enviando .docs-anexar { display: none; }
+.docs-acoes.is-enviando { opacity: 1; pointer-events: none; }
+.docs-proximo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--paper-2); font-size: .92rem; }
+.cv-libera { margin: 6px 0 0; padding: 6px 12px; border-radius: 10px; background: var(--ok-soft); font-size: .88rem; color: var(--ink-2); }
+.cv-libera a { font-weight: 700; }

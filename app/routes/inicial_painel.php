@@ -176,6 +176,26 @@ $router->post('/painel/atendimento/{id}', function (string $id) {
 });
 
 /* Gestor e administrador: fechar, arquivar, desarquivar e excluir o atendimento. */
+$router->get('/painel/atendimento/{id}/caso.md', function (string $id) {
+    require_user();
+    $c = require_case_operator((int) $id);
+    case_context_refresh((int) $c['id']);
+    header('Content-Type: text/markdown; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $c['protocol'] . '.md"');
+    echo case_markdown((int) $c['id']);
+    exit;
+});
+
+$router->post('/painel/atendimento/{id}/drive', function (string $id) {
+    require_user();
+    $c = require_case_operator((int) $id);
+    @set_time_limit(300);
+    case_context_refresh((int) $c['id']);
+    [$n, $err] = drive_sync_case((int) $c['id']);
+    flash($err ? 'error' : 'ok', $err ? 'Google Drive: ' . $err : 'Gravado no Drive: ' . plural($n, 'arquivo novo', 'arquivos novos') . ' e o resumo ' . $c['protocol'] . '.md.');
+    redirect('painel/atendimento/' . $c['id'] . '#arquivo-caso');
+});
+
 $router->post('/painel/atendimento/{id}/gestao', function (string $id) {
     $u = require_user();
     $c = require_case_operator((int) $id);
@@ -933,7 +953,7 @@ const CONFIG_SECTIONS = [
     'ia' => 'Inteligência artificial',
     'email' => 'E-mails de aviso',
     'asaas' => 'Asaas (cobranças)',
-    'agenda' => 'Agenda (Google)',
+    'agenda' => 'Google (Agenda e Drive)',
     'precos' => 'Preços e negociação',
 ];
 
@@ -1103,7 +1123,7 @@ function config_save_agenda(): void
         flash('error', 'O ID do cliente do Google termina em “.apps.googleusercontent.com”. Copie de novo em Google Cloud › APIs e serviços › Credenciais.');
     } elseif ($id !== google_client_id()) {
         set_setting('google_client_id', $id ?: null);
-        foreach (['google_refresh_token', 'google_access_token', 'google_access_expires', 'google_account_email'] as $k) {
+        foreach (['google_refresh_token', 'google_access_token', 'google_access_expires', 'google_account_email', 'google_scopes', 'drive_root_id'] as $k) {
             set_setting($k, null); // outro app: a autorização antiga não vale
         }
         audit('google_cliente_alterado');
@@ -1113,6 +1133,12 @@ function config_save_agenda(): void
         set_setting('google_client_secret', $secret);
         audit('google_segredo_alterado', null, 'final ' . substr($secret, -4));
     }
+    $pasta = trim((string) input('google_drive_pasta'), " /\\");
+    if ($pasta !== drive_path()) {
+        set_setting('google_drive_pasta', $pasta !== '' && $pasta !== DRIVE_PATH_DEFAULT ? mb_substr($pasta, 0, 200) : null);
+        set_setting('drive_root_id', null);
+    }
+    set_setting('drive_off', input('drive_on') === '1' ? null : '1');
     $cal = trim((string) input('google_calendar_id'));
     set_setting('google_calendar_id', $cal !== '' && $cal !== 'primary' ? mb_substr($cal, 0, 200) : null);
     if (input('google_desconectar') === '1') {
@@ -1120,7 +1146,7 @@ function config_save_agenda(): void
         if ($tok !== '') {
             google_http('POST', GOOGLE_REVOKE_URL, ['token' => $tok], true);
         }
-        foreach (['google_refresh_token', 'google_access_token', 'google_access_expires', 'google_account_email'] as $k) {
+        foreach (['google_refresh_token', 'google_access_token', 'google_access_expires', 'google_account_email', 'google_scopes', 'drive_root_id'] as $k) {
             set_setting($k, null);
         }
         audit('google_desconectado');

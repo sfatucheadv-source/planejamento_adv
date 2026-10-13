@@ -835,3 +835,5 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 @media (max-width: 1100px) { .mdl-grid { grid-template-columns: minmax(0, 1fr); } .mdl-previa { position: static; max-height: none; } }
 .cfg-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 6px 0 14px; }
 .err-line { color: var(--red, #b42318); }
+.at-arquivo-acoes { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 6px 0 0; }
+.at-arquivo-acoes .inline-form { margin: 0; }

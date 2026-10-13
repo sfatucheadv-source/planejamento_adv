@@ -220,11 +220,11 @@ $router->post('/cliente/conversa/documento/{id}', function (string $id) {
         $err = bot_doc_answer($c, (int) $id, $choice, uploaded_files('arquivo'), (string) input('k'));
     }
     $back = (string) input('volta') === 'documentos' ? 'documentos' : 'conversa';
-    if (!$err && $back === 'documentos' && meeting_ready((int) $c['id'])) {
-        flash('ok', 'Documentos resolvidos! Agora escolha o horário da sua conversa com Sidney.');
-        portal_back('reuniao', 'h-reu');
+    if (!$err && $choice === 'enviar') {
+        case_sync_later((int) $c['id']); // contexto do caso e Google Drive, depois da resposta
     }
-    flash($err ? 'error' : 'ok', $err ?: 'Salvo.');
+    $lido = !$err && $choice === 'enviar' ? (string) scalar("SELECT body FROM chat_messages WHERE case_id = ? AND author = 'bot' ORDER BY id DESC LIMIT 1", [$c['id']]) : '';
+    flash($err ? 'error' : 'ok', $err ?: (str_starts_with($lido, 'Li o documento') ? 'Recebido. ' . str_replace("\n", ' ', $lido) : 'Recebido.'));
     portal_back($back, $back === 'conversa' ? 'pergunta' : 'docs');
 });
 
@@ -306,6 +306,9 @@ $router->post('/cliente/conversa/mensagem', function () {
         if ($event) {
             agent_turn(find_case($id), implode("\n", $event));
         }
+        if ($files || $audios) {
+            case_sync_later($id);
+        }
         if ($ajax) {
             json_out(chat_ajax_payload(find_case($id), $after));
         }
@@ -354,18 +357,15 @@ $router->post('/cliente/conversa/resumo', function () {
         flash('ok', 'Correções salvas. Confira o resumo e envie para Sidney.');
         portal_back('conversa', 'resumo');
     }
+    case_sync_later($id);
     if (agent_finish($id)) {
         chat_post($id, 'client', 'Conferi o resumo: está tudo certo, pode enviar para Sidney.');
     } elseif (!find_case($id)['intake_done_at']) {
         flash('error', 'Ainda falta alguma informação ou documento. Veja a lista acima da conversa.');
         portal_back('conversa', 'fim');
     }
-    // Próxima etapa: documentos; com todos resolvidos, a escolha do horário com Sidney.
-    if (meeting_ready($id)) {
-        flash('ok', 'Resumo enviado para Sidney. Agora escolha o horário da sua conversa com ele.');
-        portal_back('reuniao', 'h-reu');
-    }
-    flash('ok', 'Resumo enviado para Sidney. Agora, os documentos: anexe o que tiver e marque o que vai procurar.');
+    // Próxima etapa: documentos (anexa o que tiver) e, de lá, o agendamento com Sidney.
+    flash('ok', 'Resumo enviado para Sidney. Anexe os documentos que tiver e siga para o agendamento.');
     portal_back('documentos', 'docs');
 });
 
@@ -386,6 +386,7 @@ $router->post('/cliente/reuniao/marcar', function () {
         portal_back('reuniao', 'h-reu');
     }
     $m = agenda_book(find_case($id), 'coleta', $t);
+    case_sync_later($id, false);
     flash($m ? 'ok' : 'error', $m ? 'Conversa confirmada para ' . fmt_when(dt($m['starts_at'])) . '.' : 'Não foi possível marcar agora. Sidney vai entrar em contato para combinar.');
     portal_back('reuniao', 'h-reu');
 });

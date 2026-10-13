@@ -275,6 +275,8 @@ ok(!str_contains($cli->html, 'Prefiro responder com perguntas e botões'), 'sem 
 $cli->post('/cliente/conversa/resumo', ['op' => 'salvar', 'f' => ['profissao' => 'Motorista de aplicativo', 'veiculo_placa' => '']]);
 case_fields($id, true);
 ok(fv($id, 'profissao') === 'Motorista de aplicativo' && fv($id, 'veiculo_placa') === 'ABC1D23' && !c($id)['intake_done_at'], 'correção salva no resumo (campo apagado não apaga a ficha); ainda não enviou');
+$cli->get('/cliente?area=documentos');
+ok(!str_contains($cli->html, 'Vou procurar') && str_contains($cli->html, 'Próximo passo: agendar com Sidney') && str_contains($cli->html, 'data-ring'), 'documentos: falta sem caixa de “vou procurar”, contador de envio e botão de próximo passo');
 say($cli, 'Sim, pode confirmar');
 ok((bool) c($id)['intake_done_at'] && last_bot($id) === 'Coleta concluída, obrigado!' && str_contains((string) c($id)['next_action'], 'Conferir a coleta'), 'confirmação encerra a coleta com a mensagem do painel e avisa Sidney');
 

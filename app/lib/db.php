@@ -639,6 +639,11 @@ SQL;
 CREATE INDEX IF NOT EXISTS idx_meetings_status ON case_meetings(status, starts_at);
 SQL;
 
+    // Versão 15 — arquivos e resumo do caso gravados no Google Drive do escritório.
+    $migrations[15] = <<<SQL
+CREATE INDEX IF NOT EXISTS idx_files_case ON files(case_id, id);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -663,6 +668,12 @@ SQL;
                 if (!in_array('archived_at', $cols, true)) {
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_at TEXT');
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_by INTEGER REFERENCES users(id)');
+                }
+            }
+            if ($v === 15) {
+                $cols = array_column($pdo->query('PRAGMA table_info(files)')->fetchAll(), 'name');
+                if (!in_array('drive_id', $cols, true)) {
+                    $pdo->exec('ALTER TABLE files ADD COLUMN drive_id TEXT');
                 }
             }
             if ($v === 14) {

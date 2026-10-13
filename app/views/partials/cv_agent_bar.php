@@ -22,6 +22,9 @@ $sug = $c['intake_done_at'] ? [] : (array) case_data($c, 'agent_suggestions', []
       <p class="cv-guia-dica">Não precisa seguir a ordem: conte do seu jeito e mande os documentos aqui pelo clipe.</p>
     </details>
     <?php endif ?>
+    <?php if (meeting_ready($id)): ?>
+      <p class="cv-libera"><span aria-hidden="true">📅</span> Já dá para agendar com Sidney. <a href="<?= e(url('cliente', ['area' => 'reuniao'])) ?>#h-reu">Escolher horário</a></p>
+    <?php endif ?>
   <?php else: ?>
     <div class="cv-pronto" id="pergunta">
       <span class="cv-pronto-t"><span aria-hidden="true">✓</span> <strong>100%</strong> · Tudo o que Sidney precisa já está aqui.</span>

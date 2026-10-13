@@ -695,6 +695,21 @@ if ($P && $N) {
 </aside>
 </div>
 
+<section class="box at-arquivo" id="arquivo-caso">
+  <h2>Resumo do caso e Google Drive</h2>
+  <p class="hint">O arquivo .md reúne todas as variáveis conhecidas, o contexto, as necessidades, os pontos relevantes, os documentos e a conversa.</p>
+  <p class="at-arquivo-acoes">
+    <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/caso.md')) ?>">Baixar <?= e($c['protocol']) ?>.md</a>
+    <?php if (drive_enabled()): $pasta = case_data($c, 'drive_pasta'); ?>
+      <?php if ($pasta): ?><a class="b b-xs" href="https://drive.google.com/drive/folders/<?= e(rawurlencode((string) $pasta)) ?>" target="_blank" rel="noopener">Abrir a pasta no Drive</a><?php endif ?>
+      <form method="post" action="<?= e(url('painel/atendimento/' . $id . '/drive')) ?>" class="inline-form"><?= csrf_field() ?><button class="b b-xs" type="submit">Enviar ao Drive agora</button></form>
+      <span class="hint"><?= case_data($c, 'drive_at') ? 'Última gravação: ' . e(fmt_datetime((string) case_data($c, 'drive_at'))) : 'Ainda não gravado' ?> · <?= e(drive_path()) ?>/<?= e($c['protocol']) ?></span>
+    <?php else: ?>
+      <span class="hint">Drive não conectado: conecte em <a href="<?= e(url('painel/configuracoes/agenda')) ?>">Configurações › Google</a>.</span>
+    <?php endif ?>
+  </p>
+</section>
+
 <?php if (can_manage_cases()): $gest = fn(string $op) => '<form method="post" action="' . e(url('painel/atendimento/' . $id . '/gestao')) . '" class="stack">' . csrf_field() . '<input type="hidden" name="op" value="' . $op . '">'; ?>
 <details class="box at-gestao" id="gestao">
   <summary><h2>Gestão do atendimento</h2><span class="hint">gestor e administrador · fechar, arquivar ou excluir</span></summary>

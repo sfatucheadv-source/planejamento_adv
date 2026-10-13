@@ -40,7 +40,7 @@ if (!oab_table_filled()) {
     $alerts[] = ['warn', 'Preencha os valores da tabela da OAB: eles são a referência do guia de preço das propostas.', 'painel/configuracoes/precos', 'Preencher tabela'];
 }
 if (!google_connected()) {
-    $alerts[] = ['info', 'Google Agenda não conectado: a conversa pedida pelo cliente fica só no sistema, sem link do Meet.', 'painel/configuracoes/agenda', 'Conectar'];
+    $alerts[] = ['info', 'Google não conectado: as reuniões ficam só no sistema (sem Meet) e os atendimentos não vão para o Drive.', 'painel/configuracoes/agenda', 'Conectar'];
 }
 if (!asaas_enabled()) {
     $alerts[] = ['info', 'Asaas sem chave: as cobranças do contrato ainda não podem ser criadas pelo sistema.', 'painel/configuracoes/asaas', 'Conectar'];
@@ -90,8 +90,8 @@ $tiles = [
     ['Integrações', 'card', 'Asaas (cobranças)', asaas_enabled() ? 'ok' : 'info', asaas_enabled() ? 'Conectado · ' . ASAAS_ENVS[asaas_env()]['label'] : 'Não conectado',
         [asaas_enabled() ? 'Chave ' . asaas_key_hint() : 'Chave não configurada', 'Multa ' . str_replace('.', ',', (string) asaas_late_fees()['multa']) . '% · juros ' . str_replace('.', ',', (string) asaas_late_fees()['juros']) . '% ao mês'],
         'painel/configuracoes/asaas', 'Configurar'],
-    ['Integrações', 'calendar', 'Agenda (Google)', google_connected() ? 'ok' : 'info', google_connected() ? 'Conectada' . (setting('google_account_email') ? ' · ' . setting('google_account_email') : '') : 'Não conectada',
-        ['Conversa de ' . agenda_int('agenda_duracao') . ' min no ' . HUMAN_ASKS_TO_SCHEDULE . 'º pedido do cliente', 'Expediente ' . implode(' às ', array_map('agenda_hhmm', agenda_hours()))], 'painel/configuracoes/agenda', 'Configurar'],
+    ['Integrações', 'calendar', 'Google (Agenda e Drive)', google_connected() ? (drive_enabled() ? 'ok' : 'warn') : 'info', google_connected() ? 'Conectado' . (setting('google_account_email') ? ' · ' . setting('google_account_email') : '') : 'Não conectado',
+        ['Conversas de ' . agenda_int('agenda_duracao') . ' min · expediente ' . implode(' às ', array_map('agenda_hhmm', agenda_hours())), drive_enabled() ? 'Drive: ' . drive_path() : 'Drive não liberado'], 'painel/configuracoes/agenda', 'Configurar'],
     ['Integrações', 'coin', 'Preços e negociação', oab_table_filled() ? 'ok' : 'warn', oab_table_filled() ? count(array_filter(oab_table(), fn($i) => (int) ($i['valor'] ?? 0) > 0)) . ' serviço(s) com valor da OAB' : 'Tabela da OAB sem valores',
         ['Indicação: +' . fmt_pct(indicacao_pct()), 'Taxas do Asaas: ' . (asaas_fees_custom() ? 'personalizadas' : 'padrão de referência')], 'painel/configuracoes/precos', 'Configurar'],
     ['Documentos', 'braces', 'Dados do escritório', 'info', 'Variáveis dos documentos', ['Endereço, telefone, PIX, foro e campos personalizados'], 'painel/variaveis', 'Editar dados'],
