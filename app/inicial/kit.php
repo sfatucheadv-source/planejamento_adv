@@ -440,7 +440,7 @@ function ficha_inicial_content(int $caseId): string
 
 function kit_latest(int $caseId, string $kind): ?array
 {
-    return one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = ? AND status <> 'substituido' ORDER BY version DESC LIMIT 1", [$caseId, $kind]);
+    return one("SELECT * FROM case_artifact_versions WHERE case_id = ? AND kind = ? AND status NOT IN ('substituido', 'teste') ORDER BY version DESC LIMIT 1", [$caseId, $kind]);
 }
 
 function kit_applicable(int $caseId, string $kind): bool
@@ -449,7 +449,7 @@ function kit_applicable(int $caseId, string $kind): bool
 }
 
 /** Conteúdo e hash que o item teria agora, para detectar alteração não revisada. */
-function kit_fresh(int $caseId, string $kind): array
+function kit_fresh(int $caseId, string $kind, ?string $versao = null): array
 {
     if ($kind === 'ficha_inicial') {
         $content = ficha_inicial_content($caseId);
@@ -458,7 +458,7 @@ function kit_fresh(int $caseId, string $kind): array
     }
     $t = doc_template($kind);
     $vars = kit_vars($caseId);
-    $vars['kit.versao'] = 'v' . (((int) scalar('SELECT MAX(version) FROM case_artifact_versions WHERE case_id = ? AND kind = ?', [$caseId, $kind])) + 1);
+    $vars['kit.versao'] = $versao ?? 'v' . (((int) scalar("SELECT MAX(version) FROM case_artifact_versions WHERE case_id = ? AND kind = ? AND status <> 'teste'", [$caseId, $kind])) + 1);
     [$content, $missing] = render_template($t['body'], $vars);
     // A fotografia guarda só as variáveis que o modelo usa: mudar um dado que
     // não aparece no documento não o marca como desatualizado.
@@ -528,7 +528,7 @@ function kit_generate(array $c, string $kind): ?string
     $id = (int) $c['id'];
     [$content, $missing, $snap, $hash, $tv] = kit_fresh($id, $kind);
     $prev = kit_latest($id, $kind);
-    $next = ((int) scalar('SELECT MAX(version) FROM case_artifact_versions WHERE case_id = ? AND kind = ?', [$id, $kind])) + 1;
+    $next = ((int) scalar("SELECT MAX(version) FROM case_artifact_versions WHERE case_id = ? AND kind = ? AND status <> 'teste'", [$id, $kind])) + 1;
     db()->beginTransaction();
     if ($prev && in_array($prev['status'], ['minuta', 'revisado', 'nao_aplicavel'], true)) {
         q("UPDATE case_artifact_versions SET status = 'substituido' WHERE id = ?", [$prev['id']]);
@@ -623,7 +623,7 @@ function kit_not_applicable(array $c, string $kind, string $reason): ?string
     if ($prev) {
         q("UPDATE case_artifact_versions SET status = 'substituido' WHERE id = ?", [$prev['id']]);
     }
-    $next = ((int) scalar('SELECT MAX(version) FROM case_artifact_versions WHERE case_id = ? AND kind = ?', [$id, $kind])) + 1;
+    $next = ((int) scalar("SELECT MAX(version) FROM case_artifact_versions WHERE case_id = ? AND kind = ? AND status <> 'teste'", [$id, $kind])) + 1;
     insert('case_artifact_versions', ['case_id' => $id, 'kind' => $kind, 'version' => $next, 'content' => trim($reason), 'status' => 'nao_aplicavel', 'created_at' => now_str(), 'created_by' => current_user()['id'] ?? null]);
     add_event($id, 'kit', kit_label($kind) . ': não se aplica', trim($reason));
     contract_sync($id);

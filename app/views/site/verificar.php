@@ -27,8 +27,9 @@ foreach ($parties as $pt) {
         $ce = json_decode((string) $pt['cert_info'], true) ?: [];
         $pev = json_decode((string) $pt['evidence'], true) ?: [];
         $signers[] = ['nome' => $pt['name'], 'papel' => $pt['role'] === 'testemunha' ? 'Testemunha ' . $pt['ord'] : 'Advogado, pelo escritório (contratada)', 'cpf' => $pt['cpf'], 'em' => $pt['signed_at'],
-            'meio' => in_array($pt['method'], ['senha', 'aprovacao_no_sistema'], true) ? 'Assinatura eletrônica com o usuário da equipe e a senha confirmada no sistema'
-                : 'Certificado digital' . ($pt['method'] === 'certificado_a1' ? ' A1' : ' A3 (token)') . (!empty($ce['icp_brasil']) ? ' ICP-Brasil' : '') . ($ce ? ' · ' . $ce['titular'] . ' · emitido por ' . $ce['emissor'] . ' · série ' . $ce['serie'] : ''),
+            'meio' => $pt['method'] === 'aprovacao' ? 'Assinatura eletrônica: aprovação no painel, com a pessoa autenticada no próprio usuário da equipe'
+                : (in_array($pt['method'], ['senha', 'aprovacao_no_sistema'], true) ? 'Assinatura eletrônica com o usuário da equipe e a senha confirmada no sistema'
+                : 'Certificado digital' . ($pt['method'] === 'certificado_a1' ? ' A1' : ' A3 (token)') . (!empty($ce['icp_brasil']) ? ' ICP-Brasil' : '') . ($ce ? ' · ' . $ce['titular'] . ' · emitido por ' . $ce['emissor'] . ' · série ' . $ce['serie'] : '')),
             'extra' => preg_replace('/,?\s*(CPF [\d.\-]+|e-mail [^,]+|telefone [^,]+|residente em .*)$/u', '', (string) ($pev['usuario']['qualificacao'] ?? ''))];
     }
 }
@@ -45,6 +46,9 @@ if ($sig) {
 </section>
 <section class="section">
   <div class="wrap narrow prose verif">
+    <?php if (!empty($req['teste'])): ?>
+      <p class="verif-estado -erro"><strong>Documento de teste, sem valor jurídico.</strong> Gerado pelo escritório para testar o fluxo de assinaturas; o cliente foi simulado por um usuário da equipe.</p>
+    <?php endif ?>
     <?php if (!$sig && $req): ?>
       <p class="verif-estado <?= $state['cadeia'] ? '-ok' : '-erro' ?>"><strong>Documento em assinatura.</strong> O registro <?= e($req['code']) ?> existe: <?= e(SIG_REQUEST_STATES[$req['status']] ?? $req['status']) ?>. A via final e a conferência da cópia ficam disponíveis quando todos assinarem.</p>
       <h2>Registro <?= e($req['code']) ?></h2>

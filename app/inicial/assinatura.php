@@ -70,10 +70,10 @@ function sig_expected_name(array $c): string
     return trim((string) (fv((int) $c['id'], 'nome_completo') ?: $c['client_name']));
 }
 
-/** Envia o código de uso único ao e-mail do cadastro. Retorna erro ou null. */
-function sig_send_code(array $c, array $v): ?string
+/** Envia o código de uso único ao e-mail do cadastro (no teste, ao de quem testa). Retorna erro ou null. */
+function sig_send_code(array $c, array $v, ?string $to = null): ?string
 {
-    $email = (string) $c['client_email'];
+    $email = $to ?? (string) $c['client_email'];
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         return 'Seu atendimento não tem e-mail cadastrado. Informe o e-mail na conversa para poder assinar.';
     }
@@ -85,14 +85,14 @@ function sig_send_code(array $c, array $v): ?string
     $code = (string) random_int(100000, 999999);
     $_SESSION['sig_code'][$v['id']] = ['hash' => password_hash($code, PASSWORD_DEFAULT), 'exp' => time() + SIGN_CODE_MINUTES * 60, 'tries' => 0, 'sent_at' => now_str(), 'to' => $email];
     $label = kit_label($v['kind']);
-    $lines = ['Seu código para assinar o documento “' . $label . '” (versão ' . $v['version'] . ', atendimento ' . $c['protocol'] . ') é: ' . $code,
+    $lines = ['Seu código para assinar o documento “' . $label . '” (versão ' . sig_vtxt($v) . ', atendimento ' . $c['protocol'] . ') é: ' . $code,
         'Ele vale por ' . SIGN_CODE_MINUTES . ' minutos e só pode ser usado uma vez. Se você não pediu este código, ignore este e-mail e avise Sidney.'];
     [$ok, $err] = send_mail($email, 'Código para assinar: ' . $code, implode("\n\n", $lines), mail_html('Código para assinar o documento', $lines), (int) $c['id'], 'assinatura');
     if (!$ok) {
         unset($_SESSION['sig_code'][$v['id']]);
         return 'Não foi possível enviar o código agora: ' . $err;
     }
-    add_event((int) $c['id'], 'assinatura', 'Código de assinatura enviado', $label . ' v' . $v['version'] . ' · ' . sig_mask_email($email), false, 'cliente');
+    $to === null && add_event((int) $c['id'], 'assinatura', 'Código de assinatura enviado', $label . ' v' . $v['version'] . ' · ' . sig_mask_email($email), false, 'cliente');
     return null;
 }
 
@@ -171,9 +171,18 @@ function sig_when(DateTimeImmutable $t): array
 }
 
 /** Dados impressos no selo e na faixa (os definitivos ficam guardados no registro). */
+/** Versões de teste de assinatura ficam acima desta numeração (fora do kit). */
+const SIG_TEST_VERSION = 9000;
+
+/** Número da versão para mostrar ("3" ou "teste 1"). */
+function sig_vtxt(array $v): string
+{
+    return ($v['status'] ?? '') === 'teste' ? 'teste ' . ((int) $v['version'] - SIG_TEST_VERSION) : (string) (int) $v['version'];
+}
+
 function sig_meta(array $c, array $v, ?array $done = null, ?array $req = null): array
 {
-    $m = ['nome' => sig_expected_name($c), 'titulo' => kit_label($v['kind']), 'protocolo' => (string) $c['protocol'], 'versao' => (int) $v['version'],
+    $m = ['nome' => sig_expected_name($c), 'titulo' => kit_label($v['kind']), 'protocolo' => (string) $c['protocol'], 'versao' => sig_vtxt($v),
         'quando' => $done['quando'] ?? null, 'fuso' => $done['fuso'] ?? null, 'codigo' => $done['codigo'] ?? ($req['code'] ?? null), 'url' => $done['url'] ?? null,
         'host' => preg_replace('#^https?://#', '', rtrim(public_root(), '/'))];
     if ($req) {
@@ -421,7 +430,21 @@ function sig_doc_layout(array $v, ?array $req = null): array
     $c = find_case((int) $v['case_id']);
     $w = sig_request_witnesses($req);
     return $cache[$v['id'] . ':' . sig_doc_hash($v) . ':' . md5(json_encode($w))]
-        ??= pdoc_chrome(pdoc_layout(sig_tag_blocks(doc_blocks((string) $v['content']), $c, $w), SEAL_H + 2.5));
+        ??= sig_test_mark($v, pdoc_chrome(pdoc_layout(sig_tag_blocks(doc_blocks((string) $v['content']), $c, $w), SEAL_H + 2.5)));
+}
+
+/** Contrato de teste: aviso no alto de cada página (não muda a diagramação). */
+function sig_test_mark(array $v, array $L): array
+{
+    if (($v['status'] ?? '') !== 'teste') {
+        return $L;
+    }
+    // no alto, à esquerda: o logotipo fica à direita
+    [$enc, $pt, $w] = sig_fit_text('DOCUMENTO DE TESTE · SEM VALOR JURÍDICO', 'poppinsb', 8.0, 95.0);
+    foreach ($L['pages'] as $i => $ops) {
+        $L['pages'][$i][] = ['t', PDOC_LEFT, 12.0, 'poppinsb', $pt, 'B42318', $enc, $w, false];
+    }
+    return $L;
 }
 
 /**
@@ -576,7 +599,8 @@ function sig_original(array $sig): ?array
 function sig_sign(array $c, array $v, array $in): array
 {
     $id = (int) $c['id'];
-    if ($v['status'] !== 'publicado') {
+    $test = $v['status'] === 'teste'; // teste da assinatura conjunta: cliente simulado, nada vai para o atendimento
+    if ($v['status'] !== 'publicado' && !$test) {
         return [null, 'Este documento não está disponível para assinatura.'];
     }
     if (sig_for_version((int) $v['id'])) {
@@ -584,6 +608,9 @@ function sig_sign(array $c, array $v, array $in): array
     }
     // Com testemunhas ou o escritório no documento, o cliente assina por último.
     $req = sig_request_open($c, $v);
+    if ($test && !$req) {
+        return [null, 'Pedido de teste não encontrado.'];
+    }
     if ($req && $req['status'] !== 'cliente') {
         return [null, 'O escritório ainda está assinando este documento. Você será avisado quando ele estiver pronto para a sua assinatura.'];
     }
@@ -609,7 +636,7 @@ function sig_sign(array $c, array $v, array $in): array
     if (!$otp) {
         return [null, $err];
     }
-    if (only_digits((string) fv($id, 'cpf')) === '') {
+    if (!$test && only_digits((string) fv($id, 'cpf')) === '') {
         set_field($id, 'cpf', $cpf, 'informado', 'cliente');
     }
     $now = now();
@@ -656,10 +683,11 @@ function sig_sign(array $c, array $v, array $in): array
     $ua = mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 400);
     $view = is_array($posIn) ? array_intersect_key($posIn, array_flip(['largura_folha_px', 'zoom', 'dpr', 'orientacao', 'tela'])) : [];
     $evidence = [
-        'documento' => ['tipo' => $v['kind'], 'titulo' => kit_label($v['kind']), 'versao' => (int) $v['version'], 'publicado_em' => $v['published_at'], 'hash_sha256_texto' => sig_doc_hash($v),
+        'documento' => ['tipo' => $v['kind'], 'titulo' => kit_label($v['kind']), 'versao' => (int) $v['version'], 'teste' => $test, 'publicado_em' => $v['published_at'], 'hash_sha256_texto' => sig_doc_hash($v),
             'via_pdf' => ['hash_sha256' => $sha, 'bytes' => strlen($pdf), 'paginas' => $pages]],
         'assinante' => ['nome' => sig_expected_name($c), 'nome_digitado' => $nome, 'cpf' => $cpf, 'conta' => portal_account_id(), 'email' => $otp['to']],
-        'autenticacao' => ['meio' => 'conta da área do cliente (acesso por link enviado ao e-mail do cadastro)', 'conta' => portal_account_id(), 'sessao' => hash('sha256', session_id())],
+        'autenticacao' => $test ? ['meio' => 'teste: cliente simulado por usuário da equipe no painel', 'usuario' => current_user()['id'] ?? null, 'sessao' => hash('sha256', session_id())]
+            : ['meio' => 'conta da área do cliente (acesso por link enviado ao e-mail do cadastro)', 'conta' => portal_account_id(), 'sessao' => hash('sha256', session_id())],
         'email_confirmado' => ['para' => $otp['to'], 'codigo_enviado_em' => $otp['sent_at'], 'confirmado_em' => $now->format('Y-m-d H:i:s')],
         'momento' => ['brasilia' => $now->format('Y-m-d H:i:s'), 'utc' => $utc->format('Y-m-d\TH:i:s\Z'), 'fuso' => $now->format('P')],
         'rede' => ['ip' => client_ip(), 'encaminhado_por' => mb_substr((string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? ''), 0, 200) ?: null],
@@ -681,6 +709,9 @@ function sig_sign(array $c, array $v, array $in): array
         'bytes' => strlen($pdf), 'paginas' => $pages, 'assinante' => sig_expected_name($c), 'assinado_em' => $now->format('Y-m-d H:i:s') . ' (' . $now->format('P') . ')', 'selo' => $seal]);
     if ($req) {
         q("UPDATE sig_requests SET status = 'concluido', updated_at = ? WHERE id = ?", [now_str(), $req['id']]);
+    }
+    if ($test) {
+        return [one('SELECT * FROM doc_signatures WHERE id = ?', [$sid]), null];
     }
     // Cópia idêntica (mesmos bytes) nos arquivos do atendimento, que também vai para o Drive.
     $dir = config('storage_dir') . '/uploads/' . $id;
@@ -882,18 +913,19 @@ function sig_sheet_page(string $title, string $body, array $opts = []): string
  * Documento para assinar (área do cliente): as folhas como vão sair no PDF, a
  * prévia da faixa lateral e, ao assinar, o selo para arrastar até o lugar.
  */
-function sig_sign_page(array $c, array $v): string
+function sig_sign_page(array $c, array $v, array $opts = []): string
 {
     $req = sig_request_open($c, $v);
+    $top = $opts['aviso'] ?? '';
     $m = sig_meta($c, $v, null, $req);
     $L = sig_signed_layout($v, $m, null, null, $req);
     if ($req && $req['status'] !== 'cliente') {
         // o escritório ainda assina: o cliente lê e pode pedir retificação
         $faltam = array_map(fn($p) => SIG_PARTY_LABELS[$p['role']] . ($p['role'] === 'testemunha' ? ' ' . $p['ord'] : ''), array_filter(sig_parties((int) $req['id']), fn($p) => !$p['signed_at']));
         return sig_sheet_page(kit_label($v['kind']) . ' · ' . $c['protocol'],
-            '<header class="folhas-topo"><strong>' . e(kit_label($v['kind'])) . '</strong><span>versão ' . (int) $v['version'] . ' · atendimento ' . e($c['protocol']) . '</span></header>'
+            $top . '<header class="folhas-topo"><strong>' . e(kit_label($v['kind'])) . '</strong><span>versão ' . e(sig_vtxt($v)) . ' · atendimento ' . e($c['protocol']) . '</span></header>'
             . '<main class="folhas">' . sig_sheets_html($L) . '</main>'
-            . sig_client_panel($c, $v, 'O escritório está assinando este documento (' . implode(', ', $faltam) . '). Você recebe um aviso quando ele estiver pronto para a sua assinatura; enquanto isso, leia com calma e, se algo estiver errado, peça retificação.'),
+            . sig_client_panel($c, $v, 'O escritório está assinando este documento (' . implode(', ', $faltam) . '). Você recebe um aviso quando ele estiver pronto para a sua assinatura; enquanto isso, leia com calma e, se algo estiver errado, peça retificação.', $opts),
             ['noprint' => true, 'scripts' => [asset('js/assinatura.js')]]);
     }
     $label = kit_label($v['kind']);
@@ -901,41 +933,42 @@ function sig_sign_page(array $c, array $v): string
     $dados = ['selo' => ['w' => SEAL_W, 'h' => SEAL_H, 'minX' => SEAL_MIN_X, 'folhaW' => PDOC_W, 'folhaH' => PDOC_H, 'tinta' => SEAL_INK] + $seal, 'paginas' => count($L['pages'])];
     $json = json_encode($dados, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
     $sealSvg = '<svg viewBox="0 0 ' . SEAL_W . ' ' . SEAL_H . '" xmlns="http://www.w3.org/2000/svg">' . pdoc_svg(sig_seal_ops($m, null)) . '<g data-rubrica></g></svg>';
-    return sig_sheet_page($label . ' · ' . $c['protocol'] . ' · v' . $v['version'],
-        '<header class="folhas-topo"><strong>' . e($label) . '</strong><span>versão ' . (int) $v['version'] . ' · atendimento ' . e($c['protocol']) . ' · ' . count($L['pages']) . ' ' . (count($L['pages']) === 1 ? 'página' : 'páginas') . '</span></header>'
+    return sig_sheet_page($label . ' · ' . $c['protocol'] . ' · v' . sig_vtxt($v),
+        $top . '<header class="folhas-topo"><strong>' . e($label) . '</strong><span>versão ' . e(sig_vtxt($v)) . ' · atendimento ' . e($c['protocol']) . ' · ' . count($L['pages']) . ' ' . (count($L['pages']) === 1 ? 'página' : 'páginas') . '</span></header>'
         . '<main class="folhas" data-folhas>' . sig_sheets_html($L) . '</main>'
         . '<template id="selo-modelo">' . $sealSvg . '</template>'
         . '<script type="application/json" id="assin-dados">' . $json . '</script>'
-        . sig_client_panel($c, $v),
+        . sig_client_panel($c, $v, null, $opts),
         ['noprint' => true, 'scripts' => [asset('js/assinatura.js')]]);
 }
 
 /** Via assinada na área do cliente: as folhas com o selo e a faixa, e o PDF original para baixar. */
-function sig_view_page(array $c, array $v, array $sig, bool $justSigned): string
+function sig_view_page(array $c, array $v, array $sig, bool $justSigned, array $opts = []): string
 {
     $seal = json_decode((string) $sig['seal'], true) ?: [];
     $L = sig_signed_layout($v, $seal['meta'] ?? sig_meta($c, $v), json_decode((string) $sig['strokes'], true), $seal, one('SELECT * FROM sig_requests WHERE version_id = ? AND status = ?', [$v['id'], 'concluido']));
-    $base = url('cliente/documento-kit/' . $v['id'] . '/pdf');
+    $base = $opts['pdf'] ?? url('cliente/documento-kit/' . $v['id'] . '/pdf');
     $top = '<header class="folhas-topo -assinado"><strong>' . e(kit_label($v['kind'])) . ' · assinado</strong><span>' . e(fmt_datetime((string) $sig['signed_at'])) . ' · código ' . e($sig['code']) . '</span>'
         . '<nav><a class="assin-btn" href="' . e($base . '?baixar=1') . '">Baixar o PDF assinado</a><a class="assin-btn -sec" href="' . e($base) . '" target="_blank" rel="noopener">Abrir o PDF</a>'
         . '<a class="assin-btn -sec" href="' . e((string) $sig['verify_url']) . '" target="_blank" rel="noopener">Conferir</a></nav></header>';
-    $done = $justSigned ? '<div class="assin-feito"><span><strong>Documento assinado.</strong> Uma cópia em PDF foi para o seu e-mail. Baixe a sua via agora, se quiser.</span>'
+    $done = $justSigned ? '<div class="assin-feito"><span><strong>Documento assinado.</strong> ' . (isset($opts['pdf']) ? 'Teste concluído: todos assinaram. Baixe o PDF e confira as assinaturas.' : 'Uma cópia em PDF foi para o seu e-mail. Baixe a sua via agora, se quiser.') . '</span>'
         . '<a class="assin-btn" href="' . e($base . '?baixar=1') . '">Baixar o PDF</a></div>' : '';
-    return sig_sheet_page(kit_label($v['kind']) . ' · ' . $c['protocol'] . ' · assinado', $done . $top . '<main class="folhas">' . sig_sheets_html($L, true) . '</main>');
+    return sig_sheet_page(kit_label($v['kind']) . ' · ' . $c['protocol'] . ' · assinado', ($opts['aviso'] ?? '') . $done . $top . '<main class="folhas">' . sig_sheets_html($L, true) . '</main>');
 }
 
 /** Barra e janelas: dados e rubrica → posicionar o selo → código e aceite. Retificação à parte. */
-function sig_client_panel(array $c, array $v, ?string $waiting = null): string
+function sig_client_panel(array $c, array $v, ?string $waiting = null, array $opts = []): string
 {
-    $base = url('cliente/documento-kit/' . $v['id']);
-    $email = (string) $c['client_email'];
+    $base = $opts['base'] ?? url('cliente/documento-kit/' . $v['id']);
+    $email = $opts['email'] ?? (string) $c['client_email'];
+    $test = isset($opts['base']);
     $cpf = only_digits((string) fv((int) $c['id'], 'cpf'));
     $rect = one("SELECT * FROM doc_rectifications WHERE version_id = ? AND status = 'aberta' ORDER BY id DESC LIMIT 1", [$v['id']]);
     $tok = csrf_field();
     return '<div class="assin" data-assin data-base="' . e($base) . '">'
         . '<div class="assin-barra" data-barra="inicio"><p>' . ($rect ? '<strong>Retificação enviada em ' . e(fmt_datetime($rect['created_at'])) . '.</strong> Sidney vai revisar' . ($waiting ? '.' : '; você ainda pode assinar se preferir.')
             : ($waiting !== null ? e($waiting) : 'Leia o documento com atenção. Você pode <strong>assinar</strong> ou <strong>pedir retificação</strong>.')) . '</p>'
-        . '<div class="assin-acoes"><button type="button" class="assin-btn -sec" data-abrir="retificar">Pedir retificação</button>'
+        . '<div class="assin-acoes">' . ($test ? '' : '<button type="button" class="assin-btn -sec" data-abrir="retificar">Pedir retificação</button>')
         . ($waiting === null ? '<button type="button" class="assin-btn" data-abrir="assinar">Assinar documento</button>' : '') . '</div></div>'
 
         . '<div class="assin-barra -selo" data-barra="selo" hidden><p><strong>Arraste o selo</strong> até o lugar da sua assinatura — em qualquer página. <span data-selo-onde></span></p>'
@@ -943,7 +976,7 @@ function sig_client_panel(array $c, array $v, ?string $waiting = null): string
 
         . '<div class="assin-modal" data-janela="assinar" hidden role="dialog" aria-modal="true" aria-labelledby="assin-t"><form class="assin-caixa" data-form="assinar" novalidate>' . $tok
         . '<p class="assin-passo">Passo 1 de 3</p><h2 id="assin-t">Assinar: ' . e(kit_label($v['kind'])) . '</h2>'
-        . '<p class="assin-sub">Versão ' . (int) $v['version'] . ' · atendimento ' . e($c['protocol']) . '. Assinatura eletrônica com confirmação por e-mail.</p>'
+        . '<p class="assin-sub">Versão ' . e(sig_vtxt($v)) . ' · atendimento ' . e($c['protocol']) . '. Assinatura eletrônica com confirmação por e-mail.</p>'
         . '<label class="assin-fld"><span>Seu nome completo</span><input name="nome" autocomplete="name" required placeholder="' . e(sig_expected_name($c)) . '"></label>'
         . '<label class="assin-fld"><span>CPF</span><input name="cpf" inputmode="numeric" autocomplete="off" required' . ($cpf ? ' placeholder="•••.•••.' . e(substr($cpf, 6, 3)) . '-' . e(substr($cpf, 9)) . '"' : '') . '></label>'
         . '<div class="assin-fld"><span>Rubrica <small>(desenhe com o dedo ou o mouse)</small></span><canvas class="assin-pad" width="600" height="180" data-pad aria-label="Quadro para desenhar a rubrica"></canvas>'

@@ -143,7 +143,7 @@ $router->get('/painel/atendimento/{id}', function (string $id) {
         'meetings' => all('SELECT * FROM case_meetings WHERE case_id = ? ORDER BY id DESC', [$cid]),
         'meeting' => current_meeting($cid),
         'kit' => kit_status($c),
-        'versions' => all('SELECT * FROM case_artifact_versions WHERE case_id = ? ORDER BY kind, version DESC', [$cid]),
+        'versions' => all("SELECT * FROM case_artifact_versions WHERE case_id = ? AND status <> 'teste' ORDER BY kind, version DESC", [$cid]),
         'chat' => all('SELECT * FROM chat_messages WHERE case_id = ? ORDER BY id', [$cid]),
         'events' => all('SELECT * FROM events WHERE case_id = ? ORDER BY at DESC, id DESC LIMIT 60', [$cid]),
         'deadlines' => all("SELECT * FROM deadlines WHERE case_id = ? ORDER BY status, due_at", [$cid]),

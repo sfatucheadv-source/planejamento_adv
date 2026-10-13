@@ -46,3 +46,6 @@ body.-sem-impressao .folha > svg { -webkit-user-select: none; user-select: none;
 .folhas-aviso { max-width: 860px; margin: 12px auto 0; padding: 10px 14px; border-radius: 8px; font: 14px "Poppins", Arial, sans-serif; background: #E8F5EC; color: #1B4D2E; }
 .folhas-aviso.-error { background: #FDECEA; color: #8A1C12; }
 .assin-codigo input[type=password] { letter-spacing: normal; font-size: 15px; }
+.folhas-aviso.-teste { background: #FFF4E5; color: #7A3E00; border: 1px solid #F5C27A; }
+.folhas-aviso.-teste a { color: inherit; font-weight: 600; }
+.folhas-teste { color: #B42318; letter-spacing: .04em; }

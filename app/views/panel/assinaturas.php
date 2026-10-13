@@ -9,7 +9,8 @@ $opts = function (?int $sel) use ($users): string {
     return $h;
 };
 ?>
-<div class="page-head"><div><h1>Assinaturas</h1><p class="sub">Primeiro as testemunhas, depois o advogado, por fim o cliente. Cada pessoa da equipe assina com o certificado digital cadastrado (A1 ou A3/token) ou, sem certificado, com a senha do sistema.</p></div></div>
+<div class="page-head"><div><h1>Assinaturas</h1><p class="sub">Primeiro as testemunhas, depois o advogado, por fim o cliente. Cada pessoa da equipe assina com o certificado digital cadastrado (A1 ou A3/token) ou, sem certificado, pela aprovação no painel.</p></div>
+  <?php if ($editor): ?><a class="b" href="<?= e(url('painel/assinaturas/teste')) ?>">Testar a assinatura conjunta</a><?php endif ?></div>
 
 <section class="box">
   <h2>Para você assinar</h2>
@@ -19,7 +20,7 @@ $opts = function (?int $sel) use ($users): string {
     <ul class="sig-lista">
       <?php foreach ($mine as $m): ?>
         <li><a class="b b-primary b-sm" href="<?= e(url('painel/assinaturas/' . $m['id'])) ?>">Ver e assinar</a>
-          <strong><?= e(kit_label($m['kind'])) ?></strong> v<?= (int) $m['version'] ?> · <?= e($m['client_name']) ?> · <?= e($m['protocol']) ?> · <?= e(SIG_PARTY_LABELS[$m['role']]) ?><?= $m['role'] === 'testemunha' ? ' ' . (int) $m['ord'] : '' ?></li>
+          <strong><?= e(kit_label($m['kind'])) ?></strong> v<?= e(sig_vtxt(['status' => $m['teste'] ? 'teste' : '', 'version' => $m['version']])) ?> · <?= e($m['client_name']) ?> · <?= e($m['protocol']) ?> · <?= e(SIG_PARTY_LABELS[$m['role']]) ?><?= $m['role'] === 'testemunha' ? ' ' . (int) $m['ord'] : '' ?><?= $m['teste'] ? ' · <span class="tag tag-amber">teste</span>' : '' ?></li>
       <?php endforeach ?>
     </ul>
   <?php endif ?>
@@ -39,7 +40,7 @@ $opts = function (?int $sel) use ($users): string {
         <?php foreach (sig_parties((int) $r['id']) as $p): $pu = $p['user_id'] ? one('SELECT * FROM users WHERE id = ?', [$p['user_id']]) : null; ?>
           <li class="<?= $p['signed_at'] ? 'is-ok' : '' ?>">
             <?= e(SIG_PARTY_LABELS[$p['role']]) ?><?= $p['role'] === 'testemunha' ? ' ' . (int) $p['ord'] : '' ?>:
-            <?php if ($p['signed_at']): ?><strong><?= e($p['name']) ?></strong> · assinou em <?= e(fmt_datetime($p['signed_at'])) ?><?= str_starts_with((string) $p['method'], 'certificado') ? ' · certificado digital' : ' · senha' ?>
+            <?php if ($p['signed_at']): ?><strong><?= e($p['name']) ?></strong> · assinou em <?= e(fmt_datetime($p['signed_at'])) ?><?= str_starts_with((string) $p['method'], 'certificado') ? ' · certificado digital' : ($p['method'] === 'senha' ? ' · senha' : ' · aprovação no painel') ?>
             <?php else: ?>
               <strong><?= $pu ? e(team_profile($pu)['nome_completo']) : 'ninguém escolhido' ?></strong> · aguardando
               <?php if ($editor && $r['status'] !== 'concluido'): ?>

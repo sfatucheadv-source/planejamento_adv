@@ -66,7 +66,7 @@ echo json_encode([
     'novo' => (function () { $c = create_initial_case(['nome' => '', 'telefone' => '', 'email' => ''], 'site'); return [$c['client_name'], $c['protocol'] !== '']; })(),
 ]);
 PHP), true) ?: [];
-ok(($res['v'] ?? 0) === 21, 'banco atualizado (versão 21)');
+ok(($res['v'] ?? 0) === 22, 'banco atualizado (versão 22)');
 ok(($res['cases'] ?? 1) === 0 && ($res['acc'] ?? 1) === 0 && ($res['chat'] ?? 1) === 0 && ($res['prop'] ?? 1) === 0 && ($res['files'] ?? 1) === 0, 'atendimentos, contas, conversas, propostas e arquivos apagados (nenhum atendimento sobra)');
 ok(($res['users'] ?? 0) === 1 && ($res['tpl'] ?? 0) >= 3 && ($res['name'] ?? '') === 'Sid-LEX', 'usuários, modelos e configurações do assistente mantidos');
 ok(array_key_exists('tone', $res) && $res['tone'] === null && array_key_exists('greeting', $res) && $res['greeting'] === null, 'tom e saudação antigos padrão dão lugar aos novos (Sid-LEX objetivo)');

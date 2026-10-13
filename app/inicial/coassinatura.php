@@ -112,7 +112,7 @@ function team_signature(array $u): ?array
 
 /* ---------- Forma de assinar: certificado A1, certificado A3 (token) ou senha ---------- */
 
-const TEAM_SIGN_METHODS = ['senha' => 'Senha do sistema', 'a1' => 'Certificado A1 (arquivo)', 'a3' => 'Certificado A3 (token ou cartão)'];
+const TEAM_SIGN_METHODS = ['aprovacao' => 'Aprovação no painel (sem certificado)', 'a1' => 'Certificado A1 (arquivo)', 'a3' => 'Certificado A3 (token ou cartão)'];
 
 function team_cert_dir(): string
 {
@@ -132,14 +132,14 @@ function team_cert(array $u): ?array
     return $c;
 }
 
-/** Como a pessoa assina: com o certificado cadastrado ou, sem ele, com a senha do sistema. */
+/** Como a pessoa assina: com o certificado cadastrado ou, sem ele, pela aprovação no painel. */
 function team_sign_method(array $u): string
 {
     $c = team_cert($u);
     if ($c && ($c['tipo'] === 'a3' || ($c['tipo'] === 'a1' && $u['cert_path'] && is_file(team_cert_dir() . '/' . basename((string) $u['cert_path']))))) {
         return $c['tipo'];
     }
-    return 'senha';
+    return 'aprovacao';
 }
 
 /** Confere o certificado lido (validade e CPF do cadastro). Retorna erro ou null. */
@@ -354,13 +354,17 @@ function sig_default_users(): array
  * Só existe quando o documento tem testemunhas ou o escritório como parte;
  * documentos só do cliente (procuração, declaração) seguem direto para ele.
  */
-function sig_request_open(array $c, array $v): ?array
+function sig_request_open(array $c, array $v, ?array $people = null, ?int $tester = null): ?array
 {
-    if ($v['status'] !== 'publicado' || !in_array($v['kind'], SIGNABLE_KINDS, true)) {
+    $test = $v['status'] === 'teste';
+    if ((!$test && $v['status'] !== 'publicado') || !in_array($v['kind'], SIGNABLE_KINDS, true)) {
         return null;
     }
     if ($req = sig_request((int) $v['id'])) {
         return $req;
+    }
+    if ($test && $people === null) {
+        return null; // o pedido de teste só nasce em sig_test_create
     }
     if (sig_for_version((int) $v['id'])) {
         return null; // assinado antes deste fluxo existir
@@ -371,16 +375,17 @@ function sig_request_open(array $c, array $v): ?array
     if (!$witnesses && !$office) {
         return null;
     }
-    // versão anterior do mesmo documento: o pedido antigo é substituído
-    foreach (all("SELECT r.id, r.code FROM sig_requests r JOIN case_artifact_versions v ON v.id = r.version_id WHERE r.case_id = ? AND v.kind = ? AND r.status NOT IN ('concluido','substituido')", [$c['id'], $v['kind']]) as $old) {
+    // versão anterior do mesmo documento: o pedido antigo é substituído (os de teste ficam à parte)
+    foreach ($test ? [] : all("SELECT r.id, r.code FROM sig_requests r JOIN case_artifact_versions v ON v.id = r.version_id WHERE r.case_id = ? AND v.kind = ? AND r.status NOT IN ('concluido','substituido')", [$c['id'], $v['kind']]) as $old) {
         q("UPDATE sig_requests SET status = 'substituido', updated_at = ? WHERE id = ?", [now_str(), $old['id']]);
         sig_log((string) $old['code'], 'pedido_substituido', ['nova_versao' => (int) $v['version']]);
     }
     do {
         $code = strtoupper(implode('-', str_split(substr(bin2hex(random_bytes(6)), 0, 12), 4)));
     } while (one('SELECT 1 FROM sig_requests WHERE code = ?', [$code]) || one('SELECT 1 FROM doc_signatures WHERE code = ?', [$code]) || one('SELECT 1 FROM sig_log WHERE code = ?', [$code]));
-    $def = sig_default_users();
-    $rid = insert('sig_requests', ['case_id' => $c['id'], 'version_id' => $v['id'], 'code' => $code, 'status' => $witnesses ? 'testemunhas' : 'advogado', 'created_at' => now_str(), 'updated_at' => now_str()]);
+    $def = $people ?? sig_default_users();
+    $rid = insert('sig_requests', ['case_id' => $c['id'], 'version_id' => $v['id'], 'code' => $code, 'status' => $witnesses ? 'testemunhas' : 'advogado', 'created_at' => now_str(), 'updated_at' => now_str(),
+        'teste' => $test ? 1 : 0, 'teste_por' => $test ? $tester : null]);
     for ($i = 1; $i <= $witnesses; $i++) {
         $uid = $def['testemunhas'][$i - 1] ?? null;
         insert('sig_parties', ['request_id' => $rid, 'role' => 'testemunha', 'ord' => $i, 'user_id' => $uid && one('SELECT 1 FROM users WHERE id = ? AND active = 1', [$uid]) ? $uid : null]);
@@ -388,8 +393,8 @@ function sig_request_open(array $c, array $v): ?array
     if ($office) {
         insert('sig_parties', ['request_id' => $rid, 'role' => 'advogado', 'ord' => 1, 'user_id' => $def['advogado'] ?: null]);
     }
-    sig_log($code, 'pedido_criado', ['documento' => kit_label($v['kind']), 'versao' => (int) $v['version'], 'testemunhas' => $witnesses, 'advogado' => $office]);
-    add_event((int) $c['id'], 'assinatura', 'Assinaturas do escritório pedidas: ' . kit_label($v['kind']) . ' v' . $v['version'],
+    sig_log($code, 'pedido_criado', ['documento' => kit_label($v['kind']), 'versao' => sig_vtxt($v), 'testemunhas' => $witnesses, 'advogado' => $office] + ($test ? ['teste' => true, 'por' => $tester] : []));
+    $test || add_event((int) $c['id'], 'assinatura', 'Assinaturas do escritório pedidas: ' . kit_label($v['kind']) . ' v' . $v['version'],
         ($witnesses ? $witnesses . ' testemunha(s)' : '') . ($office ? ($witnesses ? ' e ' : '') . 'o advogado' : '') . ' assinam antes do cliente.');
     return one('SELECT * FROM sig_requests WHERE id = ?', [$rid]);
 }
@@ -409,6 +414,9 @@ function sig_request_advance(int $rid): void
         return;
     }
     q('UPDATE sig_requests SET status = ?, updated_at = ? WHERE id = ?', [$st, now_str(), $rid]);
+    if ($req['teste']) {
+        return; // teste: nada vai para o atendimento nem para o cliente
+    }
     $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
     $label = kit_label($v['kind']);
     if ($st === 'advogado') {
@@ -476,7 +484,7 @@ function sig_party_rects(?array $req, ?int $exceptParty = null): array
 }
 
 /** Texto do rótulo do selo conforme o papel e a forma de assinar. */
-function sig_seal_label(string $role, ?array $cert = null, string $method = 'senha'): string
+function sig_seal_label(string $role, ?array $cert = null, string $method = 'aprovacao'): string
 {
     $digital = in_array($method, ['a1', 'a3', 'certificado_a1', 'certificado_a3', 'certificado_externo'], true);
     $cert_label = !empty($cert['icp_brasil']) ? 'CERTIFICADO ICP-BRASIL' : 'CERTIFICADO DIGITAL';
@@ -529,7 +537,7 @@ function sig_party_evidence(array $u, array $v, array $seal, string $consent, ar
     $now = now();
     return ['usuario' => ['id' => (int) $u['id'], 'login' => $u['email'], 'qualificacao' => team_qualification($u)],
         'autenticacao' => ['meio' => 'sessão do usuário da equipe no painel', 'sessao' => hash('sha256', session_id())],
-        'documento' => ['tipo' => $v['kind'], 'versao' => (int) $v['version'], 'hash_sha256_texto' => sig_doc_hash($v)],
+        'documento' => ['tipo' => $v['kind'], 'versao' => (int) $v['version'], 'hash_sha256_texto' => sig_doc_hash($v)] + ($v['status'] === 'teste' ? ['teste' => true] : []),
         'momento' => ['brasilia' => $now->format('Y-m-d H:i:s'), 'utc' => $now->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s\Z'), 'fuso' => $now->format('P')],
         'rede' => ['ip' => client_ip()], 'aparelho' => ['navegador' => mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 400)],
         'selo' => $seal + ['largura_mm' => SEAL_W, 'altura_mm' => SEAL_H], 'aceite' => $consent] + $extra;
@@ -572,7 +580,7 @@ function sig_team_current(array $req): array
     foreach (sig_party_seals($req) as $s) {
         $L['pages'][$s['pagina'] - 1] = array_merge($L['pages'][$s['pagina'] - 1], $s['ops']);
     }
-    $pdf = pdoc_pdf($L, ['titulo' => kit_label($v['kind']) . ' · ' . $c['protocol'] . ' · v' . $v['version'], 'assunto' => 'Documento em assinatura · código ' . $req['code'],
+    $pdf = pdoc_pdf($L, ['titulo' => kit_label($v['kind']) . ' · ' . $c['protocol'] . ' · v' . sig_vtxt($v), 'assunto' => 'Documento em assinatura · código ' . $req['code'],
         'palavras' => 'verificação ' . $req['code'], 'autor' => office('lawyer') ?: 'Sidney Fatuche', 'fontes' => ['poppins', 'poppinsb', 'poppinssb']]);
     $file = $req['code'] . '-0.pdf';
     file_put_contents($dir . '/' . $file, $pdf);
@@ -603,9 +611,10 @@ function sig_team_stamp(string $pdf, array $p, array $u, array $req, array $in, 
 }
 
 /**
- * Assina pela forma cadastrada: senha do sistema ou certificado A1 (senha do
- * certificado). O certificado A3 é em dois passos (sig_team_prepare_a3 e
- * sig_team_upload_a3). Retorna erro ou null.
+ * Assina pela forma cadastrada: sem certificado, a aprovação no painel (a pessoa
+ * já entrou com o próprio usuário; basta a declaração); com o A1, a senha do
+ * certificado. O A3 é em dois passos (sig_team_prepare_a3 e sig_team_upload_a3).
+ * Retorna erro ou null.
  */
 function sig_team_sign(array $p, array $u, array $in): ?string
 {
@@ -631,8 +640,6 @@ function sig_team_sign(array $p, array $u, array $in): ?string
         if ($err = team_cert_check($u, $info)) {
             return $err;
         }
-    } elseif (!password_verify((string) ($in['senha'] ?? ''), (string) $u['pass_hash'])) {
-        return 'Senha incorreta. Use a mesma senha de entrada no sistema.';
     }
     $req = one('SELECT * FROM sig_requests WHERE id = ?', [$p['request_id']]);
     [$pdf, $prev, $err] = sig_team_current($req);
@@ -643,13 +650,13 @@ function sig_team_sign(array $p, array $u, array $in): ?string
     if ($cert) {
         $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
         [$out, $err] = pdfx_sign($out, $cert, $seal['pagina'] - 1, [$seal['x'], $seal['y'], SEAL_W, SEAL_H],
-            ['nome' => $info['titular'] ?: $meta['nome'], 'motivo' => SIG_PARTY_LABELS[$p['role']] . ' · ' . kit_label($v['kind']) . ' v' . $v['version'], 'local' => 'Brasil',
+            ['nome' => $info['titular'] ?: $meta['nome'], 'motivo' => SIG_PARTY_LABELS[$p['role']] . ' · ' . kit_label($v['kind']) . ' v' . sig_vtxt($v), 'local' => 'Brasil',
                 'contato' => (string) (team_profile($u)['email'] ?? ''), 'campo' => SIG_PARTY_LABELS[$p['role']] . ' ' . $p['ord'] . ' · ' . $req['code']]);
         if (!$out) {
             return $err;
         }
     }
-    return sig_team_finish($p, $u, $req, $prev, $out, $seal, $meta, $cert ? 'certificado_a1' : 'senha', $info);
+    return sig_team_finish($p, $u, $req, $prev, $out, $seal, $meta, $cert ? 'certificado_a1' : 'aprovacao', $info);
 }
 
 /** A3: gera o PDF com o selo para assinar no token (guarda de qual versão partiu). [pdf, erro]. */
@@ -732,7 +739,7 @@ function sig_team_finish(array $p, array $u, array $req, string $prev, string $p
     }
     $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
     $pr = team_profile($u);
-    $meio = ['senha' => 'senha do usuário confirmada no momento da assinatura', 'certificado_a1' => 'certificado digital A1', 'certificado_a3' => 'certificado digital A3 (token), assinado fora do sistema'][$method];
+    $meio = ['aprovacao' => 'aprovação no painel, com a pessoa autenticada no próprio usuário da equipe', 'senha' => 'senha do usuário confirmada no momento da assinatura', 'certificado_a1' => 'certificado digital A1', 'certificado_a3' => 'certificado digital A3 (token), assinado fora do sistema'][$method];
     $ev = sig_party_evidence($u, $v, $seal, $p['role'] === 'testemunha' ? SIG_WITNESS_CONSENT : SIG_LAWYER_CONSENT,
         ['meio' => $meio, 'certificado' => $info, 'pdf_anterior_sha256' => $prev, 'pdf_assinado_sha256' => $sha]);
     q('UPDATE sig_parties SET name = ?, cpf = ?, seal = ?, strokes = ?, method = ?, cert_info = ?, evidence = ?, ip = ?, user_agent = ?, signed_at = ? WHERE id = ? AND signed_at IS NULL',
@@ -741,7 +748,7 @@ function sig_team_finish(array $p, array $u, array $req, string $prev, string $p
     sig_log((string) $req['code'], $p['role'] === 'testemunha' ? 'testemunha_assinou' : 'advogado_assinou', ['ordem' => (int) $p['ord'], 'nome' => $pr['nome_completo'], 'cpf' => sig_fmt_cpf((string) $pr['cpf']),
         'usuario' => (int) $u['id'], 'meio' => $method, 'certificado' => $info ? ['titular' => $info['titular'], 'cpf' => $info['cpf'] ? sig_fmt_cpf($info['cpf']) : null, 'emissor' => $info['emissor'], 'serie' => $info['serie'], 'sha256' => $info['sha256']] : null,
         'hash_pdf' => $sha, 'selo' => $seal]);
-    add_event((int) $req['case_id'], 'assinatura', ($p['role'] === 'testemunha' ? 'Testemunha assinou: ' : 'Advogado assinou: ') . $pr['nome_completo'],
+    $req['teste'] || add_event((int) $req['case_id'], 'assinatura', ($p['role'] === 'testemunha' ? 'Testemunha assinou: ' : 'Advogado assinou: ') . $pr['nome_completo'],
         kit_label($v['kind']) . ' v' . $v['version'] . ' · ' . $meio . ' · selo na página ' . $seal['pagina'] . '.');
     @unlink(sig_storage_dir() . '/' . $req['code'] . '-a3-' . (int) $p['id'] . '.pdf');
     sig_request_advance((int) $req['id']);
@@ -751,7 +758,7 @@ function sig_team_finish(array $p, array $u, array $req, string $prev, string $p
 /** Assinaturas que esperam o usuário (as que ele já pode fazer). */
 function sig_my_pending(int $uid): array
 {
-    return all("SELECT p.*, r.code, r.status AS req_status, r.case_id, v.kind, v.version, c.protocol, c.client_name FROM sig_parties p
+    return all("SELECT p.*, r.code, r.status AS req_status, r.case_id, r.teste, v.kind, v.version, c.protocol, c.client_name FROM sig_parties p
         JOIN sig_requests r ON r.id = p.request_id JOIN case_artifact_versions v ON v.id = r.version_id JOIN cases c ON c.id = r.case_id
         WHERE p.user_id = ? AND p.signed_at IS NULL AND ((p.role = 'testemunha' AND r.status = 'testemunhas') OR (p.role = 'advogado' AND r.status = 'advogado'))
         ORDER BY r.created_at", [$uid]);
@@ -775,4 +782,75 @@ function sig_signers_list(?array $req, ?array $clientSig, array $c): array
         }
     }
     return $out;
+}
+
+/* ---------- Teste da assinatura conjunta ---------- */
+
+/**
+ * Gera, com os dados do cliente escolhido, um contrato de teste (versão à parte,
+ * fora do kit do atendimento) e abre o pedido com as testemunhas e o advogado
+ * escolhidos. Cada pessoa assina na própria tela, como num contrato real; o
+ * cliente é simulado por quem criou o teste. Nada vai para o atendimento, para
+ * o cliente ou para a contratação. Retorna [pedido, erro, dados faltando].
+ */
+function sig_test_create(int $caseId, array $u, array $people): array
+{
+    $c = find_case_or_null($caseId);
+    if (!$c) {
+        return [null, 'Escolha um cliente (atendimento) para gerar o contrato.', []];
+    }
+    $t = doc_template('honorarios');
+    if (!$t) {
+        return [null, 'Não há modelo de contrato cadastrado em Modelos de documentos.', []];
+    }
+    $w = array_values(array_filter(array_map('intval', (array) ($people['testemunhas'] ?? []))));
+    $adv = (int) ($people['advogado'] ?? 0);
+    $chosen = array_merge($w, $adv ? [$adv] : []);
+    if (count($chosen) !== count(array_unique($chosen))) {
+        return [null, 'A mesma pessoa não pode assinar duas vezes no documento.', []];
+    }
+    foreach ($chosen as $uid) {
+        if (!one('SELECT 1 FROM users WHERE id = ? AND active = 1', [$uid])) {
+            return [null, 'Usuário da equipe não encontrado.', []];
+        }
+    }
+    $n = 1 + (int) scalar("SELECT COUNT(*) FROM case_artifact_versions WHERE case_id = ? AND kind = 'honorarios' AND status = 'teste'", [$caseId]);
+    [$content, $missing] = kit_fresh($caseId, 'honorarios', 'teste ' . $n);
+    $vid = insert('case_artifact_versions', ['case_id' => $caseId, 'kind' => 'honorarios', 'version' => SIG_TEST_VERSION + $n, 'template_version' => $t['version'],
+        'content' => $content, 'missing' => json_encode($missing, JSON_UNESCAPED_UNICODE), 'status' => 'teste', 'created_at' => now_str(), 'published_at' => now_str(), 'created_by' => $u['id']]);
+    $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$vid]);
+    $req = sig_request_open($c, $v, ['testemunhas' => $w, 'advogado' => $adv], (int) $u['id']);
+    if (!$req) {
+        q('DELETE FROM case_artifact_versions WHERE id = ?', [$vid]);
+        return [null, 'O contrato gerado não tem linhas de assinatura de testemunhas nem do escritório. Confira o modelo.', $missing];
+    }
+    audit('assinatura_teste_criada', $caseId, $req['code']);
+    return [$req, null, $missing];
+}
+
+/** Pedidos de teste, do mais recente ao mais antigo. */
+function sig_tests(): array
+{
+    return all("SELECT r.*, v.kind, v.version, v.status AS v_status, v.missing, c.protocol, c.client_name FROM sig_requests r JOIN case_artifact_versions v ON v.id = r.version_id
+        JOIN cases c ON c.id = r.case_id WHERE r.teste = 1 ORDER BY r.id DESC LIMIT 30");
+}
+
+/** O que falta para a pessoa conseguir assinar (dados, rubrica), e como ela assina. */
+function sig_user_readiness(array $u): array
+{
+    $miss = team_profile_missing($u);
+    if (!team_signature($u)) {
+        $miss[] = 'rubrica';
+    }
+    return ['falta' => $miss, 'metodo' => team_sign_method($u)];
+}
+
+/** Pedido de teste que o usuário pode conduzir (quem criou ou quem gerencia). */
+function sig_test_or_404(string $id, array $u): array
+{
+    $req = one('SELECT * FROM sig_requests WHERE id = ? AND teste = 1', [(int) $id]) ?? not_found();
+    if ((int) $req['teste_por'] !== (int) $u['id'] && !has_role('supervisor') && !is_operator($u)) {
+        forbidden();
+    }
+    return $req;
 }

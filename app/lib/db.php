@@ -756,6 +756,11 @@ WHEN OLD.signed_at IS NOT NULL
 BEGIN SELECT RAISE(ABORT, 'A assinatura registrada não pode ser alterada.'); END;
 SQL;
 
+    // Versão 22 — teste do fluxo de assinatura conjunta: o pedido de teste usa um
+    // contrato gerado à parte (versão com status 'teste'), sem tocar no atendimento.
+    // (colunas acrescentadas no passo PHP abaixo, que confere se já existem)
+    $migrations[22] = 'SELECT 1;';
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -800,6 +805,13 @@ SQL;
                     if (!in_array($col, $cols, true)) {
                         $pdo->exec("ALTER TABLE users ADD COLUMN $col $type");
                     }
+                }
+            }
+            if ($v === 22) {
+                $cols = array_column($pdo->query('PRAGMA table_info(sig_requests)')->fetchAll(), 'name');
+                if (!in_array('teste', $cols, true)) {
+                    $pdo->exec('ALTER TABLE sig_requests ADD COLUMN teste INTEGER NOT NULL DEFAULT 0');
+                    $pdo->exec('ALTER TABLE sig_requests ADD COLUMN teste_por INTEGER REFERENCES users(id)');
                 }
             }
             if ($v === 17) {

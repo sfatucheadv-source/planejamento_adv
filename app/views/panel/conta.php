@@ -46,10 +46,10 @@ $f = fn(string $k, string $type = 'text', string $extra = '') => '<label class="
 
 <section class="box narrow-box" id="certificado">
   <h2>Como você assina</h2>
-  <p class="ok-line">Agora: <strong><?= e(TEAM_SIGN_METHODS[$method]) ?></strong><?php if ($cert && $method !== 'senha'): ?> · <?= e($cert['titular']) ?><?= $cert['cpf'] ? ' · CPF ' . e(sig_fmt_cpf($cert['cpf'])) : '' ?> · <?= e($cert['emissor']) ?> · válido até <?= e(fmt_date((string) $cert['valido_ate'])) ?><?php endif ?></p>
-  <p class="hint">Quem tem certificado digital assina com ele; quem não tem assina com a senha do sistema, confirmada no momento da assinatura. O selo é o mesmo, com a sua rubrica.</p>
+  <p class="ok-line">Agora: <strong><?= e(TEAM_SIGN_METHODS[$method]) ?></strong><?php if ($cert && $method !== 'aprovacao'): ?> · <?= e($cert['titular']) ?><?= $cert['cpf'] ? ' · CPF ' . e(sig_fmt_cpf($cert['cpf'])) : '' ?> · <?= e($cert['emissor']) ?> · válido até <?= e(fmt_date((string) $cert['valido_ate'])) ?><?php endif ?></p>
+  <p class="hint">Quem tem certificado digital cadastrado assina com ele. Quem não tem assina pela aprovação no painel: abre o documento na própria tela (já autenticado com o seu usuário), confere e aprova. O selo é o mesmo, com a sua rubrica.</p>
   <?php if ($cert): ?>
-    <form method="post" action="<?= e(url('painel/conta/certificado/remover')) ?>"><?= csrf_field() ?><button class="b b-ghost b-sm" type="submit">Remover o certificado (passar a assinar com a senha)</button></form>
+    <form method="post" action="<?= e(url('painel/conta/certificado/remover')) ?>"><?= csrf_field() ?><button class="b b-ghost b-sm" type="submit">Remover o certificado (passar a assinar pela aprovação no painel)</button></form>
   <?php endif ?>
 
   <details class="at-inline" <?= $method === 'a3' || !$cert ? 'open' : '' ?>>

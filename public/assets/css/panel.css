@@ -1069,3 +1069,5 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .rubrica-atual { width: 160px; border: 1px solid var(--line, #E3E6EA); border-radius: 8px; background: #fff; margin-bottom: 10px; }
 .rubrica-atual svg { display: block; width: 100%; height: auto; }
 .rubrica-pad { display: block; width: 100%; height: 150px; border: 1px dashed #A7ACB4; border-radius: 8px; background: #FAFAFB; touch-action: none; cursor: crosshair; }
+.sig-acoes { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+.page-head .b { align-self: flex-start; }

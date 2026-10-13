@@ -58,7 +58,7 @@ $router->get('/painel/conta/certificado-a3/pdf', function () {
 
 $router->post('/painel/conta/certificado/remover', function () {
     team_cert_remove(require_user());
-    flash('ok', 'Certificado removido. Você passa a assinar com a senha do sistema.');
+    flash('ok', 'Certificado removido. Você passa a assinar pela aprovação no painel.');
     redirect('painel/conta#certificado');
 });
 
@@ -67,7 +67,7 @@ $router->post('/painel/conta/certificado/remover', function () {
 $router->get('/painel/assinaturas', function () {
     $u = require_user();
     $open = all("SELECT r.*, v.kind, v.version, c.protocol, c.client_name FROM sig_requests r JOIN case_artifact_versions v ON v.id = r.version_id JOIN cases c ON c.id = r.case_id
-        WHERE r.status NOT IN ('substituido') ORDER BY r.status = 'concluido', r.created_at DESC LIMIT 60");
+        WHERE r.status NOT IN ('substituido') AND r.teste = 0 ORDER BY r.status = 'concluido', r.created_at DESC LIMIT 60");
     view('panel/assinaturas', ['meta_title' => 'Assinaturas · Painel', 'u' => $u, 'mine' => sig_my_pending((int) $u['id']), 'open' => $open,
         'users' => all('SELECT * FROM users WHERE active = 1 ORDER BY name'), 'def' => sig_default_users()], 'panel');
 });
@@ -79,6 +79,93 @@ $router->post('/painel/assinaturas/padrao', function () {
     set_setting('sig_advogado', (string) (int) input('advogado'));
     flash('ok', 'Assinantes padrão salvos. Valem para os próximos documentos enviados.');
     redirect('painel/assinaturas');
+});
+
+/* ---------- Teste da assinatura conjunta ---------- */
+
+$router->get('/painel/assinaturas/teste', function () {
+    $u = require_config_editor();
+    view('panel/assinaturas_teste', ['meta_title' => 'Testar assinaturas · Painel', 'u' => $u, 'tests' => sig_tests(), 'def' => sig_default_users(),
+        'users' => all('SELECT * FROM users WHERE active = 1 ORDER BY name'),
+        'cases' => all('SELECT id, protocol, client_name FROM cases WHERE archived_at IS NULL ORDER BY id DESC LIMIT 300')], 'panel');
+});
+
+$router->post('/painel/assinaturas/teste', function () {
+    $u = require_config_editor();
+    [$req, $err, $missing] = sig_test_create((int) input('case_id'), $u, ['testemunhas' => [input('testemunha1'), input('testemunha2')], 'advogado' => input('advogado')]);
+    if ($err) {
+        flash('error', $err);
+        redirect('painel/assinaturas/teste');
+    }
+    flash('ok', 'Contrato de teste gerado (código ' . $req['code'] . '). Cada pessoa assina na própria tela, em Assinaturas › Para você assinar; por último, você assina como o cliente.'
+        . ($missing ? ' Dados que faltam no atendimento (aparecem marcados no texto): ' . implode('; ', $missing) . '.' : ''));
+    redirect('painel/assinaturas/teste#teste-' . $req['id']);
+});
+
+/** O cliente simulado: a mesma tela de assinatura da área do cliente, com o código no e-mail de quem testa. */
+function sig_test_client(string $id): array
+{
+    $u = require_user();
+    $req = sig_test_or_404($id, $u);
+    $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
+    return [$u, $req, $v, find_case((int) $req['case_id'])];
+}
+
+function sig_test_banner(array $req, array $u): string
+{
+    return '<p class="folhas-aviso -teste"><strong>Teste:</strong> você assina como o cliente (simulado). O código de confirmação vai para o seu e-mail (' . e(sig_mask_email((string) $u['email'])) . '). '
+        . 'Nada vai para o cliente nem para o atendimento. <a href="' . e(url('painel/assinaturas/teste')) . '#teste-' . (int) $req['id'] . '">Voltar ao teste</a></p>';
+}
+
+$router->get('/painel/assinaturas/teste/{id}/cliente', function (string $id) {
+    [$u, $req, $v, $c] = sig_test_client($id);
+    header('Cache-Control: private, no-store');
+    $sig = sig_for_version((int) $v['id']);
+    echo $sig ? sig_view_page($c, $v, $sig, input('assinado') === '1', ['pdf' => url('painel/assinaturas/teste/' . $req['id'] . '/pdf'), 'aviso' => sig_test_banner($req, $u)])
+        : sig_sign_page($c, $v, ['base' => url('painel/assinaturas/teste/' . $req['id'] . '/cliente'), 'email' => (string) $u['email'], 'aviso' => sig_test_banner($req, $u)]);
+    exit;
+});
+
+$router->post('/painel/assinaturas/teste/{id}/cliente/dados', function (string $id) {
+    [, , $v, $c] = sig_test_client($id);
+    [, , $err] = sig_for_version((int) $v['id']) ? [null, null, 'Este documento já foi assinado.'] : sig_check_identity($c, $_POST);
+    json_out(['ok' => !$err, 'erro' => $err]);
+});
+
+$router->post('/painel/assinaturas/teste/{id}/cliente/codigo', function (string $id) {
+    [$u, , $v, $c] = sig_test_client($id);
+    $err = sig_for_version((int) $v['id']) ? 'Este documento já foi assinado.' : sig_send_code($c, $v, (string) $u['email']);
+    json_out(['ok' => !$err, 'erro' => $err, 'msg' => $err ? null : 'Código enviado para ' . sig_mask_email((string) $u['email']) . ' (o seu e-mail, por ser teste). Ele vale por ' . SIGN_CODE_MINUTES . ' minutos.']);
+});
+
+$router->post('/painel/assinaturas/teste/{id}/cliente/assinar', function (string $id) {
+    [, $req, $v, $c] = sig_test_client($id);
+    [$sig, $err] = sig_sign($c, $v, $_POST);
+    json_out(['ok' => (bool) $sig, 'erro' => $err, 'ir' => $sig ? url('painel/assinaturas/teste/' . $req['id'] . '/cliente', ['assinado' => '1']) : null]);
+});
+
+$router->post('/painel/assinaturas/teste/{id}/cliente/retificar', function (string $id) {
+    sig_test_client($id);
+    json_out(['ok' => false, 'erro' => 'No teste não há pedido de retificação.']);
+});
+
+/** PDF do teste: a via final, se o cliente simulado já assinou; senão, o PDF em assinatura. */
+$router->get('/painel/assinaturas/teste/{id}/pdf', function (string $id) {
+    [, $req, $v] = sig_test_client($id);
+    if ($sig = sig_for_version((int) $v['id'])) {
+        sig_send_original($sig, input('baixar') === '1');
+    }
+    $bin = $req['signed_path'] ? (string) @file_get_contents(sig_storage_dir() . '/' . basename((string) $req['signed_path'])) : '';
+    if ($bin === '' || !hash_equals((string) $req['signed_sha256'], hash('sha256', $bin))) {
+        flash('error', $bin === '' ? 'O PDF é gerado na primeira assinatura.' : 'O PDF em assinatura não confere com o registrado.');
+        redirect('painel/assinaturas/teste');
+    }
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: ' . (input('baixar') === '1' ? 'attachment' : 'inline') . '; filename="teste-' . $req['code'] . '.pdf"');
+    header('Content-Length: ' . strlen($bin));
+    header('Cache-Control: private, no-store');
+    echo $bin;
+    exit;
 });
 
 function sig_party_or_404(string $id): array
@@ -134,8 +221,9 @@ $router->post('/painel/assinaturas/{id}/assinar', function (string $id) {
         redirect('painel/assinaturas/' . $p['id']);
     }
     audit('assinatura_equipe', (int) one('SELECT case_id FROM sig_requests WHERE id = ?', [$p['request_id']])['case_id'], $p['role']);
-    flash('ok', $p['role'] === 'testemunha' ? 'Assinatura de testemunha registrada.' : 'Documento assinado. Ele já está com o cliente para assinar.');
-    redirect('painel/assinaturas');
+    $preq = one('SELECT * FROM sig_requests WHERE id = ?', [$p['request_id']]);
+    flash('ok', $p['role'] === 'testemunha' ? 'Assinatura de testemunha registrada.' : ($preq['teste'] ? 'Documento assinado pelo escritório. No teste, falta assinar como o cliente.' : 'Documento assinado. Ele já está com o cliente para assinar.'));
+    redirect($preq['teste'] && ((int) $preq['teste_por'] === (int) $u['id']) ? 'painel/assinaturas/teste#teste-' . $preq['id'] : 'painel/assinaturas');
 });
 
 /** Certificado A3: baixa o PDF com os selos para assinar no assinador do token. */
@@ -202,19 +290,19 @@ function sig_party_page(array $p, array $u, array $req, array $v, array $c): str
             . (str_contains((string) $why, 'Minha conta') ? '<a class="assin-btn" href="' . e(url('painel/conta')) . '">Abrir Minha conta</a>' : '') . '</div></div>';
     } else {
         $head = '<p><strong>Arraste o seu selo</strong> até o lugar da sua assinatura (' . e(mb_strtolower($who)) . '). <span data-selo-onde></span></p>'
-            . '<p class="assin-sub">Você assina com: <strong>' . e(TEAM_SIGN_METHODS[$method]) . '</strong>' . ($cert && $method !== 'senha' ? ' · ' . e($cert['titular']) . ' · ' . e($cert['emissor']) : '')
+            . '<p class="assin-sub">Você assina com: <strong>' . e(TEAM_SIGN_METHODS[$method]) . '</strong>' . ($cert && $method !== 'aprovacao' ? ' · ' . e($cert['titular']) . ' · ' . e($cert['emissor']) : '')
             . ' · <a href="' . e(url('painel/conta#certificado')) . '">mudar em Minha conta</a></p>';
         $body = match ($method) {
             'a1' => $form('assinar', $aceite . '<div class="assin-codigo"><input type="password" name="senha_certificado" autocomplete="off" placeholder="Senha do certificado" required><button class="assin-btn" type="submit">Assinar com o certificado</button></div>', ' class="assin-cert"'),
             'a3' => '<div class="assin-a3 -aberto">' . $form('pdf-a3', $aceite . '<p class="assin-sub">1. Baixe o PDF com o seu selo (na posição da tela). 2. Assine no assinador do token (Assinador SERPRO, Adobe ou outro), sem alterar mais nada. 3. Envie o arquivo assinado.</p><button class="assin-btn -sec" type="submit">Baixar o PDF para assinar no token</button>')
                 . '<form method="post" enctype="multipart/form-data" action="' . e(url('painel/assinaturas/' . $p['id'] . '/a3')) . '">' . $tok
                 . '<div class="assin-codigo"><input type="file" name="pdf" accept="application/pdf" required><button class="assin-btn" type="submit">Enviar o PDF assinado</button></div></form></div>',
-            default => $form('assinar', $aceite . '<div class="assin-codigo"><input type="password" name="senha" autocomplete="current-password" placeholder="Sua senha do sistema" required><button class="assin-btn" type="submit">' . ($p['role'] === 'testemunha' ? 'Assinar como testemunha' : 'Assinar') . '</button></div>', ' class="assin-cert"'),
+            default => $form('assinar', $aceite . '<div class="assin-codigo"><button class="assin-btn" type="submit">' . ($p['role'] === 'testemunha' ? 'Aprovar e assinar como testemunha' : 'Aprovar e assinar') . '</button></div>', ' class="assin-cert"'),
         };
         $bar = '<div class="assin-barra -equipe">' . $head . $body . '<div class="assin-acoes">' . $back . '</div></div>';
     }
     return sig_sheet_page($label . ' · ' . $c['protocol'] . ' · assinatura do escritório',
-        '<header class="folhas-topo"><strong>' . e($label) . ' · ' . e($who) . '</strong><span>versão ' . (int) $v['version'] . ' · atendimento ' . e($c['protocol']) . ' · ' . e($c['client_name']) . ' · código ' . e($req['code']) . '</span></header>'
+        '<header class="folhas-topo"><strong>' . e($label) . ' · ' . e($who) . '</strong><span>' . ($req['teste'] ? '<b class="folhas-teste">TESTE</b> · ' : '') . 'versão ' . e(sig_vtxt($v)) . ' · atendimento ' . e($c['protocol']) . ' · ' . e($c['client_name']) . ' · código ' . e($req['code']) . '</span></header>'
         . $flash . '<main class="folhas">' . sig_sheets_html($L) . '</main>'
         . ($can ? '<template id="selo-modelo">' . $sealSvg . '</template><script type="application/json" id="selo-dados">' . $dados . '</script>' : '')
         . '<div class="assin">' . $bar . '</div>',
