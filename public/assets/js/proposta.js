@@ -341,6 +341,7 @@
   }
 
   function refresh() {
+    if (form.hasAttribute('data-readonly')) return; // proposta aprovada: só visualização
     var my = ++seq;
     fetch(url, { method: 'POST', body: new FormData(form), credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })

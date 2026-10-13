@@ -276,6 +276,37 @@ ok($tf && $tf['kind'] === 'transcricao' && (int) $tf['internal'] === 1 && str_co
 $up = array_values(array_filter($gcalls, fn($c) => $c[0] === 'POST' && str_contains($c[1], '/upload/drive/v3/files')));
 ok($tf && $tf['drive_id'] === 'drv1' && $up && str_contains((string) end($up)[2]['_raw'], '"parents":["pasta-elisa"]') && str_contains((string) end($up)[2]['_raw'], 'Transcrição da reunião'), 'e gravada na pasta do atendimento no Google Drive');
 ok((bool) scalar("SELECT 1 FROM events WHERE case_id = ? AND title = 'Transcrição da reunião salva'", [$eid]) && transcripts_sweep() === 0, 'registrada no histórico; não busca de novo');
+// Registro pela IA a partir da transcrição (IA simulada)
+$mockPort = 24500 + random_int(0, 400);
+$mockPid = (int) shell_exec(sprintf('php -S 127.0.0.1:%d %s > /dev/null 2>&1 & echo $!', $mockPort, escapeshellarg(dirname(__DIR__) . '/tests/mock_openrouter.php')));
+register_shutdown_function(fn() => $mockPid && posix_kill($mockPid, SIGTERM));
+for ($i = 0; $i < 50 && !@file_get_contents("http://127.0.0.1:$mockPort/api/v1/models"); $i++) {
+    usleep(100000);
+}
+set_setting('llm_endpoint', "http://127.0.0.1:$mockPort/api/v1");
+set_setting('llm_enabled', '1');
+set_setting('llm_api_key', 'sk-or-v1-teste-valido-0000');
+set_setting('llm_model', 'google/gemini-2.5-flash');
+[$dr, $derr] = meeting_ai_draft(one('SELECT * FROM case_meetings WHERE id = ?', [$m['id']]));
+ok($derr === null && str_contains($dr['summary'], 'Banco Exemplo') && $dr['next_action'] === 'Enviar a proposta por escrito' && $dr['corrections'] === 'Contrato é do Banco Exemplo' && $dr['confirmed_info'] === true, 'IA completa o registro pela transcrição (resumo, correções, próxima ação)');
+ok(!isset($dr['reaction']) && !isset($dr['return_at']) && (case_data(find_case($eid), 'reuniao_ia_' . $m['id'])['summary'] ?? '') === $dr['summary'], 'reação e retorno ficam com Sidney; rascunho guardado para o formulário');
+set_setting('llm_enabled', '0');
+// Registro sem nenhum campo preenchido
+$gcalls = [];
+ok(initial_command(find_case($eid), 'registrar_reuniao', ['held' => 'sim']) === null, 'registrar a reunião sem preencher nada');
+$mr = one('SELECT * FROM case_meetings WHERE id = ?', [$m['id']]);
+ok($mr['status'] === 'realizada' && $mr['reaction'] === 'pensar' && $mr['summary'] === null && find_case($eid)['initial_status'] === 'awaiting_decision', 'gravado como realizada, sem resumo');
+ok(!array_filter($gcalls, fn($c) => $c[0] === 'POST' && str_contains($c[1], '/events')) && case_data(find_case($eid), 'reuniao_ia_' . $m['id']) === null, 'sem data de retorno: nada na agenda; rascunho da IA descartado');
+// Com reação e retorno: compromisso na agenda de Sidney
+$hh = create_initial_case(['nome' => 'Helena Teste', 'telefone' => '(41) 98888-0000', 'email' => 'helena@t.local', 'adaptacao' => ''], 'site');
+$hid = (int) $hh['id'];
+insert('case_meetings', ['case_id' => $hid, 'status' => 'confirmada', 'channel' => 'meet', 'starts_at' => '2026-10-20 09:00:00', 'duration_min' => 30, 'url' => 'https://meet.google.com/aaa-bbbb-ccc', 'confirmed_at' => now_str(), 'created_at' => now_str()]);
+$gcalls = [];
+ok(initial_command(find_case($hid), 'registrar_reuniao', ['held' => 'sim', 'reaction' => 'aceitou', 'next_action' => 'Mandar o contrato', 'return_at' => '2026-10-23T14:30']) === null, 'registro com reação e retorno');
+$ret = array_values(array_filter($gcalls, fn($c) => $c[0] === 'POST' && str_contains($c[1], '/events')))[0] ?? null;
+ok($ret && str_contains($ret[1], 'sendUpdates=none') && empty($ret[2]['attendees']) && $ret[2]['start']['dateTime'] === '2026-10-23T14:30:00-03:00' && str_contains($ret[2]['summary'], 'Retorno: Helena Teste') && str_contains($ret[2]['description'], 'Mandar o contrato'), 'retorno vira compromisso só na agenda de Sidney (sem convidar o cliente)');
+ok(find_case($hid)['decision'] === 'aceitou' && (string) find_case($hid)['next_action_due'] === '2026-10-23 14:30:00' && case_data(find_case($hid), 'retorno_evento') === 'ev900', 'reação “aceitou” e próxima ação na data do retorno');
+
 // Sem a permissão do Meet: acha pelo anexo do compromisso
 set_setting('google_scopes', 'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive');
 $ff = create_initial_case(['nome' => 'Fabio Teste', 'telefone' => '(41) 96666-6666', 'email' => 'fabio@t.local', 'adaptacao' => ''], 'site');

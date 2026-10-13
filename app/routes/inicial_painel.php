@@ -554,7 +554,14 @@ function initial_panel_action(array $c, string $op): string
                 }
                 return 'honorarios';
             }
+            if ($lockErr = proposal_unlock_guard($id, $_POST)) {
+                $_SESSION['hon_reu'][$id] = $posted;
+                flash('error', $lockErr);
+                return 'honorarios';
+            }
             proposal_save($id, $d, (int) current_user()['id']);
+            proposal_lock_set($id, $d, current_user());
+            unset($_SESSION['prop_edit'][$id]);
             unset($_SESSION['hon_reu'][$id]);
             audit('honorarios_reuniao', $id, brl(proposal_totals($d)['total']));
             $err = kit_applicable($id, 'honorarios') ? kit_generate($c, 'honorarios') : null;
@@ -562,6 +569,16 @@ function initial_panel_action(array $c, string $op): string
                 : 'Honorários registrados. O contrato ganhou uma nova minuta com estas condições: revise e publique no Kit.');
             return 'honorarios';
 
+        case 'reuniao_ia':
+            $m = current_meeting($id);
+            if (!$m) {
+                flash('error', 'Não há reunião confirmada para registrar.');
+                return 'reuniao';
+            }
+            @set_time_limit(180);
+            [, $err] = meeting_ai_draft($m);
+            flash($err ? 'error' : 'ok', $err ?: 'A IA preencheu o registro pela transcrição. Confira, indique a reação do cliente e a data de retorno, e grave.');
+            return 'registrar';
         case 'reuniao_google':
         case 'reuniao_email':
         case 'reuniao_transcricao':
@@ -866,13 +883,25 @@ $router->post('/painel/propostas/{id}', function (string $id) {
     $u = require_user();
     $c = require_case_operator((int) $id);
     [$d, $errors] = proposal_from_input($_POST, (int) $c['id']);
+    if (!$errors && ($lockErr = proposal_unlock_guard((int) $c['id'], $_POST))) {
+        $errors[] = $lockErr;
+    }
     if ($errors) {
         view('panel/proposta', ['meta_title' => 'Proposta · ' . $c['protocol'], 'c' => $c, 'pr' => proposal_get((int) $c['id']), 'd' => $d, 'errors' => $errors, 'g' => proposal_guide_from_input($_POST)], 'panel');
         return;
     }
     proposal_save((int) $c['id'], $d, (int) $u['id']);
+    proposal_relock((int) $c['id'], $d, $u); // aprovada: segue travada com os valores autorizados
     proposal_guide_save((int) $c['id'], proposal_guide_from_input($_POST), (int) $u['id']);
     flash('ok', 'Proposta salva. Para o contrato usar estas condições, gere uma nova versão no kit do atendimento.');
+    redirect('painel/propostas/' . $c['id'] . proposal_tab_hash());
+});
+
+// Proposta aprovada: o botão Editar pede a senha de um administrador e libera a edição por 30 minutos.
+$router->post('/painel/propostas/{id}/editar', function (string $id) {
+    $c = require_case_operator((int) $id);
+    $err = proposal_unlock((int) $c['id'], (string) ($_POST['senha_admin'] ?? ''));
+    flash($err ? 'error' : 'ok', $err ?: 'Edição liberada por 30 minutos. Ao salvar, a proposta segue aprovada com os novos valores.');
     redirect('painel/propostas/' . $c['id'] . proposal_tab_hash());
 });
 
@@ -902,7 +931,7 @@ $router->post('/painel/propostas/{id}/avaliar', function (string $id) {
     $g = proposal_guide_from_input($_POST);
     proposal_guide_save((int) $c['id'], $g, (int) $u['id']);
     $d = null;
-    if (isset($_POST['pagamento_tipo'])) {
+    if (isset($_POST['pagamento_tipo']) && !proposal_lock((int) $c['id'])) { // aprovada: a avaliação não altera a proposta
         [$d, $errors] = proposal_from_input($_POST, (int) $c['id']);
         if (!$errors) {
             proposal_save((int) $c['id'], $d, (int) $u['id']);

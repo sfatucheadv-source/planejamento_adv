@@ -533,32 +533,46 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
     </details>
   <?php endif ?>
 
-  <?php if ($meeting && in_array($st, ['collecting', 'analysis', 'meeting_scheduled'], true)): ?>
-    <details class="at-inline" open>
+  <?php if ($meeting && in_array($st, ['collecting', 'analysis', 'meeting_scheduled'], true)):
+      $dr = (array) (case_data($c, 'reuniao_ia_' . $meeting['id']) ?: []);
+      $dv = fn(string $k, string $fallback = '') => (string) ($dr[$k] ?? $fallback);
+      $temTx = (bool) $meeting['transcript_file_id']; ?>
+    <details class="at-inline" id="registrar" <?= $dr || dt($meeting['starts_at']) < now() ? 'open' : '' ?>>
       <summary>Registrar reunião</summary>
+      <div class="reg-ia">
+        <?php if ($dr): ?>
+          <p class="small"><strong>Preenchido pela IA</strong> a partir da transcrição em <?= e(fmt_datetime((string) $dr['at'])) ?>. Confira e ajuste antes de gravar.</p>
+        <?php elseif ($temTx): ?>
+          <p class="small">A transcrição está salva: a IA pode completar o registro para você conferir.</p>
+        <?php else: ?>
+          <p class="small muted">Quando a transcrição do Meet for salva, a IA completa este registro sozinha para você conferir.</p>
+        <?php endif ?>
+        <?php if ($temTx && llm_enabled()): ?>
+          <?= $form('reuniao_ia', 'registrar', false, 'inline') ?><button class="b b-sm" type="submit"><?= $dr ? 'Refazer com a IA' : 'Preencher com a IA pela transcrição' ?></button></form>
+        <?php endif ?>
+      </div>
       <?= $form('registrar_reuniao', 'reuniao') ?>
         <fieldset class="radios"><legend class="lbl">A reunião aconteceu?</legend>
           <label class="chk"><input type="radio" name="held" value="sim" checked data-toggle-show="held-yes"> Sim</label>
           <label class="chk"><input type="radio" name="held" value="nao" data-toggle-show="held-no"> Não aconteceu</label>
         </fieldset>
         <div data-show="held-yes">
-          <label class="fld"><span>Canal efetivo</span><select name="effective_channel"><?php foreach (MEETING_CHANNELS as $k => $m): ?><option value="<?= $k ?>" <?= selected($k, $meeting['channel']) ?>><?= e($m['short']) ?></option><?php endforeach ?></select></label>
-          <label class="fld"><span>Resumo escrito</span><textarea name="summary" rows="4"></textarea></label>
-          <label class="chk"><input type="checkbox" name="confirmed_info" value="1"> Conferi com o cliente as informações da ficha</label>
           <div class="row2">
-            <label class="fld"><span>Informações corrigidas</span><textarea name="corrections" rows="2"></textarea></label>
-            <label class="fld"><span>Orientação dada</span><textarea name="guidance" rows="2"></textarea></label>
+            <label class="fld"><span>Reação do cliente</span><select name="reaction"><?php foreach (MEETING_REACTIONS as $rk => $rl): ?><option value="<?= $rk ?>"><?= e(ucfirst($rl)) ?></option><?php endforeach ?></select></label>
+            <label class="fld"><span>Canal efetivo</span><select name="effective_channel"><?php foreach (MEETING_CHANNELS as $k => $mc): ?><option value="<?= $k ?>" <?= selected($k, $meeting['channel']) ?>><?= e($mc['short']) ?></option><?php endforeach ?></select></label>
+          </div>
+          <label class="fld"><span>Resumo para o cliente <small class="muted">(vai para a conversa dele)</small></span><textarea name="summary" rows="5"><?= e($dv('summary')) ?></textarea></label>
+          <label class="chk"><input type="checkbox" name="confirmed_info" value="1" <?= checked(!empty($dr['confirmed_info'])) ?>> Conferi com o cliente as informações da ficha</label>
+          <div class="row2">
+            <label class="fld"><span>Informações corrigidas</span><textarea name="corrections" rows="3"><?= e($dv('corrections')) ?></textarea></label>
+            <label class="fld"><span>Orientação dada</span><textarea name="guidance" rows="3"><?= e($dv('guidance')) ?></textarea></label>
           </div>
           <div class="row2">
-            <label class="fld"><span>Riscos explicados</span><textarea name="risks" rows="2"><?= e($val('proposta_riscos')) ?></textarea></label>
-            <label class="fld"><span>Pendências pontuais restantes</span><textarea name="pending_left" rows="2"></textarea></label>
+            <label class="fld"><span>Riscos explicados</span><textarea name="risks" rows="3"><?= e($dv('risks', $val('proposta_riscos'))) ?></textarea></label>
+            <label class="fld"><span>Pendências restantes</span><textarea name="pending_left" rows="3"><?= e($dv('pending_left')) ?></textarea></label>
           </div>
           <div class="row2">
             <?php if ($proposalVersions): ?><label class="fld"><span>Documento apresentado</span><select name="proposal_version_id"><option value="">—</option><?php foreach ($proposalVersions as $v): ?><option value="<?= (int) $v['id'] ?>"><?= e(kit_label($v['kind'])) ?> v<?= (int) $v['version'] ?> (<?= e(KIT_STATES[$v['status']]) ?>)</option><?php endforeach ?></select></label><?php else: ?><p class="hint"><?= proposal_get($id) ? 'Proposta registrada em Propostas.' : 'Sem proposta registrada em Propostas.' ?></p><?php endif ?>
-            <label class="fld"><span>Motivo, se a proposta foi adiada</span><input name="proposal_postponed"></label>
-          </div>
-          <div class="row2">
-            <label class="fld"><span>Reação do cliente</span><select name="reaction"><option value="pensar">Vai pensar</option><option value="aceitou">Aceitou (aceite preliminar)</option><option value="recusou">Recusou</option><option value="complemento">Precisa de complemento</option></select></label>
             <label class="chk at-mid"><input type="checkbox" name="material_change" value="1"> Surgiu mudança material (análise/kit precisam de revisão)</label>
           </div>
         </div>
@@ -566,11 +580,11 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
           <label class="fld"><span>Motivo, se conhecido</span><input name="no_show_reason"></label>
         </div>
         <div class="row2">
-          <label class="fld"><span>Próxima ação</span><input name="next_action" placeholder="Ex.: aguardar decisão do cliente"></label>
-          <label class="fld"><span>Data de retorno</span><input type="date" name="return_at" value="<?= e(substr(in_business_days(2), 0, 10)) ?>"></label>
+          <label class="fld"><span>Próxima ação</span><input name="next_action" value="<?= e($dv('next_action')) ?>" placeholder="Ex.: aguardar decisão do cliente"></label>
+          <label class="fld"><span>Retorno <small class="muted">(cria o compromisso na sua agenda)</small></span><input type="datetime-local" name="return_at" value=""></label>
         </div>
-        <button class="b b-primary" type="submit">Registrar reunião</button>
-        <p class="hint">“Registrar reunião” não formaliza contratação. Ausência não vira recusa.</p>
+        <button class="b b-primary" type="submit">Gravar registro</button>
+        <p class="hint">Nenhum campo é obrigatório. A reação do cliente e o retorno são seus: com data e hora de retorno, o compromisso vai para o seu Google Agenda. Gravar o registro não formaliza contratação.</p>
       </form>
     </details>
   <?php endif ?>

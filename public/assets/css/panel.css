@@ -1017,3 +1017,20 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .reu-status li.warn { border-left-color: #C98A1B; background: #FFF8EA; }
 .reu-status li.info { border-left-color: var(--teal); }
 .reu-status form.inline { display: inline; margin-left: 6px; }
+.reg-ia { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px; margin: 6px 0 10px; border-radius: 10px; background: var(--teal-soft); }
+.reg-ia p { margin: 0; }
+.reg-ia form.inline { display: inline; }
+.prop-lock { font-size: 13.5px; color: var(--petrol); font-weight: 600; }
+.prop-lock-senha { margin: 0; min-width: 200px; }
+.hon-lock { padding: 10px 12px; border-radius: 10px; background: #FFF8EA; border-left: 3px solid #C98A1B; }
+.hon-lock p { margin: 0 0 6px; font-size: 13.5px; }
+.hon-lock .fld { max-width: 280px; margin: 0; }
+.prop-ro { border: 0; padding: 0; margin: 0; min-width: 0; }
+.prop-lock-box { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; padding: 10px 14px; margin-bottom: 14px; border-radius: 12px; background: #FFF8EA; border-left: 4px solid #C98A1B; }
+.prop-lock-box.is-edit { background: var(--teal-soft); border-left-color: var(--teal); }
+.prop-lock-box p { margin: 0; font-size: 14px; }
+.prop-editar > summary { list-style: none; cursor: pointer; }
+.prop-editar > summary::-webkit-details-marker { display: none; }
+.prop-editar[open] > summary { display: none; }
+.prop-editar .inline-form { margin: 0; }
+.prop-form.is-ro .ed-area, .prop-form.is-ro input, .prop-form.is-ro select, .prop-form.is-ro textarea { background: #F7F7F4; }

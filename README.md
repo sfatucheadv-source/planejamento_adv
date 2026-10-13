@@ -144,6 +144,10 @@ A página da proposta tem três abas num só formulário, com os indicadores no 
 
 **Honorários na reunião:** na aba *Reunião* do atendimento, um quadro que só você vê já traz o padrão (ou a proposta salva) com êxito, desconto, parte ao final (ou tudo ao final) e a forma de pagamento (PIX à vista, parcelado no escritório ou cartão). *Recalcular* não grava nada; *Cliente aceitou: registrar no contrato* grava na proposta e gera uma nova minuta do contrato para revisar e publicar no Kit. No fim do quadro, retrátil, ficam as cláusulas de honorários e pagamento do contrato, com os trechos em destaque e o texto para ajustar.
 
+**Proposta aprovada:** com "Cliente aceitou: registrar no contrato", a proposta fica travada e a página Proposta abre só para visualização. O botão **Editar** pede a senha de um administrador (supervisor) e libera a edição por 30 minutos; ao salvar, a proposta segue aprovada com os novos valores e volta a ficar só para visualização. No quadro da reunião, recalcular é livre e gravar outra condição pede a mesma senha; a autorização fica no histórico e senhas erradas seguidas bloqueiam por 15 minutos.
+
+**Registro da reunião:** nenhum campo é obrigatório. Com a transcrição salva, a IA preenche resumo, informações corrigidas, orientação, riscos, pendências e próxima ação para Sidney conferir (sozinha ao salvar a transcrição, ou pelo botão). A reação do cliente e o retorno ficam com Sidney: com data e hora de retorno, o compromisso vai para o Google Agenda dele (sem convidar o cliente).
+
 Teste: `php tests/negociacao.php`.
 
 ### Configuração e implantação

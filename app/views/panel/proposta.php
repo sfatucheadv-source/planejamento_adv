@@ -46,9 +46,27 @@ $abas = ['produto' => 'Honorários', 'simulacao' => 'Simulação', 'contrato' =>
   <?php endforeach ?>
 </nav>
 
-<form class="form prop-form" id="prop-form" method="post" action="<?= e(url('painel/propostas/' . $id)) ?>" data-proposta data-previa="<?= e(url('painel/propostas/' . $id . '/previa')) ?>">
+<?php $lock = proposal_lock($id); $ro = $lock && !proposal_unlocked($id); ?>
+<?php if ($lock): ?>
+  <div class="prop-lock-box<?= $ro ? '' : ' is-edit' ?>">
+    <p><strong>🔒 Proposta aprovada</strong> em <?= e(fmt_datetime((string) $lock['at'])) ?><?= $lock['by'] ? ' por ' . e($lock['by']) : '' ?> · <?= e(brl((int) $lock['total'])) ?>.
+      <?= $ro ? 'Somente visualização.' : 'Edição liberada: ao salvar, segue aprovada com os novos valores.' ?></p>
+    <?php if ($ro): ?>
+      <details class="prop-editar">
+        <summary class="b b-primary">Editar</summary>
+        <form method="post" action="<?= e(url('painel/propostas/' . $id . '/editar')) ?>" class="inline-form">
+          <?= csrf_field() ?><input type="hidden" name="aba" value="produto" data-aba-campo-editar>
+          <label class="fld"><span>Senha de um administrador</span><input type="password" name="senha_admin" autocomplete="off" required></label>
+          <button class="b b-primary" type="submit">Liberar edição</button>
+        </form>
+      </details>
+    <?php endif ?>
+  </div>
+<?php endif ?>
+<form class="form prop-form<?= $ro ? ' is-ro' : '' ?>" id="prop-form" method="post" action="<?= e(url('painel/propostas/' . $id)) ?>" data-proposta data-previa="<?= e(url('painel/propostas/' . $id . '/previa')) ?>"<?= $ro ? ' data-readonly' : '' ?>>
   <?= csrf_field() ?>
   <input type="hidden" name="aba" value="produto" data-aba-campo>
+  <fieldset class="prop-ro"<?= $ro ? ' disabled' : '' ?>>
 
   <section class="prop-aba" id="produto" role="tabpanel" aria-labelledby="aba-produto" data-aba="produto">
     <h2 class="prop-aba-titulo">1. Honorários</h2>
@@ -226,7 +244,7 @@ $abas = ['produto' => 'Honorários', 'simulacao' => 'Simulação', 'contrato' =>
         <div class="prop-clausula <?= $manual ? 'is-manual' : '' ?> <?= $velho ? 'is-velho' : '' ?>" data-texto="<?= e($k) ?>">
           <div class="prop-doc" data-antes><?= $prev[$k]['antes'] ?? '' ?></div>
           <div class="prop-editavel">
-            <div class="ed-area" contenteditable="true" role="textbox" aria-multiline="true" aria-label="<?= e($label) ?>" spellcheck="true" lang="pt-BR" data-ed hidden><?= proposal_editor_html($shown) ?></div>
+            <div class="ed-area" contenteditable="<?= $ro ? 'false' : 'true' ?>" role="textbox" aria-multiline="true" aria-label="<?= e($label) ?>" spellcheck="true" lang="pt-BR" data-ed hidden><?= proposal_editor_html($shown) ?></div>
             <label class="ed-fonte"><span class="sr-only"><?= e($label) ?></span>
               <textarea name="texto_<?= e($k) ?>" rows="4" spellcheck="true" data-auto="<?= e($auto[$k]) ?>"><?= e($shown) ?></textarea>
             </label>
@@ -242,8 +260,9 @@ $abas = ['produto' => 'Honorários', 'simulacao' => 'Simulação', 'contrato' =>
     </section>
   </section>
 
+  </fieldset>
   <div class="prop-barra">
-    <button class="b b-primary" type="submit">Salvar proposta</button>
+    <?php if (!$ro): ?><button class="b b-primary" type="submit">Salvar proposta</button><?php endif ?>
     <button class="b" type="button" data-aba-prox hidden>Próximo ›</button>
     <span class="hint" data-erros aria-live="polite"></span>
   </div>

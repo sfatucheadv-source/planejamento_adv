@@ -128,6 +128,13 @@ const CONTRACT_STATES = [
 
 /* ---------- Seção 9 — canais da reunião ---------- */
 
+const MEETING_REACTIONS = [
+    'pensar' => 'vai pensar',
+    'aceitou' => 'aceitou (aceite preliminar)',
+    'recusou' => 'recusou',
+    'complemento' => 'precisa de complemento',
+];
+
 const MEETING_CHANNELS = [
     'meet'          => ['label' => 'Vídeo pelo Google Meet', 'short' => 'Google Meet',       'action' => 'Entrar na reunião'],
     'phone'         => ['label' => 'Ligação telefônica',     'short' => 'Telefone',          'action' => 'Confirmar meu telefone'],

@@ -113,6 +113,17 @@ if (str_contains($system, 'extrai dados')) {
         'confianca' => 'media',
         'resumo' => 'Proponha a referência + 10% em 10x no cartão.',
     ], JSON_UNESCAPED_UNICODE);
+} elseif (str_contains($system, 'Você registra reuniões')) {
+    // Registro da reunião pela transcrição.
+    $content = json_encode([
+        'summary' => str_contains($text, 'Banco Exemplo') ? 'Conversamos sobre o seu contrato com o Banco Exemplo e os caminhos possíveis.' : 'Sem transcrição.',
+        'corrections' => ['Contrato é do Banco Exemplo'],
+        'guidance' => 'Manter as parcelas em dia.',
+        'risks' => 'Não há garantia de resultado.',
+        'pending_left' => '',
+        'next_action' => 'Enviar a proposta por escrito',
+        'confirmed_info' => true,
+    ], JSON_UNESCAPED_UNICODE);
 } elseif (str_contains($system, 'classifica documentos')) {
     $content = json_encode(['tipo' => 'identidade']);
 } elseif (str_contains($system, 'Você conduz o acolhimento')) {

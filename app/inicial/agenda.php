@@ -587,6 +587,9 @@ function meeting_transcript_fetch(array $m, bool $force = false): string
     }
     q('UPDATE case_meetings SET transcript_file_id = ?, transcript_at = ? WHERE id = ?', [$fid, now_str(), $m['id']]);
     add_event($id, 'reuniao', 'Transcrição da reunião salva', $name . (drive_enabled() ? ' · também na pasta do atendimento no Drive' : ''));
+    if (llm_enabled() && $m['status'] === 'confirmada') { // ainda não registrada: a IA já deixa o rascunho pronto
+        meeting_ai_draft(one('SELECT * FROM case_meetings WHERE id = ?', [$m['id']]));
+    }
     return 'Transcrição salva no atendimento' . (drive_enabled() ? ' e no Google Drive' : '') . '.';
 }
 
@@ -608,6 +611,113 @@ function transcripts_sweep(int $limit = 3): int
         }
     }
     return $n;
+}
+
+/* ---------- Registro da reunião: retorno na agenda e rascunho pela IA ---------- */
+
+/** Data de retorno (aceita "2026-10-20", "20/10/2026" ou "2026-10-20T15:30"). "Y-m-d H:i:s" ou null. */
+function meeting_return_at(string $raw): ?string
+{
+    $raw = trim($raw);
+    if ($raw === '') {
+        return null;
+    }
+    if (preg_match('/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})/', $raw, $m)) {
+        return $m[1] . ' ' . $m[2] . ':00';
+    }
+    $d = parse_br_date($raw);
+    return $d ? $d . ' 09:00:00' : null;
+}
+
+/**
+ * Retorno ao cliente na agenda de Sidney (só para ele, sem convidados).
+ * Troca o retorno anterior do mesmo atendimento. Retorna erro ou null.
+ */
+function meeting_return_event(array $c, string $at, string $action): ?string
+{
+    $id = (int) $c['id'];
+    if (!google_connected()) {
+        return 'Google não conectado.';
+    }
+    $cal = rawurlencode(google_calendar_id());
+    if ($old = case_data(find_case($id), 'retorno_evento')) {
+        google_api('DELETE', '/calendars/' . $cal . '/events/' . rawurlencode((string) $old) . '?sendUpdates=none');
+    }
+    $start = dt($at);
+    $dur = max(10, agenda_int('agenda_duracao'));
+    [$ok, $ev, $err] = google_api('POST', '/calendars/' . $cal . '/events?sendUpdates=none', [
+        'summary' => 'Retorno: ' . $c['client_name'] . ' · ' . $c['protocol'],
+        'description' => $action . "\nTelefone: " . format_phone((string) $c['client_phone']) . "\nFicha: " . public_link('painel/atendimento/' . $id),
+        'start' => ['dateTime' => google_time($start), 'timeZone' => 'America/Sao_Paulo'],
+        'end' => ['dateTime' => google_time($start->modify("+$dur minutes")), 'timeZone' => 'America/Sao_Paulo'],
+        'reminders' => ['useDefault' => true],
+    ]);
+    if (!$ok || empty($ev['id'])) {
+        add_event($id, 'reuniao', 'Retorno não foi para o Google Agenda', $err ?: 'O Google não devolveu o compromisso.');
+        return $err ?: 'O Google não devolveu o compromisso.';
+    }
+    set_case_data($id, 'retorno_evento', (string) $ev['id']);
+    add_event($id, 'reuniao', 'Retorno marcado na sua agenda', fmt_datetime($start->format('Y-m-d H:i:s')) . ' · ' . $action);
+    return null;
+}
+
+/** Texto da transcrição salva da reunião (ou null). */
+function meeting_transcript_text(array $m): ?string
+{
+    if (!$m['transcript_file_id'] || !($f = one('SELECT * FROM files WHERE id = ?', [$m['transcript_file_id']]))) {
+        return null;
+    }
+    $path = config('storage_dir') . '/uploads/' . $f['case_id'] . '/' . $f['stored_name'];
+    return is_file($path) ? (string) file_get_contents($path) : null;
+}
+
+const MEETING_DRAFT_FIELDS = ['summary', 'corrections', 'guidance', 'risks', 'pending_left', 'next_action'];
+
+/**
+ * Rascunho do registro da reunião pela IA, a partir da transcrição e da
+ * ficha. Não decide a reação do cliente nem a data de retorno (são de Sidney).
+ * Guarda em case_data e retorna [rascunho, erro].
+ */
+function meeting_ai_draft(array $m): array
+{
+    $id = (int) $m['case_id'];
+    if (!llm_enabled()) {
+        return [[], 'A IA está desligada (Configurações › Inteligência artificial).'];
+    }
+    $tx = meeting_transcript_text($m);
+    if (!$tx) {
+        return [[], 'A transcrição desta reunião ainda não foi salva. Use “Buscar agora” na transcrição.'];
+    }
+    $res = llm_chat([
+        ['role' => 'system', 'content' => 'Você registra reuniões do advogado Sidney Fatuche (revisão de financiamento de veículo) a partir da transcrição. '
+            . 'Use só o que foi dito na reunião e os fatos da ficha; não invente, não afirme ilegalidade nem prometa resultado. Português do Brasil, frases curtas. '
+            . 'Responda SOMENTE com JSON com as chaves: '
+            . '"summary" (resumo para o cliente, 4 a 8 frases, em segunda pessoa, claro e sem juridiquês: o que foi analisado, os caminhos apresentados e o combinado), '
+            . '"corrections" (dados da ficha corrigidos ou fatos novos ditos pelo cliente, um por linha, ou ""), '
+            . '"guidance" (orientações dadas por Sidney, uma por linha), '
+            . '"risks" (riscos e limites explicados, um por linha), '
+            . '"pending_left" (o que ficou pendente: documentos, informações, decisões, um por linha, ou ""), '
+            . '"next_action" (próxima ação de Sidney em 1 frase), '
+            . '"confirmed_info" (true se os dados do cliente foram conferidos na conversa).'],
+        ['role' => 'user', 'content' => "FICHA:\n" . case_facts_text($id) . "\n\nTRANSCRIÇÃO DA REUNIÃO:\n" . mb_substr($tx, 0, 60000)],
+    ], $id, 'reuniao:registro', 1800, 120);
+    $json = $res['ok'] ? llm_json($res['content']) : null;
+    if (!$json) {
+        return [[], 'A IA não respondeu no formato esperado. Tente de novo.'];
+    }
+    $draft = [];
+    foreach (MEETING_DRAFT_FIELDS as $k) {
+        $v = $json[$k] ?? '';
+        if (is_array($v)) {
+            $v = implode("\n", array_map(fn($x) => is_scalar($x) ? (string) $x : '', $v));
+        }
+        $draft[$k] = mb_substr(trim((string) (is_scalar($v) ? $v : '')), 0, 4000);
+    }
+    $draft['confirmed_info'] = !empty($json['confirmed_info']);
+    $draft['at'] = now_str();
+    set_case_data($id, 'reuniao_ia_' . $m['id'], $draft);
+    add_event($id, 'ia', 'IA preencheu o registro da reunião pela transcrição', 'Conferir antes de gravar.');
+    return [$draft, null];
 }
 
 /** Rodada leve nas visitas ao site: no máximo a cada 10 minutos. */

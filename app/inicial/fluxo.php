@@ -425,43 +425,35 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             return null;
 
         case 'registrar_reuniao':
+            // Nada é obrigatório: Sidney grava o que tiver. A IA pode completar a partir da transcrição.
             $m = current_meeting($id);
             if (!$m) {
                 return 'Não há reunião confirmada para registrar.';
             }
+            $return = meeting_return_at((string) ($in['return_at'] ?? ''));
+            $action = trim((string) ($in['next_action'] ?? ''));
             if (($in['held'] ?? '') === 'nao') {
-                $next = parse_br_date((string) ($in['return_at'] ?? ''));
                 q("UPDATE case_meetings SET status = 'nao_realizada', no_show_reason = ? WHERE id = ?", [mb_substr(trim((string) ($in['no_show_reason'] ?? '')), 0, 300) ?: null, $m['id']]);
                 bump_case($id, []);
                 add_event($id, 'reuniao', 'Reunião não realizada', ($in['no_show_reason'] ?? '') ?: 'Motivo não informado.', true);
-                set_next($id, 'Reagendar a reunião', $next ? $next . ' 18:00:00' : in_business_days(1), $next ? $next . ' 18:00:00' : null);
+                $action = $action ?: 'Reagendar a reunião';
+                set_next($id, $action, $return ?: in_business_days(1), $return);
+                if ($return) {
+                    meeting_return_event($c, $return, $action);
+                }
                 chat_post($id, 'operator', 'A conversa de ' . fmt_datetime($m['starts_at']) . ' não aconteceu. Vamos combinar um novo horário. Se preferir outro formato, é só avisar aqui.');
                 return null;
             }
             $summary = trim((string) ($in['summary'] ?? ''));
-            if (mb_strlen($summary) < 10) {
-                return 'Escreva o resumo da reunião.';
-            }
             $proposal = (int) ($in['proposal_version_id'] ?? 0);
             $postpone = trim((string) ($in['proposal_postponed'] ?? ''));
             if ($proposal && !scalar("SELECT 1 FROM case_artifact_versions WHERE id = ? AND case_id = ? AND status IN ('revisado', 'publicado')", [$proposal, $id])) {
                 $proposal = 0;
             }
-            if (!$proposal && $postpone === '' && !proposal_get($id)) {
-                return 'Registre a proposta (Propostas) ou informe o motivo do adiamento.';
-            }
-            if (($in['confirmed_info'] ?? '') !== '1') {
-                return 'Confirme que as informações do cliente foram conferidas na reunião.';
-            }
-            $return = parse_br_date((string) ($in['return_at'] ?? ''));
-            $action = trim((string) ($in['next_action'] ?? ''));
-            if (!$return || $action === '') {
-                return 'Informe a próxima ação e a data de retorno.';
-            }
-            $reaction = (string) ($in['reaction'] ?? 'pensar');
+            $reaction = isset(MEETING_REACTIONS[$in['reaction'] ?? '']) ? (string) $in['reaction'] : 'pensar';
             q('UPDATE case_meetings SET status = ?, held_at = ?, effective_channel = ?, summary = ?, corrections = ?, guidance = ?, risks = ?, pending_left = ?, proposal_version_id = ?, reaction = ? WHERE id = ?', [
                 'realizada', now_str(), isset(MEETING_CHANNELS[$in['effective_channel'] ?? '']) ? $in['effective_channel'] : $m['channel'],
-                mb_substr($summary, 0, 4000), trim((string) ($in['corrections'] ?? '')) ?: null, trim((string) ($in['guidance'] ?? '')) ?: null,
+                $summary !== '' ? mb_substr($summary, 0, 4000) : null, trim((string) ($in['corrections'] ?? '')) ?: null, trim((string) ($in['guidance'] ?? '')) ?: null,
                 trim((string) ($in['risks'] ?? '')) ?: null, trim((string) ($in['pending_left'] ?? '')) ?: ($postpone ? 'Proposta adiada: ' . $postpone : null),
                 $proposal ?: null, $reaction, $m['id'],
             ]);
@@ -476,9 +468,20 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
                 $f['review_flag'] = 'analise';
             }
             bump_case($id, $f);
-            add_event($id, 'reuniao', 'Reunião realizada', $summary, false);
-            set_next($id, $action, $return . ' 18:00:00', $return . ' 18:00:00');
-            chat_post($id, 'operator', "Este é o resumo do que conversamos e o próximo passo:\n\n" . $summary . "\n\nPróximo passo: " . $action . ' (até ' . fmt_date($return) . ").\n\nSe alguma informação estiver diferente, você pode corrigir aqui.");
+            add_event($id, 'reuniao', 'Reunião realizada', ($summary !== '' ? $summary : 'Sem resumo escrito.') . ' Reação: ' . MEETING_REACTIONS[$reaction] . '.', false);
+            if ($return || $action !== '') {
+                $action = $action ?: 'Retorno ao cliente';
+                set_next($id, $action, $return ?: in_business_days(2), $return);
+                if ($return) {
+                    meeting_return_event($c, $return, $action);
+                }
+            }
+            if ($summary !== '') {
+                chat_post($id, 'operator', "Este é o resumo do que conversamos" . ($action !== '' ? ' e o próximo passo' : '') . ":\n\n" . $summary
+                    . ($action !== '' ? "\n\nPróximo passo: " . $action . ($return ? ' (até ' . fmt_date(substr($return, 0, 10)) . ')' : '') . '.' : '')
+                    . "\n\nSe alguma informação estiver diferente, você pode corrigir aqui.");
+            }
+            set_case_data($id, 'reuniao_ia_' . $m['id'], null);
             return null;
 
         case 'reanalisar':

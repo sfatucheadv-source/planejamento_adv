@@ -26,7 +26,7 @@ $prevTx = proposal_clause_preview($id, $hd);
 $ck = fn(bool $b) => $b ? 'checked' : '';
 ?>
 <details class="at-inline hon-reu" id="honorarios" <?= $draft || $herr ? 'open' : '' ?>>
-  <summary>Honorários <span class="hint">só você vê · <?= $pr ? 'proposta salva: ' . e(brl(proposal_totals($pr['data'])['total'])) : 'padrão: ' . e(brl($std['valor'])) ?></span></summary>
+  <summary>Honorários <span class="hint">só você vê · <?= proposal_lock($id) ? '🔒 aprovada: ' . e(brl((int) proposal_lock($id)['total'])) . ' · ' : '' ?><?= $pr ? 'proposta salva: ' . e(brl(proposal_totals($pr['data'])['total'])) : 'padrão: ' . e(brl($std['valor'])) ?></span></summary>
   <?= $form('honorarios_reuniao', 'honorarios', false, 'stack hon-form') ?>
     <fieldset class="prop-tipos hon-modos"><legend class="lbl">Valor</legend>
       <label><input type="radio" name="precificacao_modo" value="padrao" <?= $ck($hmodo === 'padrao') ?>><span><strong>Padrão · <?= e(brl($std['valor'])) ?></strong><small><?= e($std['nota']) ?> + <?= e(fmt_pct($std['exito'])) ?> de êxito</small></span></label>
@@ -81,9 +81,15 @@ $ck = fn(bool $b) => $b ? 'checked' : '';
       <?php endforeach ?>
     </details>
 
+    <?php if ($lock = proposal_lock($id)): ?>
+      <div class="hon-lock">
+        <p><strong>🔒 Proposta aprovada</strong> em <?= e(fmt_datetime((string) $lock['at'])) ?><?= $lock['by'] ? ' por ' . e($lock['by']) : '' ?> (<?= e(brl((int) $lock['total'])) ?>). Recalcular é livre; para gravar outra condição, informe a senha de um administrador.</p>
+        <label class="fld"><span>Senha de administrador</span><input type="password" name="senha_admin" autocomplete="off"></label>
+      </div>
+    <?php endif ?>
     <div class="hon-acoes">
       <button class="b" type="submit" name="acao" value="calcular">Recalcular</button>
-      <button class="b b-primary" type="submit" name="acao" value="registrar">Cliente aceitou: registrar no contrato</button>
+      <button class="b b-primary" type="submit" name="acao" value="registrar"><?= proposal_lock($id) ? 'Alterar a proposta aprovada' : 'Cliente aceitou: registrar no contrato' ?></button>
       <?php if ($draft): ?><button class="b b-ghost" type="submit" name="acao" value="limpar" formnovalidate>Descartar ajustes</button><?php endif ?>
       <a class="b b-ghost" href="<?= e(url('painel/propostas/' . $id)) ?>">Proposta completa</a>
     </div>

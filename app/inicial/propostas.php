@@ -403,6 +403,109 @@ function meeting_fees(int $caseId, array $posted = []): array
     return proposal_from_input($in, $caseId);
 }
 
+/* ---------- Proposta aprovada: alteração só com a senha de um administrador ---------- */
+
+/** Aprovação da proposta (com o aceite do cliente na reunião), ou null. */
+function proposal_lock(int $caseId): ?array
+{
+    $c = find_case_or_null($caseId);
+    $l = $c ? case_data($c, 'proposta_aprovada') : null;
+    return is_array($l) ? $l : null;
+}
+
+function proposal_lock_set(int $caseId, array $d, ?array $by): void
+{
+    set_case_data($caseId, 'proposta_aprovada', ['at' => now_str(), 'by' => $by['name'] ?? null, 'total' => proposal_totals($d)['total']]);
+}
+
+/** Administrador (supervisor) ativo com esta senha, ou null. */
+function admin_by_password(string $pass): ?array
+{
+    if ($pass === '') {
+        return null;
+    }
+    foreach (all("SELECT * FROM users WHERE active = 1 AND (',' || roles || ',') LIKE '%,supervisor,%'") as $u) {
+        if (password_verify($pass, (string) $u['pass_hash'])) {
+            return $u;
+        }
+    }
+    return null;
+}
+
+/** Proposta aprovada liberada para edição nesta sessão (pela senha de administrador)? */
+function proposal_unlocked(int $caseId): bool
+{
+    return (int) ($_SESSION['prop_edit'][$caseId] ?? 0) > time();
+}
+
+/** Confere a senha de administrador (5 erros em 15 min bloqueiam). [administrador, erro]. */
+function proposal_admin_check(int $caseId, string $pass): array
+{
+    $tries = array_filter((array) ($_SESSION['senha_admin_erros'] ?? []), fn($t) => $t > time() - 900);
+    if (count($tries) >= 5) {
+        return [null, 'Muitas tentativas de senha: aguarde 15 minutos.'];
+    }
+    if ($pass === '') {
+        return [null, 'Informe a senha de um administrador.'];
+    }
+    $u = admin_by_password($pass);
+    if (!$u) {
+        $tries[] = time();
+        $_SESSION['senha_admin_erros'] = array_values($tries);
+        audit('proposta_senha_incorreta', $caseId);
+        return [null, 'Senha de administrador incorreta. Nada foi alterado.'];
+    }
+    unset($_SESSION['senha_admin_erros']);
+    return [$u, null];
+}
+
+/** Botão "Editar": libera a proposta aprovada por 30 minutos nesta sessão. Retorna erro ou null. */
+function proposal_unlock(int $caseId, string $pass): ?string
+{
+    [$u, $err] = proposal_admin_check($caseId, $pass);
+    if (!$u) {
+        return $err;
+    }
+    $_SESSION['prop_edit'][$caseId] = time() + 1800;
+    audit('proposta_liberada_edicao', $caseId, 'autorizado por ' . $u['name']);
+    add_event($caseId, 'proposta', 'Proposta aprovada liberada para edição', 'Autorizado com a senha de administrador de ' . $u['name'] . '.');
+    return null;
+}
+
+/**
+ * Antes de gravar uma proposta aprovada: precisa estar liberada (botão
+ * Editar) ou vir com a senha de um administrador (campo senha_admin).
+ * Retorna erro ou null.
+ */
+function proposal_unlock_guard(int $caseId, array $in): ?string
+{
+    $lock = proposal_lock($caseId);
+    if (!$lock || proposal_unlocked($caseId)) {
+        return null;
+    }
+    $quando = 'Proposta aprovada em ' . fmt_datetime((string) $lock['at']) . ($lock['by'] ? ' por ' . $lock['by'] : '');
+    $pass = (string) ($in['senha_admin'] ?? '');
+    if ($pass === '') {
+        return $quando . ': para alterar, clique em Editar e informe a senha de um administrador.';
+    }
+    [$u, $err] = proposal_admin_check($caseId, $pass);
+    if (!$u) {
+        return $err;
+    }
+    audit('proposta_alterada_apos_aprovacao', $caseId, 'autorizado por ' . $u['name']);
+    add_event($caseId, 'proposta', 'Proposta aprovada alterada', 'Autorizado com a senha de administrador de ' . $u['name'] . '.');
+    return null;
+}
+
+/** Depois de gravar: segue aprovada (com os novos valores) e volta a ficar só para visualização. */
+function proposal_relock(int $caseId, array $d, ?array $by): void
+{
+    if (proposal_lock($caseId)) {
+        proposal_lock_set($caseId, $d, $by);
+        unset($_SESSION['prop_edit'][$caseId]);
+    }
+}
+
 /* ---------- Gravação ---------- */
 
 /**
