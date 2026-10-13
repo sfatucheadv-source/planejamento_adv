@@ -577,14 +577,64 @@ $router->post('/cliente/link', function () {
     redirect('cliente/entrar');
 });
 
-/** Documento do kit publicado (texto selecionável, imprimível). */
+/**
+ * Documento do kit publicado na área do cliente. Antes da assinatura: só
+ * leitura (sem baixar, imprimir ou salvar), com "Assinar" e "Pedir
+ * retificação". Depois: a via assinada, que pode ser impressa ou salva em PDF.
+ * O .docx e a impressão da minuta ficam só no painel do escritório.
+ */
 $router->get('/cliente/documento-kit/{id}', function (string $id) {
     $c = require_portal();
     $v = one("SELECT * FROM case_artifact_versions WHERE id = ? AND case_id = ? AND status = 'publicado'", [(int) $id, $c['id']]) ?? forbidden();
-    if (input('baixar') !== '') {
-        kit_download($c, $v);
+    header('Cache-Control: private, no-store');
+    $label = kit_label($v['kind']);
+    if ($sig = sig_for_version((int) $v['id'])) {
+        echo sig_signed_page($c, $v, $sig, true, input('assinado') === '1');
+        exit;
     }
-    kit_page($c, $v, url('cliente/documento-kit/' . $v['id'], ['baixar' => 'docx']), true);
+    if (!in_array($v['kind'], SIGNABLE_KINDS, true)) {
+        echo doc_page($label . ' · ' . $c['protocol'] . ' · v' . $v['version'], doc_blocks((string) $v['content']), ['Imprimir / PDF' => 'print']);
+        exit;
+    }
+    echo doc_page($label . ' · ' . $c['protocol'] . ' · v' . $v['version'], doc_blocks((string) $v['content']), [], null,
+        ['noprint' => true, 'after' => sig_client_panel($c, $v), 'scripts' => [asset('js/assinatura.js')]]);
+    exit;
+});
+
+function portal_kit_version(string $id): array
+{
+    $c = require_portal();
+    $v = one("SELECT * FROM case_artifact_versions WHERE id = ? AND case_id = ? AND status = 'publicado'", [(int) $id, $c['id']]);
+    if (!$v || !in_array($v['kind'], SIGNABLE_KINDS, true)) {
+        json_out(['ok' => false, 'erro' => 'Documento não disponível para assinatura.']);
+    }
+    return [$c, $v];
+}
+
+$router->post('/cliente/documento-kit/{id}/codigo', function (string $id) {
+    [$c, $v] = portal_kit_version($id);
+    $err = sig_for_version((int) $v['id']) ? 'Este documento já foi assinado.' : sig_send_code($c, $v);
+    json_out(['ok' => !$err, 'erro' => $err, 'msg' => $err ? null : 'Código enviado para ' . sig_mask_email((string) $c['client_email']) . '. Ele vale por ' . SIGN_CODE_MINUTES . ' minutos.']);
+});
+
+$router->post('/cliente/documento-kit/{id}/assinar', function (string $id) {
+    [$c, $v] = portal_kit_version($id);
+    [$sig, $err] = sig_sign($c, $v, $_POST);
+    json_out(['ok' => (bool) $sig, 'erro' => $err, 'ir' => $sig ? url('cliente/documento-kit/' . $v['id'], ['assinado' => '1']) : null]);
+});
+
+$router->post('/cliente/documento-kit/{id}/retificar', function (string $id) {
+    [$c, $v] = portal_kit_version($id);
+    $err = rect_request($c, $v, (string) input('texto'));
+    json_out(['ok' => !$err, 'erro' => $err, 'msg' => $err ? null : 'Pedido enviado. Sidney vai revisar o documento e avisar você pela conversa.']);
+});
+
+/** Conferência pública da assinatura eletrônica pelo código da via assinada. */
+$router->get('/verificar/{code}', function (string $code) {
+    $sig = one('SELECT s.*, v.kind, v.version, v.content, c.protocol FROM doc_signatures s JOIN case_artifact_versions v ON v.id = s.version_id JOIN cases c ON c.id = s.case_id WHERE s.code = ?',
+        [strtoupper(preg_replace('/[^A-Za-z0-9-]/', '', $code))]);
+    view('site/verificar', ['meta_title' => 'Conferir assinatura', 'noindex' => true, 'sig' => $sig,
+        'intact' => $sig ? hash_equals((string) $sig['doc_hash'], hash('sha256', (string) $sig['content'])) : false]);
 });
 
 /** .docx do documento, no timbrado do escritório. */

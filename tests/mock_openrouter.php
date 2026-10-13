@@ -124,6 +124,9 @@ if (str_contains($system, 'extrai dados')) {
         'next_action' => 'Enviar a proposta por escrito',
         'confirmed_info' => true,
     ], JSON_UNESCAPED_UNICODE);
+} elseif (str_contains($system, 'pediu uma retificação')) {
+    $content = json_encode(['avaliacao' => str_contains($text, 'casado') ? 'procedente' : 'duvida',
+        'observacao' => 'O cliente informa estado civil diferente do que consta no documento.', 'trecho' => 'solteiro', 'sugestao' => 'casado'], JSON_UNESCAPED_UNICODE);
 } elseif (str_contains($system, 'classifica documentos')) {
     $content = json_encode(['tipo' => 'identidade']);
 } elseif (str_contains($system, 'Você conduz o acolhimento')) {

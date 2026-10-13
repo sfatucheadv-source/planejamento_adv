@@ -610,7 +610,8 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
   <div class="box-head"><h2 id="h-kit">Kit e decisão</h2>
     <span class="tag <?= $kit['ready'] ? 'tag-green' : 'tag-amber' ?>"><?= $kit['ready'] ? 'Kit pronto' : 'Kit em preparação' ?></span></div>
 
-  <?php $noDrive = (array) case_data($c, 'drive_kit', []); $naItems = []; ?>
+  <?php $noDrive = (array) case_data($c, 'drive_kit', []); $naItems = []; $rects = [];
+    foreach (rect_open($id) as $rq) { $rects[$rq['kind']][] = $rq; } ?>
   <div class="fk-grid">
     <?php foreach (KIT_ITEMS as $k => $meta): $it = $kit['items'][$k]; $v = $it['version']; $t = $meta['template'] ? doc_template($k) : null; $miss = $v ? (json_decode($v['missing'], true) ?: []) : [];
       if ($it['state'] === 'nao_aplicavel') { $naItems[$k] = [$meta, $v]; continue; } ?>
@@ -622,9 +623,31 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
         <div class="fk-flags">
           <?php if ($t && !$t['approved_at']): ?><span class="tag tag-gray" title="Publicação bloqueada até a aprovação do modelo">modelo não aprovado</span><?php endif ?>
           <?php if ($v && $v['signed_file_id']): ?><span class="tag tag-green">assinado</span><?php endif ?>
+          <?php $vsig = $v ? sig_for_version((int) $v['id']) : null; if ($vsig): ?><a class="tag tag-green" href="<?= e(url('arquivo/' . $vsig['file_id'])) ?>" target="_blank" rel="noopener" title="Via assinada com a folha de evidências">assinatura eletrônica · <?= e(fmt_datetime($vsig['signed_at'])) ?></a><?php endif ?>
           <?php if ($v && !empty($noDrive[$v['id']])): ?><a class="tag tag-blue" href="https://drive.google.com/file/d/<?= e(rawurlencode((string) $noDrive[$v['id']])) ?>/view" target="_blank" rel="noopener">.docx no Drive</a><?php endif ?>
         </div>
         <?php if ($it['stale']): ?><p class="fk-aviso">Os dados mudaram depois desta versão: gere uma nova.</p><?php endif ?>
+        <?php if ($vsig): $vev = json_decode((string) $vsig['evidence'], true) ?: []; ?>
+          <p class="fk-assin">Assinado por <strong><?= e($vsig['signer_name']) ?></strong> · código <?= e($vsig['code']) ?> · IP <?= e($vsig['ip']) ?> · local: <?= e(sig_geo_text($vev['localizacao'] ?? [])) ?></p>
+        <?php endif ?>
+        <?php foreach ($rects[$k] ?? [] as $rq): $an = json_decode((string) $rq['ai_note'], true) ?: null; ?>
+          <div class="fk-ret is-<?= e($rq['status']) ?>">
+            <p><strong>Retificação pedida pelo cliente</strong> <span class="hint">v<?= (int) $rq['version'] ?> · <?= e(fmt_datetime($rq['created_at'])) ?><?= $rq['status'] === 'resolvida' ? ' · resolvida' : '' ?></span></p>
+            <blockquote><?= nl2br(e($rq['body'])) ?></blockquote>
+            <?php if ($an): ?>
+              <p class="fk-ret-ia"><span class="tag <?= ['procedente' => 'tag-green', 'parcial' => 'tag-amber', 'improcedente' => 'tag-gray'][$an['avaliacao']] ?? 'tag-blue' ?>">IA: <?= e(RECT_AVALIACAO[$an['avaliacao']] ?? 'Precisa conferir') ?></span> <?= e($an['observacao']) ?></p>
+              <?php if ($an['trecho'] || $an['sugestao']): ?><p class="small"><?= $an['trecho'] ? 'Trecho: “' . e($an['trecho']) . '”' : '' ?><?= $an['sugestao'] ? '<br>Sugestão: “' . e($an['sugestao']) . '”' : '' ?></p><?php endif ?>
+            <?php elseif ($rq['status'] === 'aberta'): ?>
+              <p class="hint">A IA ainda não avaliou este pedido.</p>
+            <?php endif ?>
+            <?php if ($rq['status'] === 'aberta'): ?>
+              <?= $form('kit_retificacao', 'kit-' . $k, false, 'inline-form') ?><input type="hidden" name="rid" value="<?= (int) $rq['id'] ?>">
+                <input name="resolucao" placeholder="O que foi feito (opcional)" maxlength="500"><button class="b b-xs" type="submit" name="acao" value="resolver">Marcar como resolvida</button>
+                <?php if (!$an && llm_enabled()): ?><button class="b b-xs" type="submit" name="acao" value="ia">Avaliar com a IA</button><?php endif ?>
+              </form>
+            <?php elseif ($rq['resolution']): ?><p class="small muted">Resolução: <?= e($rq['resolution']) ?></p><?php endif ?>
+          </div>
+        <?php endforeach ?>
         <?php if ($miss): ?><p class="fk-falta">Falta: <?= e(implode('; ', $miss)) ?></p><?php endif ?>
         <div class="fk-acoes">
           <?php if ($it['state'] !== 'publicado' || $it['stale']): ?>

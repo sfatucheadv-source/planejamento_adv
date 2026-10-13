@@ -264,8 +264,17 @@
     // era desfeito e o julgado inteiro pulava de folha, abrindo um vão (25/09/2026)
     var csT = window.getComputedStyle(node);
     limite -= (parseFloat(csT.paddingBottom) || 0) + (parseFloat(csT.borderBottomWidth) || 0);
+    // a margem inferior do parágrafo e o entrelinhamento também ocupam a folha:
+    // sem descontá-los, a 1.ª metade "transbordava" por poucos pixels, o corte
+    // era desfeito e o parágrafo inteiro pulava de folha, abrindo um vão (13/10/2026)
+    limite -= parseFloat(csT.marginBottom) || 0;
     var linhas = linhasDe(node);
     if (linhas.length < MIN_LINHAS * 2) return null;
+    var alturaLinha = parseFloat(csT.lineHeight);
+    var alturaGlifo = linhas[0].bottom - linhas[0].top;
+    if (alturaLinha > alturaGlifo) limite -= (alturaLinha - alturaGlifo) / 2;
+    // viúva: pelo menos MIN_LINHAS linhas descem para a folha seguinte
+    limite = Math.min(limite, linhas[linhas.length - MIN_LINHAS - 1].bottom);
 
     var nos = nosDeTexto(node);
     // julgado: o corte cai sempre dentro da ementa, nunca na linha de fonte, e
@@ -357,19 +366,23 @@
 
     if (!transborda(folha)) return folha;
 
-    // 1ª tentativa: dividir o bloco entre esta folha e a próxima
+    // 1ª tentativa: dividir o bloco entre esta folha e a próxima. Se a 1.ª
+    // metade ainda transborda (arredondamentos, margens), corta uma linha
+    // antes e tenta de novo, em vez de mandar o bloco inteiro para a próxima.
     var lim = limiteY(folha);
     var intacto = node.innerHTML;
-    var cont = podeDividir(node) ? dividir(node, lim) : null;
-
-    if (cont) {
+    var passo = parseFloat(window.getComputedStyle(node).lineHeight) || 20;
+    for (var tentativa = 0; tentativa < 4 && podeDividir(node); tentativa++) {
+      var cont = dividir(node, lim - tentativa * passo);
+      if (!cont) break;
       removerNotasDe(folha, notasDe(cont));
       if (!transborda(folha)) {
         return colocar(criarFolha(), cont);
       }
-      // não coube nem partido: desfaz e trata como bloco inteiro
+      // não coube partido assim: desfaz e tenta cortando mais acima
       removerNotasDe(folha, notasDe(node));
       node.innerHTML = intacto;
+      anexarNotas(folha, notasDe(node));
     }
 
     // 2ª tentativa: mover o bloco inteiro, arrastando o que deve segui-lo

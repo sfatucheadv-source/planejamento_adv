@@ -9,3 +9,4 @@ storage/codigo-instalacao.txt
 app/config.local.php
 .DS_Store
 storage/backup-*
+storage/mail/

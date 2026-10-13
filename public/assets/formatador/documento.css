@@ -66,3 +66,47 @@ mark.marca { background: #FFF176; color: inherit; padding: 0; }
 body.doc-compacto { --corpo-tam: 11pt; --corpo-entrelinha: 1.4; --par-espaco: 3.2mm; }
 body.doc-compacto .doc-assinatura { margin-top: 12mm; }
 body.doc-compacto .local-data { margin-top: 5mm; }
+
+/* Área do cliente: só leitura até assinar (sem seleção, impressão bloqueada no CSS da página) */
+body.doc-sem-impressao #papel { -webkit-user-select: none; user-select: none; }
+body.doc-sem-impressao { padding-bottom: 120px; }
+
+/* Rubrica na via assinada */
+.assin-rubrica { margin: 6mm 0 0; }
+.assin-rubrica img { max-width: 70mm; max-height: 24mm; }
+.assin-rubrica__nome { font-family: var(--sans); font-size: 8.5pt; color: var(--secundaria); margin-top: 1mm; }
+
+/* Barra e janelas de assinatura */
+.assin { font-family: "Poppins", Arial, sans-serif; color: #222831; }
+.assin-barra { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+  padding: 12px 20px; background: #fff; box-shadow: 0 -2px 14px rgba(34,40,49,.16); }
+.assin-barra p { margin: 0; font-size: 14px; max-width: 640px; line-height: 1.45; }
+.assin-acoes { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.assin-btn { font: 600 14px "Poppins", Arial, sans-serif; padding: 11px 18px; border-radius: 999px; border: 0; background: #1800AD; color: #fff; cursor: pointer; }
+.assin-btn.-sec { background: #fff; color: #1800AD; box-shadow: inset 0 0 0 1.5px #1800AD; }
+.assin-btn:disabled { opacity: .55; cursor: default; }
+.assin-link { background: none; border: 0; color: #1800AD; font: 13px "Poppins", Arial, sans-serif; text-decoration: underline; cursor: pointer; padding: 4px 0; }
+.assin-modal { position: fixed; inset: 0; z-index: 60; background: rgba(20,24,30,.55); display: flex; align-items: flex-start; justify-content: center; padding: 24px 12px; overflow-y: auto; }
+.assin-modal[hidden] { display: none; }
+.assin-caixa { width: 100%; max-width: 560px; background: #fff; border-radius: 14px; padding: 22px 22px 18px; box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+.assin-caixa h2 { margin: 0 0 4px; font-size: 19px; }
+.assin-sub { margin: 0 0 14px; font-size: 13px; color: #6E747E; }
+.assin-fld { display: block; margin: 0 0 12px; }
+.assin-fld > span { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.assin-fld small { font-weight: 400; color: #6E747E; }
+.assin-fld input, .assin-fld textarea { width: 100%; box-sizing: border-box; font: 15px "Poppins", Arial, sans-serif; padding: 10px 12px; border: 1px solid #C9CDD3; border-radius: 8px; }
+.assin-pad { display: block; width: 100%; height: 150px; border: 1px dashed #A7ACB4; border-radius: 8px; background: #FAFAFB; touch-action: none; cursor: crosshair; }
+.assin-codigo { display: flex; gap: 8px; }
+.assin-codigo input { flex: 1; letter-spacing: .3em; font-size: 18px; }
+.assin-ok { display: flex; gap: 8px; align-items: flex-start; font-size: 12.5px; line-height: 1.45; margin: 4px 0 10px; }
+.assin-ok input { margin-top: 3px; }
+.assin-geo { font-size: 12px; color: #6E747E; margin: 0 0 8px; }
+.assin-erro { min-height: 1.2em; font-size: 13px; color: #B3261E; margin: 0 0 10px; }
+.assin-erro.-ok { color: #1B7A43; }
+.assin-aviso { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 70; background: #222831; color: #fff; font: 14px "Poppins", Arial, sans-serif;
+  padding: 10px 16px; border-radius: 8px; opacity: 0; pointer-events: none; transition: opacity .2s; }
+.assin-aviso.is-on { opacity: 1; }
+.assin-feito { position: fixed; left: 0; right: 0; top: 0; z-index: 50; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 16px;
+  padding: 12px 16px; background: #E8F5EC; color: #1B4D2E; font: 14px "Poppins", Arial, sans-serif; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+@media print { .assin-feito, .assin { display: none !important; } }
+@media (max-width: 640px) { .assin-barra { padding: 10px 12px; } .assin-acoes { width: 100%; } .assin-acoes .assin-btn { flex: 1; } }

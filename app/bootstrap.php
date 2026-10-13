@@ -39,6 +39,7 @@ require APP_DIR . '/inicial/conversas.php';
 require APP_DIR . '/inicial/negociacao.php';
 require APP_DIR . '/inicial/kit.php';
 require APP_DIR . '/inicial/diagramacao.php';
+require APP_DIR . '/inicial/assinatura.php';
 require APP_DIR . '/inicial/migracao.php';
 require APP_DIR . '/lib/content.php';
 require APP_DIR . '/lib/ui.php';

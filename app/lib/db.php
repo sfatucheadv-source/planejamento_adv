@@ -659,6 +659,43 @@ SQL;
 CREATE INDEX IF NOT EXISTS idx_meetings_transcript ON case_meetings(status, starts_at);
 SQL;
 
+    // Versão 19 — assinatura eletrônica do cliente (com as evidências) e pedidos de retificação.
+    $migrations[19] = <<<SQL
+CREATE TABLE IF NOT EXISTS doc_signatures (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    version_id INTEGER NOT NULL REFERENCES case_artifact_versions(id) ON DELETE CASCADE,
+    code TEXT NOT NULL UNIQUE,
+    signer_name TEXT NOT NULL,
+    signer_cpf TEXT,
+    signer_email TEXT,
+    doc_hash TEXT NOT NULL,
+    file_id INTEGER REFERENCES files(id),
+    file_hash TEXT,
+    ip TEXT,
+    user_agent TEXT,
+    geo TEXT,
+    evidence TEXT NOT NULL DEFAULT '{}',
+    signature_image TEXT,
+    signed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_signatures_version ON doc_signatures(version_id);
+CREATE TABLE IF NOT EXISTS doc_rectifications (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    version_id INTEGER NOT NULL REFERENCES case_artifact_versions(id) ON DELETE CASCADE,
+    body TEXT NOT NULL,
+    ai_note TEXT,
+    status TEXT NOT NULL DEFAULT 'aberta',
+    ip TEXT,
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolved_by INTEGER REFERENCES users(id),
+    resolution TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_rectifications_case ON doc_rectifications(case_id, status);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {

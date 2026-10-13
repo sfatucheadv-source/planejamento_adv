@@ -267,7 +267,7 @@ function mail_header_text(string $s): string
 }
 
 /** Mensagem MIME (texto e HTML) pronta para envio. @return array{0:string,1:string} cabeçalhos e corpo */
-function mail_build(string $to, string $subject, string $text, string $html): array
+function mail_build(string $to, string $subject, string $text, string $html, array $attachments = []): array
 {
     [$from, $name] = mail_from();
     $b = 'b' . bin2hex(random_bytes(8));
@@ -283,18 +283,30 @@ function mail_build(string $to, string $subject, string $text, string $html): ar
     $body = "--$b\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($text))
         . "--$b\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n" . chunk_split(base64_encode($html))
         . "--$b--\r\n";
+    if ($attachments) {
+        // Anexos: multipart/mixed com o texto (alternativo) e os arquivos [[nome, tipo, conteúdo]].
+        $m = 'm' . bin2hex(random_bytes(8));
+        $headers[count($headers) - 1] = 'Content-Type: multipart/mixed; boundary="' . $m . '"';
+        $mixed = "--$m\r\nContent-Type: multipart/alternative; boundary=\"$b\"\r\n\r\n" . $body;
+        foreach ($attachments as [$name, $type, $bytes]) {
+            $fn = preg_replace('/[^\pL\pN ._()-]+/u', '_', (string) $name);
+            $mixed .= "--$m\r\nContent-Type: $type; name=\"" . mail_header_text($fn) . "\"\r\nContent-Transfer-Encoding: base64\r\n"
+                . 'Content-Disposition: attachment; filename="' . mail_header_text($fn) . "\"\r\n\r\n" . chunk_split(base64_encode((string) $bytes));
+        }
+        $body = $mixed . "--$m--\r\n";
+    }
     return [implode("\r\n", $headers), $body];
 }
 
 /** @return array{0:bool,1:?string} enviado? e o erro */
-function send_mail(string $to, string $subject, string $text, string $html, ?int $caseId = null, string $kind = 'aviso'): array
+function send_mail(string $to, string $subject, string $text, string $html, ?int $caseId = null, string $kind = 'aviso', array $attachments = []): array
 {
     $to = trim($to);
     if (!filter_var($to, FILTER_VALIDATE_EMAIL) || preg_match('/[\r\n]/', $to)) {
         return [false, 'E-mail do destinatário inválido.'];
     }
     $driver = mail_driver();
-    [$headers, $body] = mail_build($to, $subject, $text, $html);
+    [$headers, $body] = mail_build($to, $subject, $text, $html, $attachments);
     $err = null;
     try {
         if ($driver === 'off') {

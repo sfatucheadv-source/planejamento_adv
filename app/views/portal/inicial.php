@@ -366,11 +366,14 @@ $choiceButtons = function (array $q) {
           <?php if (!$kitPub): ?><p class="muted">Quando Sidney disponibilizar a proposta ou os documentos, eles aparecem aqui.</p><?php endif ?>
           <ul class="cv-kit">
             <?php foreach ($kitPub as $kind => $v): ?>
-              <li><a href="<?= e(url('cliente/documento-kit/' . $v['id'])) ?>" target="_blank" rel="noopener"><?= e(kit_label($kind)) ?></a> <small class="muted">versão <?= (int) $v['version'] ?> · <?= e(fmt_date($v['published_at'])) ?></small></li>
+              <?php $vs = sig_for_version((int) $v['id']); $assina = in_array($kind, SIGNABLE_KINDS, true); ?>
+              <li><a href="<?= e(url('cliente/documento-kit/' . $v['id'])) ?>" target="_blank" rel="noopener"><?= e(kit_label($kind)) ?></a> <small class="muted">versão <?= (int) $v['version'] ?> · <?= e(fmt_date($v['published_at'])) ?></small>
+                <?php if ($vs): ?><br><small class="cv-kit-ok">✓ Assinado em <?= e(fmt_datetime($vs['signed_at'])) ?> · <a href="<?= e(url('cliente/documento-kit/' . $v['id'])) ?>" target="_blank" rel="noopener">ver e salvar em PDF</a></small>
+                <?php elseif ($assina): ?><br><a class="btn btn-gold btn-small" href="<?= e(url('cliente/documento-kit/' . $v['id'])) ?>" target="_blank" rel="noopener">Ler e assinar</a><?php endif ?></li>
             <?php endforeach ?>
           </ul>
           <?php if ($st === 'awaiting_decision'): ?>
-            <p><?= $c['decision'] === 'aceitou' && $c['contract_state'] !== 'formalizado' ? 'Você aceitou a proposta. Falta a assinatura dos documentos; Sidney orienta como assinar.' : 'Pense com calma. Se tiver dúvida, escreva na conversa. Nada é aceito em seu nome sem a sua confirmação.' ?></p>
+            <p><?= $c['decision'] === 'aceitou' && $c['contract_state'] !== 'formalizado' ? 'Você aceitou a proposta. Falta assinar os documentos: abra cada um, leia e assine aqui mesmo (ou peça retificação).' : 'Pense com calma. Se tiver dúvida, escreva na conversa. Nada é aceito em seu nome sem a sua confirmação.' ?></p>
           <?php endif ?>
           <?php if ($completed): ?><p><strong><?= e(DECISIONS[$c['decision']]) ?>.</strong> <?= e((string) $c['closure_reason']) ?></p><?php endif ?>
         </section>

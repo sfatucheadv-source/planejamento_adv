@@ -327,7 +327,7 @@ ok(scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$pv['id']])
 $cli->get('/cliente?area=reuniao');
 ok(str_contains($cli->html, 'Parecer de cálculos') && str_contains($cli->html, 'Escolha o melhor horário') && str_contains($cli->html, 'Como vai ser a conversa'), 'T13: cliente vê a proposta e, sem reunião marcada, as opções de horário');
 $cli->get('/cliente/documento-kit/' . $pv['id']);
-ok($cli->status === 200 && str_contains($cli->html, 'A negociação é o caminho prioritário') && str_contains($cli->html, '· v' . $pv['version'] . '</title>') && str_contains($cli->html, 'paginar.js') && str_contains($cli->html, 'Baixar .docx'), 'S13: documento em texto selecionável, no timbrado, com versão identificada');
+ok($cli->status === 200 && str_contains($cli->html, 'A negociação é o caminho prioritário') && str_contains($cli->html, '· v' . $pv['version'] . '</title>') && str_contains($cli->html, 'paginar.js') && !str_contains($cli->html, 'Baixar .docx'), 'S13: documento em texto selecionável, no timbrado, com versão identificada (o .docx fica só no escritório)');
 
 echo "\nP3. Reunião pelos quatro canais (T14, T15, T16, T17, T18)\n";
 $when = now()->modify('+2 days')->setTime(15, 0)->format('Y-m-d\TH:i');

@@ -150,6 +150,17 @@ A página da proposta tem três abas num só formulário, com os indicadores no 
 
 Teste: `php tests/negociacao.php`.
 
+### Assinatura eletrônica e retificação pelo cliente
+
+Na área do cliente, o contrato, a procuração e a declaração publicados abrem **só para leitura**: sem baixar .docx, imprimir, salvar ou copiar (o .docx e a impressão ficam no painel do escritório). O cliente pode **assinar** ou **pedir retificação**.
+
+- **Assinar:** nome completo e CPF (conferidos com a ficha), rubrica desenhada na tela, código de 6 números enviado ao e-mail do cadastro (vale 10 minutos) e o aceite expresso, com a base legal (MP 2.200-2/2001, art. 10, § 2º, e Código Civil, art. 107). Ficam registrados o IP, o navegador, a data e hora (Brasília e UTC), o fuso e a tela do aparelho, a localização (se o cliente permitir; a recusa também fica registrada) e o hash SHA-256 do texto. A via assinada ganha a folha "Registro de assinatura eletrônica" com essas evidências, a rubrica e um código de conferência pública (`/verificar/{código}`). Ela vai para os arquivos do atendimento (e para o Drive), segue por e-mail em anexo e, a partir daí, pode ser impressa ou salva em PDF. Sidney recebe o aviso para conferir e registrar a contratação.
+- **Retificação:** o cliente escreve o que está errado; o pedido aparece na aba Kit com a avaliação da IA (procede, procede em parte, não procede ou precisa conferir, com o trecho e a sugestão). Sidney marca como resolvida e publica a nova versão.
+
+É uma assinatura eletrônica sem certificado ICP-Brasil, com as evidências reunidas para provar autoria e integridade. Os bloqueios de impressão e cópia valem no navegador; não impedem uma foto ou captura da tela. Teste: `php tests/assinatura.php`.
+
+**Paginação:** um parágrafo longo agora se divide entre duas folhas quando preciso (o motor desconta a margem e o entrelinhamento e corta uma linha antes, em vez de levar o bloco inteiro para a folha seguinte), sem deixar uma linha sozinha no topo da próxima.
+
 ### Configuração e implantação
 
 1. Faça backup do banco (com WAL ativo, copie `fatuche.sqlite`, `-wal` e `-shm` juntos, com o site parado, ou use `sqlite3 fatuche.sqlite ".backup copia.sqlite"`).

@@ -291,7 +291,12 @@ function doc_svg(string $file): string
  * Página completa: folhas A4 paginadas pelo motor do formatador, com o
  * timbrado em todas as folhas. $actions: [rótulo => url] para a barra.
  */
-function doc_page(string $title, array $blocks, array $actions, ?string $watermark = null): string
+/**
+ * $opts: 'append' (HTML no fim do corpo paginado, ex.: imagem da assinatura),
+ * 'noprint' (bloqueia imprimir e salvar até a assinatura), 'after' (HTML depois
+ * das folhas, ex.: painel de assinatura) e 'scripts' (JS próprios do site).
+ */
+function doc_page(string $title, array $blocks, array $actions, ?string $watermark = null, array $opts = []): string
 {
     $f = fn(string $p) => e(asset('formatador/' . $p));
     $fonts = '';
@@ -313,12 +318,15 @@ function doc_page(string $title, array $blocks, array $actions, ?string $waterma
     }
     $json = fn($v) => json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP);
     return '<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
-        . '<meta name="robots" content="noindex, nofollow"><title>' . e($title) . '</title>'
+        . '<meta name="robots" content="noindex, nofollow">' . (!empty($opts['base']) ? '<base href="' . e($opts['base']) . '">' : '') . '<title>' . e($title) . '</title>'
         . '<style>' . $fonts . '</style><link rel="stylesheet" href="' . $f('peca.css') . '"><link rel="stylesheet" href="' . $f('documento.css') . '"></head>'
-        . '<body' . (doc_is_compact($blocks) ? ' class="doc-compacto"' : '') . '><div id="fonte">' . doc_corpo_html($blocks) . '</div><div id="papel"></div>'
-        . '<div class="barra">' . $bar . '</div>'
+        . (!empty($opts['noprint']) ? '<style>@media print{#papel,#fonte,.barra,.assin{display:none!important}body::before{content:"A impressão e o PDF ficam disponíveis depois da assinatura.";display:block;font:16px Arial,sans-serif;padding:40px}}</style>' : '')
+        . '<body class="' . trim((doc_is_compact($blocks) ? 'doc-compacto' : '') . (!empty($opts['noprint']) ? ' doc-sem-impressao' : '')) . '"><div id="fonte">'
+        . (isset($opts['append']) ? preg_replace('#</div>$#', $opts['append'] . '</div>', doc_corpo_html($blocks)) : doc_corpo_html($blocks)) . '</div><div id="papel"></div>'
+        . ($bar !== '' ? '<div class="barra">' . $bar . '</div>' : '') . ($opts['after'] ?? '')
         . '<script type="application/json" id="documento-config">' . $json(['cfg' => $cfg, 'cabecalho' => doc_svg('timbrado-cabecalho.svg'), 'rodape' => doc_svg('timbrado-rodape.svg')]) . '</script>'
-        . '<script src="' . $f('documento.js') . '"></script><script src="' . $f('paginar.js') . '"></script></body></html>';
+        . '<script src="' . $f('documento.js') . '"></script><script src="' . $f('paginar.js') . '"></script>'
+        . implode('', array_map(fn($u) => '<script src="' . e($u) . '"></script>', $opts['scripts'] ?? [])) . '</body></html>';
 }
 
 /* ---------- .docx (mesmas medidas e tipografia do formatador) ---------- */

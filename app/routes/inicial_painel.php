@@ -599,6 +599,23 @@ function initial_panel_action(array $c, string $op): string
             }
             return 'reuniao';
 
+        case 'kit_retificacao':
+            $rq = one('SELECT * FROM doc_rectifications WHERE id = ? AND case_id = ?', [(int) input('rid'), $id]);
+            if (!$rq) {
+                flash('error', 'Pedido de retificação não encontrado.');
+                return 'kit';
+            }
+            if (input('acao') === 'ia') {
+                $err = rect_ai_review((int) $rq['id']);
+                flash($err ? 'error' : 'ok', $err ?: 'A IA avaliou o pedido de retificação.');
+            } else {
+                q("UPDATE doc_rectifications SET status = 'resolvida', resolved_at = ?, resolved_by = ?, resolution = ? WHERE id = ?",
+                    [now_str(), current_user()['id'] ?? null, trim(mb_substr((string) input('resolucao'), 0, 500)) ?: null, $rq['id']]);
+                add_event($id, 'assinatura', 'Retificação resolvida', trim((string) input('resolucao')) ?: null);
+                flash('ok', 'Retificação marcada como resolvida. Se mudou o texto, gere e publique a nova versão para o cliente assinar.');
+            }
+            return 'kit';
+
         case 'kit_gerar':
             $msg(kit_generate($c, (string) input('kind')), 'Minuta gerada com os dados atuais.');
             return 'kit-' . input('kind');

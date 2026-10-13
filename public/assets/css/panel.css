@@ -1034,3 +1034,9 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .prop-editar[open] > summary { display: none; }
 .prop-editar .inline-form { margin: 0; }
 .prop-form.is-ro .ed-area, .prop-form.is-ro input, .prop-form.is-ro select, .prop-form.is-ro textarea { background: #F7F7F4; }
+.fk-assin { font-size: 12.5px; margin: 4px 0; color: var(--petrol); overflow-wrap: anywhere; }
+.fk-ret { margin: 6px 0; padding: 8px 10px; border-radius: 8px; background: #FFF8EA; border-left: 3px solid #C98A1B; font-size: 13px; }
+.fk-ret.is-resolvida { background: #F4F6F5; border-left-color: var(--line); }
+.fk-ret p { margin: 0 0 4px; }
+.fk-ret blockquote { margin: 4px 0 6px; padding: 0 0 0 8px; border-left: 2px solid var(--line); font-style: italic; }
+.fk-ret .inline-form { margin: 4px 0 0; }
