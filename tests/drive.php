@@ -24,13 +24,34 @@ function ok(bool $cond, string $msg): void
 }
 
 // Drive simulado: guarda pastas e arquivos em memória.
-$drive = ['folders' => [], 'files' => [], 'patch' => 0, 'n' => 0];
+$drive = ['folders' => [], 'files' => [], 'patch' => 0, 'n' => 0, 'deleted' => [], 'scope' => 'https://www.googleapis.com/auth/drive', 'api_off' => false, 'readonly' => []];
 $GLOBALS['google_http'] = function (string $method, string $url, ?array $body) use (&$drive) {
     if (str_ends_with(parse_url($url, PHP_URL_PATH), '/token')) {
         return [200, ['access_token' => 'at', 'expires_in' => 3599, 'scope' => 'https://www.googleapis.com/auth/drive']];
     }
     $path = parse_url($url, PHP_URL_PATH);
     parse_str((string) parse_url($url, PHP_URL_QUERY), $qs);
+    if (str_ends_with($path, '/tokeninfo')) {
+        return [200, ['scope' => $drive['scope']]];
+    }
+    if ($drive['api_off'] && str_contains($path, '/drive/v3/')) {
+        return [403, ['error' => ['code' => 403, 'message' => 'Google Drive API has not been used in project 1 before or it is disabled.', 'errors' => [['reason' => 'accessNotConfigured']], 'status' => 'PERMISSION_DENIED']]];
+    }
+    if ($method === 'GET' && $path === '/drive/v3/about') {
+        return [200, ['user' => ['emailAddress' => 'sidney@t.local'], 'storageQuota' => ['limit' => '100', 'usage' => '10']]];
+    }
+    if ($method === 'GET' && preg_match('#^/drive/v3/files/(.+)$#', $path, $m)) {
+        $hit = array_values(array_filter($drive['folders'], fn($f) => $f['id'] === $m[1]));
+        if (!$hit) {
+            return [404, ['error' => ['code' => 404, 'message' => 'File not found: ' . $m[1], 'errors' => [['reason' => 'notFound']]]]];
+        }
+        return [200, ['id' => $m[1], 'name' => $hit[0]['name'], 'trashed' => false, 'capabilities' => ['canAddChildren' => !in_array($m[1], $drive['readonly'], true)], 'owners' => [['emailAddress' => 'outra@t.local']]]];
+    }
+    if ($method === 'DELETE' && preg_match('#^/drive/v3/files/(.+)$#', $path, $m)) {
+        $drive['deleted'][] = $m[1];
+        unset($drive['files'][$m[1]]);
+        return [204, []];
+    }
     if ($method === 'GET' && $path === '/drive/v3/files') {
         preg_match("/name = '(.*?)' and '(.*?)' in parents/", $qs['q'], $m);
         $hit = array_values(array_filter($drive['folders'], fn($f) => $f['name'] === stripslashes($m[1]) && $f['parent'] === $m[2]));
@@ -132,6 +153,39 @@ ok($arq && str_contains($arq['raw'], 'wordprocessingml') && str_contains($arq['r
 $antes = count($drive['files']);
 drive_save_kit(find_case($id), $v);
 ok(count($drive['files']) === $antes, 'a mesma versão não é gravada duas vezes');
+
+echo "\nR5. Erro 403: diagnóstico e recuperação\n";
+$drive['scope'] = 'openid https://www.googleapis.com/auth/calendar.events';
+$steps = drive_diagnose();
+$last = end($steps);
+ok($last[0] === 'Permissão do Google Drive' && !$last[1] && str_contains($last[2], 'Conectar de novo') && setting('google_scopes') === $drive['scope'], 'Drive desmarcado no consentimento: o teste aponta “Conectar de novo” e atualiza as permissões');
+$drive['scope'] = 'openid https://www.googleapis.com/auth/drive';
+$drive['api_off'] = true;
+$steps = drive_diagnose();
+$last = end($steps);
+ok($last[0] === 'Google Drive API ativa' && !$last[1] && str_contains($last[2], 'Google respondeu 403') && str_contains($last[2], 'ative a API indicada'), 'API do Drive desligada no projeto: 403 com a orientação de ativar');
+ok(str_contains((string) setting('drive_diag'), 'Google Drive API ativa'), 'o resultado fica guardado para a tela de Configurações');
+$drive['api_off'] = false;
+$antes = count($drive['files']);
+$steps = drive_diagnose();
+ok(count(array_filter($steps, fn($x) => !$x[1])) === 0 && count($steps) === 7 && end($steps)[0] === 'Gravar um arquivo de teste', 'tudo certo: conta, permissão, API, pasta e gravação de teste');
+ok(count($drive['files']) === $antes && count($drive['deleted']) === 1, 'o arquivo de teste é apagado em seguida');
+$drive['readonly'][] = $f[1]['id'];
+$steps = drive_diagnose();
+$last = end($steps);
+ok($last[0] === 'Permissão de gravar na pasta' && !$last[1] && str_contains($last[2], 'outra@t.local'), 'pasta só de leitura: aponta a conta dona');
+$drive['readonly'] = [];
+// Pasta guardada que sumiu (ou é de outra conta): procura de novo, sem erro.
+set_case_data($id, 'drive_pasta', 'pasta-de-outra-conta');
+chat_post($id, 'client', 'Mais uma mensagem.');
+[$n3, $err3] = drive_sync_case($id);
+ok($err3 === null && case_data(find_case($id), 'drive_pasta') === $f[2]['id'], 'pasta guardada inválida (apagada ou de outra conta): volta a usar a pasta certa');
+set_case_data((int) $b['id'], 'drive_pasta', 'pasta-velha');
+set_setting('drive_root_id', 'x|velha');
+set_setting('google_account_email', 'antiga@t.local');
+drive_forget_folders();
+ok(setting('drive_root_id') === null && case_data(find_case((int) $b['id']), 'drive_pasta') === null, 'trocar a conta do Google esquece as pastas guardadas');
+ok(str_contains(google_error(403, ['error' => ['message' => 'Insufficient Permission', 'errors' => [['reason' => 'insufficientPermissions']]]]), 'Conectar de novo'), 'erro 403 de permissão explica o que fazer');
 
 set_setting('drive_off', '1');
 ok(!drive_enabled(), 'gravação no Drive pode ser desligada');

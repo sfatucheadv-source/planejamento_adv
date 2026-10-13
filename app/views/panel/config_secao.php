@@ -116,12 +116,25 @@ $intro = [
     <p class="small"><strong>Falta liberar o Meet:</strong> ative a Google Meet REST API no projeto e clique em “Conectar de novo” acima, autorizando o Meet. Sem isso, a reunião é criada normalmente, mas a transcrição precisa ser ligada por você no Meet (Atividades › Transcrição) e é procurada só pelo anexo do compromisso e pelo Drive.</p>
   <?php endif ?>
   <p class="hint">A transcrição do Meet depende de um plano do Google Workspace que a ofereça. Ela leva alguns minutos depois do fim da reunião para aparecer; o sistema procura sozinho por até <?= TRANSCRIPT_GIVE_UP_DAYS ?> dias, e você pode pedir “Buscar agora” na aba Reunião.</p>
-  <h3>Google Drive</h3>
+  <h3 id="drive">Google Drive</h3>
   <?php if (google_connected() && !str_contains((string) setting('google_scopes', ''), 'auth/drive')): ?>
     <p class="small"><strong>Falta liberar o Drive:</strong> ative a Google Drive API no projeto e clique em “Conectar de novo” acima, autorizando o acesso ao Drive.</p>
   <?php endif ?>
   <label class="chk"><input type="checkbox" name="drive_on" value="1" <?= checked(setting('drive_off') !== '1') ?>> Gravar os atendimentos no Google Drive</label>
   <label class="fld"><span>Pasta em Meu Drive</span><input name="google_drive_pasta" value="<?= e(drive_path()) ?>" spellcheck="false"></label>
+  <?php $diag = json_decode((string) setting('drive_diag', ''), true); ?>
+  <div class="drive-diag">
+    <?php if (google_connected()): ?><button class="b b-sm" type="submit" form="drive-testar">Testar a gravação no Drive</button><?php endif ?>
+    <?php if ($diag): ?>
+      <p class="small"><strong>Último teste</strong> em <?= e(fmt_datetime((string) $diag['at'])) ?>:</p>
+      <ul class="drive-diag-passos">
+        <?php foreach ($diag['steps'] as [$passo, $okp, $det]): ?><li class="<?= $okp ? 'ok' : 'erro' ?>"><strong><?= $okp ? '✓' : '✗' ?> <?= e($passo) ?>:</strong> <?= e($det) ?></li><?php endforeach ?>
+      </ul>
+    <?php endif ?>
+    <?php $ultimo = one("SELECT title, body AS detail, at FROM events WHERE type = 'drive' AND title LIKE '%não foi%' COLLATE NOCASE ORDER BY id DESC LIMIT 1"); if ($ultimo): ?>
+      <p class="small muted">Último erro registrado num atendimento (<?= e(fmt_datetime($ultimo['at'])) ?>): <?= e($ultimo['title']) ?> — <?= e((string) $ultimo['detail']) ?></p>
+    <?php endif ?>
+  </div>
   <p class="hint">Cada atendimento ganha uma subpasta com o protocolo como nome (ex.: <?= e(drive_path()) ?>/SF-65HPP2), com os arquivos enviados e o <code>SF-65HPP2.md</code>: todas as variáveis conhecidas, o contexto do caso, as principais necessidades, os pontos relevantes, os documentos e a conversa. A gravação acontece a cada arquivo recebido, ao confirmar o resumo e ao marcar a reunião. As pastas que não existirem são criadas.</p>
   <h3>Regras do horário</h3>
   <div class="var-grid">
@@ -176,3 +189,4 @@ $intro = [
 <?php endif ?>
   <div class="cfg-actions"><button class="b b-primary" type="submit">Salvar</button><a class="b" href="<?= e(url('painel/configuracoes')) ?>">Voltar ao painel</a></div>
 </form>
+<?php if ($secao === 'agenda'): ?><form id="drive-testar" method="post" action="<?= e(url('painel/google/testar-drive')) ?>"><?= csrf_field() ?></form><?php endif ?>

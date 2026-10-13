@@ -174,7 +174,40 @@ function google_http(string $method, string $url, ?array $body = null, bool $for
 function google_error(int $status, array $data): string
 {
     $msg = $data['error_description'] ?? ($data['error']['message'] ?? (is_string($data['error'] ?? null) ? $data['error'] : ''));
-    return 'Google respondeu ' . $status . ($msg ? ': ' . $msg : '');
+    $hint = google_error_hint($status, $data);
+    return 'Google respondeu ' . $status . ($msg ? ': ' . $msg : '') . ($hint ? ' → ' . $hint : '');
+}
+
+/** Motivo técnico do erro do Google (ex.: accessNotConfigured, insufficientPermissions). */
+function google_error_reason(array $data): string
+{
+    $r = (string) ($data['error']['errors'][0]['reason'] ?? '');
+    foreach ((array) ($data['error']['details'] ?? []) as $d) {
+        if (!empty($d['reason'])) {
+            $r = $r ?: (string) $d['reason'];
+        }
+    }
+    return $r ?: (string) ($data['error']['status'] ?? '');
+}
+
+/** O que fazer, em português, para os erros mais comuns do Google. */
+function google_error_hint(int $status, array $data): string
+{
+    $r = google_error_reason($data);
+    $m = mb_strtolower((string) ($data['error']['message'] ?? ''));
+    return match (true) {
+        in_array($r, ['accessNotConfigured', 'SERVICE_DISABLED'], true) || str_contains($m, 'has not been used in project') || str_contains($m, 'is disabled')
+            => 'a API não está ativada no projeto do Google Cloud: em APIs e serviços › Biblioteca, ative a API indicada (Google Drive API, Google Calendar API ou Google Meet REST API) e tente de novo em alguns minutos.',
+        in_array($r, ['insufficientPermissions', 'ACCESS_TOKEN_SCOPE_INSUFFICIENT'], true) || str_contains($m, 'insufficient authentication scopes')
+            => 'a autorização não inclui esta permissão: em Configurações › Agenda, clique em “Conectar de novo” e marque todas as caixas (inclusive “Ver, editar, criar e excluir arquivos do Google Drive”).',
+        in_array($r, ['insufficientFilePermissions', 'forbidden'], true) && $status === 403
+            => 'a conta conectada não pode gravar nesta pasta (ela é de outra conta ou só para leitura): use uma pasta do “Meu Drive” da própria conta conectada ou peça acesso de edição.',
+        $r === 'storageQuotaExceeded' => 'o espaço do Google Drive acabou.',
+        in_array($r, ['userRateLimitExceeded', 'rateLimitExceeded', 'RATE_LIMIT_EXCEEDED'], true) => 'limite de uso do Google atingido; o sistema tenta de novo depois.',
+        in_array($r, ['appNotAuthorizedToFile', 'appNotAuthorizedToChild'], true) => 'o app não tem acesso a esse arquivo: reconecte o Google com acesso completo ao Drive.',
+        $status === 404 => 'arquivo ou pasta não encontrado (pode ter sido apagado ou ser de outra conta).',
+        default => '',
+    };
 }
 
 /** Troca o código da autorização pelos tokens. Retorna erro legível ou null. */
@@ -196,6 +229,9 @@ function google_exchange_code(string $code): ?string
     if (!empty($d['id_token']) && count($p = explode('.', (string) $d['id_token'])) === 3) {
         $claims = json_decode((string) base64_decode(strtr($p[1], '-_', '+/')), true);
         $email = is_array($claims) ? ($claims['email'] ?? null) : null;
+    }
+    if ($email && (string) setting('google_account_email', '') !== '' && $email !== setting('google_account_email')) {
+        drive_forget_folders(); // outra conta: as pastas guardadas eram da conta anterior
     }
     set_setting('google_account_email', $email ? (string) $email : null);
     return null;

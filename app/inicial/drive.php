@@ -121,12 +121,48 @@ function drive_root(): array
     return [$parent, null];
 }
 
+/** Esquece as pastas guardadas (raiz e de cada atendimento): serão procuradas ou criadas de novo. */
+function drive_forget_folders(): void
+{
+    set_setting('drive_root_id', null);
+    foreach (all("SELECT id FROM cases WHERE data LIKE '%drive_pasta%'") as $r) {
+        set_case_data((int) $r['id'], 'drive_pasta', null);
+    }
+}
+
+/** A pasta existe, não está na lixeira e a conta conectada pode gravar nela? [ok, erro]. */
+function drive_folder_writable(string $id): array
+{
+    [$ok, $d, $err] = google_api_url('GET', DRIVE_API . '/files/' . rawurlencode($id) . '?' . http_build_query(['fields' => 'id,name,trashed,capabilities(canAddChildren),owners(emailAddress)', 'supportsAllDrives' => 'true']));
+    if (!$ok) {
+        return [false, $err];
+    }
+    if (!empty($d['trashed'])) {
+        return [false, 'a pasta “' . ($d['name'] ?? '') . '” está na lixeira'];
+    }
+    if (isset($d['capabilities']['canAddChildren']) && !$d['capabilities']['canAddChildren']) {
+        return [false, 'sem permissão de gravar na pasta “' . ($d['name'] ?? '') . '”' . (!empty($d['owners'][0]['emailAddress']) ? ' (dona: ' . $d['owners'][0]['emailAddress'] . ')' : '')];
+    }
+    return [true, null];
+}
+
 /** Pasta do atendimento (nome = protocolo). [id, erro]. */
 function drive_case_folder(array $c): array
 {
     $id = (int) $c['id'];
+    static $checked = [];
     if ($f = case_data($c, 'drive_pasta')) {
-        return [(string) $f, null];
+        if (isset($checked[$f])) {
+            return [(string) $f, null];
+        }
+        // Pasta guardada: confere uma vez por requisição; apagada, sem permissão ou de outra conta, procura de novo.
+        [$ok] = drive_folder_writable((string) $f);
+        if ($ok) {
+            $checked[$f] = true;
+            return [(string) $f, null];
+        }
+        set_case_data($id, 'drive_pasta', null);
+        set_setting('drive_root_id', null);
     }
     [$root, $err] = drive_root();
     if (!$root) {
@@ -161,6 +197,65 @@ function drive_file_name(array $f): string
 {
     $label = $f['document_id'] ? (string) scalar('SELECT label FROM documents WHERE id = ?', [$f['document_id']]) : ($f['kind'] === 'audio' ? 'Áudio' : 'Arquivo');
     return mb_substr(preg_replace('#[\\\\/:*?"<>|]+#u', '-', $label . ' - ' . $f['original_name']), 0, 180);
+}
+
+/**
+ * Diagnóstico da gravação no Drive, passo a passo: permissões concedidas,
+ * API ativa, conta, pasta e um arquivo de teste (gravado e apagado).
+ * Retorna [[passo, ok, detalhe], ...] e guarda o resultado para a tela.
+ */
+function drive_diagnose(): array
+{
+    $out = [];
+    $add = function (string $step, bool $ok, string $detail) use (&$out): bool {
+        $out[] = [$step, $ok, $detail];
+        return $ok;
+    };
+    $finish = function () use (&$out): array {
+        set_setting('drive_diag', json_encode(['at' => now_str(), 'steps' => $out], JSON_UNESCAPED_UNICODE));
+        return $out;
+    };
+    if (!$add('Google conectado', google_connected(), google_connected() ? (string) (setting('google_account_email') ?: 'conta conectada') : 'Conecte o Google em Configurações › Agenda.')) {
+        return $finish();
+    }
+    [$tok, $err] = google_access_token();
+    if (!$add('Autorização válida', (bool) $tok, $tok ? 'token renovado' : (string) $err)) {
+        return $finish();
+    }
+    // Permissões que o Google realmente concedeu (a pessoa pode desmarcar caixas na tela de consentimento).
+    [$st, $info] = google_http('GET', 'https://oauth2.googleapis.com/tokeninfo?access_token=' . rawurlencode((string) $tok));
+    if ($st === 200 && !empty($info['scope'])) {
+        set_setting('google_scopes', (string) $info['scope']);
+    }
+    $scopes = (string) setting('google_scopes', '');
+    $hasDrive = (bool) preg_match('#auth/drive(\s|$)#', $scopes);
+    if (!$add('Permissão do Google Drive', $hasDrive, $hasDrive ? 'acesso completo ao Drive concedido'
+        : 'A autorização não inclui o Drive (concedido: ' . (trim(str_replace('https://www.googleapis.com/auth/', '', $scopes)) ?: 'nada') . '). Clique em “Conectar de novo” e marque a caixa do Google Drive.')) {
+        return $finish();
+    }
+    [$ok, $about, $err] = google_api_url('GET', DRIVE_API . '/about?fields=' . rawurlencode('user(emailAddress,displayName),storageQuota'));
+    if (!$add('Google Drive API ativa', $ok, $ok ? 'Drive de ' . ($about['user']['emailAddress'] ?? '?') : (string) $err)) {
+        return $finish();
+    }
+    $q = $about['storageQuota'] ?? [];
+    if (!empty($q['limit']) && (float) ($q['usage'] ?? 0) >= (float) $q['limit']) {
+        $add('Espaço no Drive', false, 'O espaço do Google Drive acabou.');
+        return $finish();
+    }
+    set_setting('drive_root_id', null); // procura a pasta do zero, sem o que estava guardado
+    [$root, $err] = drive_root();
+    if (!$add('Pasta “' . drive_path() . '”', (bool) $root, $root ? 'encontrada ou criada em Meu Drive' : (string) $err)) {
+        return $finish();
+    }
+    [$w, $err] = drive_folder_writable((string) $root);
+    if (!$add('Permissão de gravar na pasta', $w, $w ? 'a conta conectada pode gravar' : (string) $err)) {
+        return $finish();
+    }
+    [$fid, $err] = drive_upload(['name' => 'teste de gravação - pode apagar.txt', 'parents' => [$root]], 'Teste do sistema de atendimento em ' . now_str(), 'text/plain');
+    if ($add('Gravar um arquivo de teste', (bool) $fid, $fid ? 'gravado e apagado em seguida' : (string) $err) && $fid) {
+        google_api_url('DELETE', DRIVE_API . '/files/' . rawurlencode($fid) . '?supportsAllDrives=true');
+    }
+    return $finish();
 }
 
 /**

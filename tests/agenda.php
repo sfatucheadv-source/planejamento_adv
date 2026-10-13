@@ -238,6 +238,7 @@ $GLOBALS['google_http'] = function (string $method, string $url, ?array $body) u
         $method === 'GET' && str_ends_with($path, '/files/doc77/export') => [200, ['_raw' => "Sidney Fatuche: Bom dia, Elisa.\nElisa: Bom dia! Meu contrato é do Banco Exemplo."]],
         $method === 'GET' && str_ends_with($path, '/files/doc88/export') => [200, ['_raw' => 'Transcrição pelo anexo do compromisso.']],
         $method === 'POST' && str_contains($url, '/upload/drive/v3/files') => [200, ['id' => 'drv1']],
+        $method === 'GET' && str_ends_with($path, '/drive/v3/files/pasta-elisa') => [200, ['id' => 'pasta-elisa', 'name' => 'pasta', 'capabilities' => ['canAddChildren' => true]]],
         default => [404, ['error' => ['message' => 'não simulado: ' . $method . ' ' . $path]]],
     };
 };

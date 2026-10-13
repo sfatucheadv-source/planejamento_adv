@@ -1433,6 +1433,16 @@ $router->get('/painel/google/conectar', function () {
     redirect(google_auth_url($_SESSION['google_state']));
 });
 
+// Diagnóstico da gravação no Google Drive (permissões, API, pasta e arquivo de teste).
+$router->post('/painel/google/testar-drive', function () {
+    require_config_editor();
+    $steps = drive_diagnose();
+    $falha = array_values(array_filter($steps, fn($s) => !$s[1]))[0] ?? null;
+    flash($falha ? 'error' : 'ok', $falha ? 'Drive: falhou em “' . $falha[0] . '”. ' . $falha[2] : 'Drive funcionando: a conta conectada grava na pasta dos atendimentos.');
+    audit('drive_diagnostico', null, $falha ? $falha[0] : 'ok');
+    redirect('painel/configuracoes/agenda#drive');
+});
+
 $router->get('/painel/google/retorno', function () {
     require_config_editor();
     $state = (string) input('state');

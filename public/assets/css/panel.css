@@ -1040,3 +1040,11 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .fk-ret p { margin: 0 0 4px; }
 .fk-ret blockquote { margin: 4px 0 6px; padding: 0 0 0 8px; border-left: 2px solid var(--line); font-style: italic; }
 .fk-ret .inline-form { margin: 4px 0 0; }
+
+/* Configurações › Agenda: teste de gravação no Drive */
+.drive-diag { display: grid; gap: 6px; margin: 4px 0 8px; }
+.drive-diag .b { justify-self: start; }
+.drive-diag-passos { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: .88rem; }
+.drive-diag-passos li { padding: 6px 10px; border-radius: 6px; overflow-wrap: anywhere; }
+.drive-diag-passos li.ok { background: var(--green-soft); color: var(--green); }
+.drive-diag-passos li.erro { background: #fdecea; color: var(--red, #b42318); }
