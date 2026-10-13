@@ -272,8 +272,9 @@ function initial_command(array $c, string $cmd, array $in): ?string
     $err = match ($cmd) {
         'liberar_analise' => $s !== 'collecting' ? 'A análise já foi liberada.' : null,
         'aprovar_preparacao' => !in_array($s, ['analysis', 'meeting_scheduled', 'awaiting_decision'], true) ? 'Libere a análise antes de validar a preparação.' : null,
-        'confirmar_reuniao' => !in_array($s, ['analysis', 'meeting_scheduled', 'awaiting_decision'], true) ? 'A reunião só é confirmada depois da análise.' : null,
-        'registrar_reuniao' => $s !== 'meeting_scheduled' ? 'Não há reunião agendada.' : null,
+        // A reunião pode ser marcada com a análise ainda pendente: Sidney analisa até o horário (ou durante a conversa).
+        'confirmar_reuniao' => !in_array($s, ['collecting', 'analysis', 'meeting_scheduled', 'awaiting_decision'], true) ? 'O atendimento inicial já foi concluído.' : null,
+        'registrar_reuniao' => !current_meeting($id) ? 'Não há reunião agendada.' : null,
         'reanalisar' => !in_array($s, ['meeting_scheduled', 'awaiting_decision'], true) ? 'Reanálise só depois da preparação.' : null,
         'finalizar' => $s !== 'awaiting_decision' ? 'Finalize depois da reunião e da decisão.' : null,
         'encerrar_antes' => !in_array($s, ['collecting', 'analysis'], true) ? 'Depois da reunião, registre a decisão e finalize.' : null,
@@ -359,10 +360,7 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             return null;
 
         case 'confirmar_reuniao':
-            if (!$c['preparation_at'] || $c['review_flag']) {
-                return 'Valide a análise e a proposta (sem revisão pendente) antes de confirmar a reunião.';
-            }
-            $channel = (string) ($in['channel'] ?? '');
+            $channel = (string) ($in['channel'] ?? 'meet') ?: 'meet';
             if (!isset(MEETING_CHANNELS[$channel])) {
                 return 'Escolha o canal da reunião.';
             }
@@ -376,8 +374,8 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             $dur = max(10, min(240, (int) ($in['duration'] ?? 30)));
             $url = trim((string) ($in['url'] ?? ''));
             $phone = only_digits((string) ($in['phone'] ?? ''));
-            if ($channel === 'meet' && !valid_meet_url($url)) {
-                return 'Informe o link do Google Meet completo (https://meet.google.com/abc-defg-hij).';
+            if ($channel === 'meet' && $url !== '' && !valid_meet_url($url)) {
+                return 'Link do Google Meet inválido. Deixe em branco para o sistema criar a sala sozinho.';
             }
             if ($channel === 'phone' && (strlen($phone) < 10 || strlen($phone) > 13)) {
                 return 'Confirme o número de telefone com DDD.';
@@ -396,22 +394,25 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             $prev = current_meeting($id);
             $mid = insert('case_meetings', [
                 'case_id' => $id, 'status' => 'confirmada', 'channel' => $channel, 'starts_at' => $start->format('Y-m-d H:i:s'),
-                'duration_min' => $dur, 'url' => $channel === 'meet' ? $url : null, 'phone' => $channel === 'phone' ? $phone : null,
+                'duration_min' => $dur, 'url' => $channel === 'meet' && $url !== '' ? $url : null, 'phone' => $channel === 'phone' ? $phone : null,
                 'note' => mb_substr(trim((string) ($in['note'] ?? '')), 0, 500) ?: null, 'confirmed_at' => now_str(),
-                'confirmed_by' => current_user()['id'] ?? null, 'created_at' => now_str(),
+                'confirmed_by' => current_user()['id'] ?? null, 'created_at' => now_str(), 'origin' => 'painel',
             ]);
             if ($prev) {
                 q("UPDATE case_meetings SET status = 'substituida', replaced_by = ? WHERE id = ?", [$mid, $prev['id']]);
                 google_cancel_meeting($prev);
                 add_event($id, 'reuniao', 'Reunião reagendada', MEETING_CHANNELS[$prev['channel']]['short'] . ' em ' . fmt_datetime($prev['starts_at']) . ' → ' . MEETING_CHANNELS[$channel]['short'] . ' em ' . fmt_datetime($start->format('Y-m-d H:i:s')) . '.', true);
             }
-            $fields = ['initial_status' => 'meeting_scheduled'];
+            // Sem link informado, o Meet é criado no Google Agenda (com convite ao cliente).
+            $nm = meeting_google_ensure(one('SELECT * FROM case_meetings WHERE id = ?', [$mid]));
+            $url = (string) ($nm['url'] ?? '');
+            $fields = $c['initial_status'] === 'analysis' ? ['initial_status' => 'meeting_scheduled'] : [];
             if ($channel === 'site_chat') {
                 $fields['chat_mode'] = 'human';
             }
             bump_case($id, $fields);
             $how = match ($channel) {
-                'meet' => 'Link: ' . $url,
+                'meet' => $url ? 'Link do Google Meet: ' . $url : 'O link do Google Meet aparece na aba Reunião da sua área.',
                 'phone' => 'Sidney vai ligar para ' . format_phone($phone) . '.',
                 'whatsapp_text' => 'A conversa será pelo WhatsApp ' . office('phone_display') . '.',
                 default => 'A conversa será aqui mesmo, neste chat.',
@@ -420,6 +421,7 @@ function initial_command_run(array $c, string $cmd, array $in): ?string
             chat_post($id, 'operator', $msg);
             add_event($id, 'reuniao', 'Reunião confirmada', $msg, true);
             set_next($id, 'Realizar a reunião', $start->format('Y-m-d H:i:s'), $start->format('Y-m-d H:i:s'));
+            meeting_after_booking($mid);
             return null;
 
         case 'registrar_reuniao':

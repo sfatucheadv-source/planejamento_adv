@@ -654,6 +654,11 @@ SQL;
 CREATE INDEX IF NOT EXISTS idx_proposals_updated ON proposals(updated_at);
 SQL;
 
+    // Versão 18 — reunião pelo Meet criada sozinha: erro do Google, e-mail ao cliente e transcrição.
+    $migrations[18] = <<<SQL
+CREATE INDEX IF NOT EXISTS idx_meetings_transcript ON case_meetings(status, starts_at);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -678,6 +683,15 @@ SQL;
                 if (!in_array('archived_at', $cols, true)) {
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_at TEXT');
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_by INTEGER REFERENCES users(id)');
+                }
+            }
+            if ($v === 18) {
+                $cols = array_column($pdo->query('PRAGMA table_info(case_meetings)')->fetchAll(), 'name');
+                foreach (['google_error' => 'TEXT', 'client_mail_at' => 'TEXT', 'transcript_file_id' => 'INTEGER', 'transcript_at' => 'TEXT',
+                    'transcript_checked_at' => 'TEXT', 'transcript_tries' => 'INTEGER NOT NULL DEFAULT 0', 'transcript_note' => 'TEXT'] as $col => $type) {
+                    if (!in_array($col, $cols, true)) {
+                        $pdo->exec("ALTER TABLE case_meetings ADD COLUMN $col $type");
+                    }
                 }
             }
             if ($v === 17) {

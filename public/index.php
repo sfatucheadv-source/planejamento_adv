@@ -48,6 +48,7 @@ register_shutdown_function(static function (): void {
             fastcgi_finish_request();
         }
         notify_tick();
+        transcripts_tick(); // transcrições do Meet das reuniões encerradas
     } catch (Throwable $e) {
         error_log('[fatuche] avisos: ' . $e->getMessage());
     }

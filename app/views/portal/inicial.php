@@ -33,7 +33,7 @@ if ($completed) {
 }
 $meetingAction = function (array $m) use ($c) {
     return match ($m['channel']) {
-        'meet' => '<a class="btn btn-gold" href="' . e($m['url']) . '" target="_blank" rel="noopener">Entrar na reunião</a>',
+        'meet' => $m['url'] ? '<a class="btn btn-gold" href="' . e($m['url']) . '" target="_blank" rel="noopener">Entrar na reunião pelo Meet</a>' : '',
         'whatsapp_text' => '<a class="btn btn-wa" href="' . e(whatsapp_link('Olá, Sidney! Estou pronto(a) para a nossa conversa. Protocolo ' . $c['protocol'] . '.')) . '" target="_blank" rel="noopener">Conversar no WhatsApp</a>',
         'site_chat' => '<a class="btn btn-gold" href="' . e(url('cliente', ['area' => 'conversa'])) . '#fim">Abrir conversa com Sidney</a>',
         default => '',
@@ -296,12 +296,33 @@ $choiceButtons = function (array $q) {
         <section class="panel" aria-labelledby="h-reu">
           <h2 id="h-reu">Reunião com Sidney</h2>
           <?php if ($meeting): ?>
-            <p class="cv-status">Confirmada para <strong><?= e(fmt_datetime($meeting['starts_at'])) ?></strong> (horário de Brasília), por <strong><?= e(MEETING_CHANNELS[$meeting['channel']]['short']) ?></strong>.</p>
-            <?php if ($meeting['channel'] === 'phone'): ?><p>Sidney vai ligar para <strong><?= e(format_phone((string) $meeting['phone'])) ?></strong>. Se o número estiver errado, avise na conversa.</p>
+            <?php $ms = dt($meeting['starts_at']); $me = $ms->modify('+' . (int) $meeting['duration_min'] . ' minutes'); ?>
+            <div class="reu-conf">
+              <p class="reu-conf-tag">Conversa confirmada</p>
+              <p class="reu-conf-dia"><?= e(ucfirst(SEMANA[(int) $ms->format('w')])) ?>, <?= e($ms->format('d/m/Y')) ?></p>
+              <p class="reu-conf-hora"><?= e($ms->format('H\hi')) ?> às <?= e($me->format('H\hi')) ?> <small>(horário de Brasília · <?= (int) $meeting['duration_min'] ?> min)</small></p>
+              <p class="reu-conf-como"><?= e(MEETING_CHANNELS[$meeting['channel']]['label']) ?> com Sidney<?= $ms > now() ? ' · ' . e(fmt_when($ms)) : '' ?></p>
+            </div>
+            <?php if ($meeting['channel'] === 'meet'): ?>
+              <?php if ($meeting['url']): ?>
+                <p>Link da sala: <a href="<?= e($meeting['url']) ?>" target="_blank" rel="noopener"><?= e($meeting['url']) ?></a></p>
+              <?php else: ?>
+                <p class="muted">O link do Google Meet aparece aqui assim que a sala estiver pronta. Ele também vai para o seu e-mail.</p>
+              <?php endif ?>
+            <?php elseif ($meeting['channel'] === 'phone'): ?><p>Sidney vai ligar para <strong><?= e(format_phone((string) $meeting['phone'])) ?></strong>. Se o número estiver errado, avise na conversa.</p>
               <form method="post" action="<?= e(url('cliente/conversa/mensagem')) ?>"><?= csrf_field() ?><input type="hidden" name="k" value="tel-<?= (int) $meeting['id'] ?>"><input type="hidden" name="message" value="Confirmo meu telefone <?= e(format_phone((string) $meeting['phone'])) ?> para a reunião."><button class="btn btn-gold" type="submit">Confirmar meu telefone</button></form>
             <?php endif ?>
-            <?= $meetingAction($meeting) ?>
-            <?php if ($meeting['note']): ?><p class="muted"><?= e($meeting['note']) ?></p><?php endif ?>
+            <div class="reu-acoes">
+              <?= $meetingAction($meeting) ?>
+              <a class="btn btn-ghost" href="<?= e(meeting_calendar_link($meeting, $c)) ?>" target="_blank" rel="noopener">Adicionar à minha agenda</a>
+            </div>
+            <ul class="reu-dicas">
+              <?php if ($meeting['channel'] === 'meet'): ?><li>Entre pelo celular ou pelo computador, uns minutos antes. No celular, o app Google Meet facilita.</li><?php endif ?>
+              <li>Tenha em mãos o contrato do financiamento e, se puder, os últimos comprovantes de pagamento.</li>
+              <li><?= filter_var((string) $c['client_email'], FILTER_VALIDATE_EMAIL) ? 'A confirmação com estes dados ' . ($meeting['client_mail_at'] ? 'foi enviada' : 'vai') . ' para ' . e($c['client_email']) . '.' : 'Cadastre seu e-mail na conversa para receber a confirmação.' ?></li>
+              <li>Precisa mudar o horário? <a href="<?= e(url('cliente', ['area' => 'conversa'])) ?>#fim">Avise pela conversa</a>.</li>
+            </ul>
+            <?php if ($meeting['note']): ?><p class="muted small"><?= e($meeting['note']) ?></p><?php endif ?>
           <?php elseif ($held): ?>
             <p>Conversa realizada em <?= e(fmt_datetime($held['held_at'])) ?>.</p>
           <?php elseif (meeting_ready((int) $c['id'])): [$opcoes] = agenda_options(); ?>
@@ -317,7 +338,7 @@ $choiceButtons = function (array $q) {
                   </button>
                 <?php endforeach ?>
               </form>
-              <p class="muted small">Horário de Brasília. <?= google_connected() ? 'O link do Google Meet aparece aqui e vai para o seu e-mail assim que você escolher.' : 'Sidney liga para o seu telefone no horário escolhido.' ?></p>
+              <p class="muted small">Horário de Brasília. A conversa é por vídeo no Google Meet: o link aparece aqui e vai para o seu e-mail assim que você escolher.</p>
             <?php else: ?>
               <p class="muted">Não há horário livre nos próximos dias. Sidney vai entrar em contato para combinar.</p>
             <?php endif ?>

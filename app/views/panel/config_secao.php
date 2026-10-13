@@ -94,7 +94,7 @@ $intro = [
     <summary>Como criar o acesso no Google (uma vez)</summary>
     <ol class="small">
       <li>Em <a href="https://console.cloud.google.com/" target="_blank" rel="noopener">console.cloud.google.com</a>, crie um projeto (ex.: “Atendimento Fatuche”).</li>
-      <li>Em APIs e serviços › Biblioteca, ative a <strong>Google Calendar API</strong> e a <strong>Google Drive API</strong>.</li>
+      <li>Em APIs e serviços › Biblioteca, ative a <strong>Google Calendar API</strong>, a <strong>Google Drive API</strong> e a <strong>Google Meet REST API</strong> (transcrição das reuniões).</li>
       <li>Em Tela de consentimento OAuth, escolha “Externo”, preencha nome e e-mail e, em “Usuários de teste”, inclua o seu Gmail. Depois clique em “Publicar app” para a autorização não expirar em 7 dias.</li>
       <li>Em Credenciais › Criar credenciais › ID do cliente OAuth, tipo “Aplicativo da Web”. Em “URIs de redirecionamento autorizados”, cole: <code><?= e(google_redirect_uri()) ?></code></li>
       <li>Copie o ID do cliente e a chave secreta para os campos abaixo, salve e clique em “Conectar ao Google Agenda”.</li>
@@ -110,6 +110,12 @@ $intro = [
     <?php if (google_client_id() !== '' && setting('google_client_secret')): ?><a class="b b-primary" href="<?= e(url('painel/google/conectar')) ?>"><?= google_connected() ? 'Conectar de novo' : 'Conectar ao Google Agenda' ?></a><?php endif ?>
     <?php if (google_connected()): ?><label class="chk"><input type="checkbox" name="google_desconectar" value="1"> Desconectar ao salvar</label><?php endif ?>
   </p>
+  <h3>Reuniões pelo Google Meet</h3>
+  <p class="hint">Toda reunião marcada (pelo cliente, pelo assistente ou por você) vira um compromisso no seu Google Agenda, com a sala do Meet criada sozinha, convite para o cliente e confirmação por e-mail. Depois da reunião, a transcrição do Meet é salva nos arquivos do atendimento e na pasta dele no Drive.</p>
+  <?php if (google_connected() && (!str_contains((string) setting('google_scopes', ''), 'meetings.space.settings') || !str_contains((string) setting('google_scopes', ''), 'meetings.space.readonly'))): ?>
+    <p class="small"><strong>Falta liberar o Meet:</strong> ative a Google Meet REST API no projeto e clique em “Conectar de novo” acima, autorizando o Meet. Sem isso, a reunião é criada normalmente, mas a transcrição precisa ser ligada por você no Meet (Atividades › Transcrição) e é procurada só pelo anexo do compromisso e pelo Drive.</p>
+  <?php endif ?>
+  <p class="hint">A transcrição do Meet depende de um plano do Google Workspace que a ofereça. Ela leva alguns minutos depois do fim da reunião para aparecer; o sistema procura sozinho por até <?= TRANSCRIPT_GIVE_UP_DAYS ?> dias, e você pode pedir “Buscar agora” na aba Reunião.</p>
   <h3>Google Drive</h3>
   <?php if (google_connected() && !str_contains((string) setting('google_scopes', ''), 'auth/drive')): ?>
     <p class="small"><strong>Falta liberar o Drive:</strong> ative a Google Drive API no projeto e clique em “Conectar de novo” acima, autorizando o acesso ao Drive.</p>

@@ -158,6 +158,10 @@ function portal_initial_view(array $c, array $extra = []): never
     if ($area === 'conversa') {
         mark_case_seen($id);
     }
+    // Reunião pelo Meet ainda sem link (o Google falhou na hora): tenta de novo antes de mostrar.
+    if ($area === 'reuniao' && ($m = current_meeting($id)) && $m['channel'] === 'meet' && !$m['url'] && google_connected()) {
+        meeting_google_ensure($m);
+    }
     $published = all("SELECT * FROM case_artifact_versions WHERE case_id = ? AND status = 'publicado' ORDER BY kind, version DESC", [$id]);
     $latestPub = [];
     foreach ($published as $v) {

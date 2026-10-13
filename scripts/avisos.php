@@ -12,3 +12,5 @@ require dirname(__DIR__) . '/app/bootstrap.php';
 
 $n = notify_tick(true);
 echo $n . " aviso(s) enviado(s)\n";
+$t = transcripts_tick(true);
+echo $t . " transcrição(ões) procurada(s)\n";

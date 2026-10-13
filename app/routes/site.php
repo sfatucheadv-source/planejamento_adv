@@ -268,7 +268,7 @@ $router->get('/arquivo/{id}', function (string $id) {
     if ($user) {
         audit('arquivo_aberto', (int) $f['case_id'], $f['original_name']);
     }
-    header('Content-Type: ' . $f['mime']);
+    header('Content-Type: ' . $f['mime'] . ($f['mime'] === 'text/plain' ? '; charset=utf-8' : ''));
     header('Content-Length: ' . filesize($path));
     header('Content-Disposition: inline; filename="' . rawurlencode($f['original_name']) . '"');
     header('Cache-Control: private, no-store');

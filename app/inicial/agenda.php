@@ -24,7 +24,13 @@ const AGENDA_DEFAULTS = [
     'agenda_dias' => 14,         // até onde procurar
 ];
 
-const GOOGLE_SCOPES = 'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy https://www.googleapis.com/auth/drive';
+const GOOGLE_SCOPES = 'openid email https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.freebusy https://www.googleapis.com/auth/drive'
+    . ' https://www.googleapis.com/auth/meetings.space.settings https://www.googleapis.com/auth/meetings.space.readonly';
+const MEET_API_URL = 'https://meet.googleapis.com/v2';
+const DRIVE_API_URL = 'https://www.googleapis.com/drive/v3';
+// Transcrição: começa a procurar 5 min depois do fim e desiste depois de 3 dias.
+const TRANSCRIPT_WAIT_MIN = 5;
+const TRANSCRIPT_GIVE_UP_DAYS = 3;
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_REVOKE_URL = 'https://oauth2.googleapis.com/revoke';
@@ -157,7 +163,12 @@ function google_http(string $method, string $url, ?array $body = null, bool $for
     if ($raw === false) {
         return [0, ['error' => 'Falha de conexão com o Google: ' . $err]];
     }
-    return [$status, is_string($raw) ? (json_decode($raw, true) ?: []) : []];
+    if (!is_string($raw) || $raw === '') {
+        return [$status, []];
+    }
+    $j = json_decode($raw, true);
+    // Exportação de documento (texto puro): devolve o conteúdo em "_raw".
+    return [$status, is_array($j) ? $j : ['_raw' => $raw]];
 }
 
 function google_error(int $status, array $data): string
@@ -321,6 +332,302 @@ function google_cancel_meeting(?array $m): void
     google_api('DELETE', '/calendars/' . rawurlencode(google_calendar_id()) . '/events/' . rawurlencode((string) $m['google_event_id']) . '?sendUpdates=all');
 }
 
+/* ---------- Reunião pelo Meet: compromisso, e-mail e transcrição ---------- */
+
+function google_has_scope(string $part): bool
+{
+    return str_contains((string) setting('google_scopes', ''), $part);
+}
+
+/** Código da sala (abc-defg-hij) a partir do link do Meet. */
+function meet_code(?string $url): ?string
+{
+    return preg_match('#meet\.google\.com/([a-z]{3}-[a-z]{4}-[a-z]{3})#', (string) $url, $m) ? $m[1] : null;
+}
+
+/** Descrição do compromisso na agenda de Sidney. */
+function meeting_description(array $c, string $why = ''): string
+{
+    $id = (int) $c['id'];
+    return trim($why . "\nProtocolo " . $c['protocol'] . ' · ' . client_case_title($c)
+        . "\nTelefone: " . ($c['client_phone'] ? format_phone((string) $c['client_phone']) : 'não informado')
+        . "\nE-mail: " . ($c['client_email'] ?: 'não informado')
+        . "\nFicha: " . public_link('painel/atendimento/' . $id) . '#reuniao'
+        . (($qm = qualif_missing($id)) ? "\nPerguntar na conversa: " . implode(', ', qualif_labels($qm)) . '.' : ''));
+}
+
+/**
+ * Liga a transcrição automática da sala do Meet (exige Google Workspace com
+ * transcrição e a permissão de configurar o Meet). Retorna erro ou null.
+ */
+function meet_auto_transcript(?string $url): ?string
+{
+    $code = meet_code($url);
+    if (!$code) {
+        return 'Sem link do Meet.';
+    }
+    if (!google_has_scope('meetings.space.settings')) {
+        return 'Transcrição automática não ligada: reconecte o Google em Configurações › Agenda para liberar a permissão do Meet.';
+    }
+    [$ok, $sp, $err] = google_api_url('GET', MEET_API_URL . '/spaces/' . $code);
+    if (!$ok || empty($sp['name'])) {
+        return 'Transcrição automática não ligada: ' . ($err ?: 'sala do Meet não encontrada') . '.';
+    }
+    [$ok, , $err] = google_api_url('PATCH', MEET_API_URL . '/' . $sp['name'] . '?updateMask=config.artifactConfig.transcriptionConfig.autoTranscriptionGeneration',
+        ['config' => ['artifactConfig' => ['transcriptionConfig' => ['autoTranscriptionGeneration' => 'ON']]]]);
+    return $ok ? null : 'Transcrição automática não ligada: ' . $err . '. Ative pelo Meet (Atividades › Transcrição) ao começar.';
+}
+
+/**
+ * Garante o compromisso no Google Agenda com o link do Meet para a reunião
+ * confirmada (cria, ou relê o link se a sala ficou pronta depois). Grava o
+ * erro do Google na reunião, para aparecer na aba Reunião. Retorna a reunião.
+ */
+function meeting_google_ensure(array $m): array
+{
+    if ($m['status'] !== 'confirmada' || $m['channel'] !== 'meet' || ($m['google_event_id'] && $m['url'])) {
+        return $m;
+    }
+    $id = (int) $m['case_id'];
+    if (!google_connected()) {
+        q('UPDATE case_meetings SET google_error = ? WHERE id = ?', ['Google não conectado: conecte em Configurações › Agenda para criar o Meet sozinho.', $m['id']]);
+        return one('SELECT * FROM case_meetings WHERE id = ?', [$m['id']]);
+    }
+    $link = $m['url'] ?: null;
+    $eventId = $m['google_event_id'] ?: null;
+    $err = null;
+    if ($eventId) {
+        [$ok, $ev, $err] = google_api('GET', '/calendars/' . rawurlencode(google_calendar_id()) . '/events/' . rawurlencode((string) $eventId));
+        $link = $ok ? (google_meet_link($ev) ?: $link) : $link;
+    } else {
+        $c = find_case($id);
+        $why = $m['origin'] === 'assistente' ? 'Conversa marcada pelo assistente: o cliente pediu para falar com Sidney.'
+            : ($m['origin'] === 'coleta' ? 'O cliente escolheu o horário depois de enviar as informações e os documentos.' : 'Reunião confirmada por Sidney.');
+        [$ev, $link, $err] = google_create_meeting($c, dt($m['starts_at']), (int) $m['duration_min'], meeting_description($c, $why));
+        $eventId = $ev['id'] ?? null;
+    }
+    $note = $m['transcript_note'];
+    if ($link && $link !== $m['url']) {
+        $note = meet_auto_transcript($link) ?? 'Transcrição automática ligada na sala do Meet.';
+    }
+    $gerr = $link ? null : ($err ?: 'O Google criou o compromisso, mas o link do Meet ainda não ficou pronto. Tente de novo em instantes.');
+    q('UPDATE case_meetings SET url = ?, google_event_id = ?, google_error = ?, transcript_note = ? WHERE id = ?', [$link, $eventId, $gerr, $note, $m['id']]);
+    if ($gerr && $gerr !== $m['google_error']) {
+        add_event($id, 'reuniao', 'Google Agenda: o Meet não foi criado', $gerr);
+    } elseif ($link && !$m['url']) {
+        add_event($id, 'reuniao', 'Meet criado no Google Agenda', $link);
+    }
+    return one('SELECT * FROM case_meetings WHERE id = ?', [$m['id']]);
+}
+
+/** Link "Adicionar ao Google Agenda" para o cliente. */
+function meeting_calendar_link(array $m, array $c): string
+{
+    $s = dt($m['starts_at'])->setTimezone(new DateTimeZone('UTC'));
+    $e = $s->modify('+' . (int) $m['duration_min'] . ' minutes');
+    return 'https://calendar.google.com/calendar/render?' . http_build_query([
+        'action' => 'TEMPLATE', 'text' => 'Conversa com Sidney · ' . office('brand'),
+        'dates' => $s->format('Ymd\THis\Z') . '/' . $e->format('Ymd\THis\Z'),
+        'details' => ($m['url'] ? 'Google Meet: ' . $m['url'] . "\n" : '') . 'Protocolo ' . $c['protocol'],
+        'location' => (string) ($m['url'] ?: ''),
+    ]);
+}
+
+/** Linhas da confirmação (e-mail e área do cliente). */
+function meeting_confirm_lines(array $m, array $c): array
+{
+    $start = dt($m['starts_at']);
+    $lines = ['Olá, ' . first_name((string) $c['client_name']) . '! Sua conversa com Sidney está confirmada.',
+        'Quando: ' . SEMANA[(int) $start->format('w')] . ', ' . $start->format('d/m/Y') . ', às ' . $start->format('H\hi') . ' (horário de Brasília), ' . (int) $m['duration_min'] . ' minutos.'];
+    $lines[] = match ($m['channel']) {
+        'meet' => $m['url'] ? 'Onde: por vídeo no Google Meet. Link: ' . $m['url'] . '. Entre pelo celular ou computador; no celular, o app Google Meet facilita.'
+            : 'Onde: por vídeo no Google Meet. O link aparece na sua área do cliente assim que a sala estiver pronta.',
+        'phone' => 'Onde: por ligação. Sidney liga para ' . format_phone((string) $m['phone']) . '.',
+        'whatsapp_text' => 'Onde: pelo WhatsApp ' . office('phone_display') . '.',
+        default => 'Onde: pela conversa na sua área do cliente.',
+    };
+    [$p1, $itens, $p2] = meeting_pitch((int) $c['id']);
+    $lines[] = $p1 . ' ' . implode(' ', array_map(fn($i) => '• ' . $i, $itens));
+    $lines[] = 'Tenha em mãos o contrato do financiamento e, se puder, os últimos comprovantes de pagamento. Se precisar mudar o horário, avise pela conversa na sua área do cliente.';
+    $lines[] = 'Adicionar à sua agenda: ' . meeting_calendar_link($m, $c);
+    return $lines;
+}
+
+/** E-mail de confirmação ao cliente (data, hora, link do Meet e o que esperar). Retorna erro ou null. */
+function meeting_notify_client(array $m): ?string
+{
+    $c = find_case((int) $m['case_id']);
+    $to = (string) $c['client_email'];
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) {
+        return 'Cliente sem e-mail.';
+    }
+    $lines = meeting_confirm_lines($m, $c);
+    $start = dt($m['starts_at']);
+    $subject = 'Conversa confirmada: ' . $start->format('d/m') . ' às ' . $start->format('H\hi') . ' · ' . office('brand');
+    [$btn, $href] = $m['channel'] === 'meet' && $m['url'] ? ['Entrar na reunião', (string) $m['url']]
+        : ['Ver na área do cliente', $c['account_id'] ? client_access_link((int) $c['account_id'], (int) $c['id']) : public_link('cliente')];
+    [$ok, $err] = send_mail($to, $subject, implode("\n\n", $lines) . "\n\n" . $btn . ': ' . $href, mail_html('Sua conversa com Sidney está confirmada', $lines, $btn, $href), (int) $c['id'], 'reuniao');
+    if ($ok) {
+        q('UPDATE case_meetings SET client_mail_at = ? WHERE id = ?', [now_str(), $m['id']]);
+        add_event((int) $c['id'], 'reuniao', 'Confirmação da reunião enviada por e-mail', $to);
+        return null;
+    }
+    add_event((int) $c['id'], 'reuniao', 'E-mail de confirmação da reunião não saiu', $err);
+    return $err;
+}
+
+/** Depois de marcar: Meet no Google e e-mail ao cliente, sem atrasar a tela. */
+function meeting_after_booking(int $meetingId): void
+{
+    after_response(function () use ($meetingId) {
+        $m = one('SELECT * FROM case_meetings WHERE id = ?', [$meetingId]);
+        if (!$m || $m['status'] !== 'confirmada') {
+            return;
+        }
+        $m = meeting_google_ensure($m);
+        if (!$m['client_mail_at']) {
+            meeting_notify_client($m);
+        }
+        drive_sync_case((int) $m['case_id']);
+    });
+}
+
+/** A transcrição desta reunião já pode ser procurada? */
+function transcript_due(array $m, bool $force = false): bool
+{
+    if ($m['transcript_file_id'] || $m['channel'] !== 'meet' || !$m['url'] || !in_array($m['status'], ['confirmada', 'realizada'], true)) {
+        return false;
+    }
+    $end = dt($m['starts_at'])->modify('+' . (int) $m['duration_min'] . ' minutes');
+    if ($force) {
+        return now() > dt($m['starts_at']);
+    }
+    if (now() < $end->modify('+' . TRANSCRIPT_WAIT_MIN . ' minutes') || now() > $end->modify('+' . TRANSCRIPT_GIVE_UP_DAYS . ' days')) {
+        return false;
+    }
+    // Uma tentativa a cada 10 minutos.
+    return !$m['transcript_checked_at'] || dt($m['transcript_checked_at']) < now()->modify('-10 minutes');
+}
+
+/** Documento da transcrição no Google: API do Meet, anexos do compromisso ou busca no Drive. [id do documento, nome]. */
+function transcript_find(array $m, array $c): array
+{
+    if (($code = meet_code($m['url'])) && google_has_scope('meetings.space.readonly')) {
+        [$ok, $d] = google_api_url('GET', MEET_API_URL . '/conferenceRecords?filter=' . rawurlencode('space.meeting_code="' . $code . '"'));
+        foreach ($ok ? (array) ($d['conferenceRecords'] ?? []) : [] as $rec) {
+            [$ok2, $t] = google_api_url('GET', MEET_API_URL . '/' . $rec['name'] . '/transcripts');
+            foreach ($ok2 ? (array) ($t['transcripts'] ?? []) : [] as $tr) {
+                if (!empty($tr['docsDestination']['document']) && ($tr['state'] ?? '') === 'FILE_GENERATED') {
+                    return [(string) $tr['docsDestination']['document'], 'Transcrição do Meet'];
+                }
+            }
+        }
+    }
+    if ($m['google_event_id']) {
+        [$ok, $ev] = google_api('GET', '/calendars/' . rawurlencode(google_calendar_id()) . '/events/' . rawurlencode((string) $m['google_event_id']));
+        foreach ($ok ? (array) ($ev['attachments'] ?? []) : [] as $a) {
+            if (!empty($a['fileId']) && preg_match('/transcri|transcript/i', (string) ($a['title'] ?? ''))) {
+                return [(string) $a['fileId'], (string) $a['title']];
+            }
+        }
+    }
+    if (drive_enabled()) {
+        $since = dt($m['starts_at'])->modify('-1 hour')->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s');
+        $qq = "name contains '" . drive_q((string) $c['protocol']) . "' and mimeType = 'application/vnd.google-apps.document' and trashed = false and modifiedTime > '" . $since . "'";
+        [$ok, $d] = google_api_url('GET', DRIVE_API_URL . '/files?' . http_build_query(['q' => $qq, 'fields' => 'files(id,name)', 'orderBy' => 'modifiedTime desc', 'supportsAllDrives' => 'true', 'includeItemsFromAllDrives' => 'true']));
+        foreach ($ok ? (array) ($d['files'] ?? []) : [] as $f) {
+            if (preg_match('/transcri|transcript/i', (string) $f['name'])) {
+                return [(string) $f['id'], (string) $f['name']];
+            }
+        }
+    }
+    return [null, null];
+}
+
+/**
+ * Procura a transcrição da reunião no Google e, achando, grava no atendimento
+ * (arquivo interno) e na pasta do atendimento no Drive. Retorna mensagem.
+ */
+function meeting_transcript_fetch(array $m, bool $force = false): string
+{
+    if (!transcript_due($m, $force)) {
+        return $m['transcript_file_id'] ? 'A transcrição já está salva.' : 'Ainda não é hora de procurar a transcrição.';
+    }
+    if (!google_connected()) {
+        return 'Google não conectado.';
+    }
+    $id = (int) $m['case_id'];
+    $c = find_case($id);
+    q('UPDATE case_meetings SET transcript_checked_at = ?, transcript_tries = transcript_tries + 1 WHERE id = ?', [now_str(), $m['id']]);
+    [$docId, $title] = transcript_find($m, $c);
+    if (!$docId) {
+        return 'A transcrição ainda não apareceu no Google. O Meet leva alguns minutos depois do fim da reunião (e só gera se a transcrição estava ligada).';
+    }
+    [$ok, $d, $err] = google_api_url('GET', DRIVE_API_URL . '/files/' . rawurlencode($docId) . '/export?mimeType=text%2Fplain');
+    $text = trim((string) ($d['_raw'] ?? ''));
+    if (!$ok || $text === '') {
+        return 'Transcrição encontrada, mas não foi possível ler: ' . ($err ?: 'documento vazio') . '.';
+    }
+    $start = dt($m['starts_at']);
+    $content = "Transcrição da reunião · " . $c['protocol'] . ' · ' . $c['client_name'] . "\n"
+        . 'Reunião de ' . $start->format('d/m/Y H:i') . ' · ' . ($title ?: 'Google Meet') . "\n\n" . $text . "\n";
+    $dir = config('storage_dir') . '/uploads/' . $id;
+    is_dir($dir) || mkdir($dir, 0700, true);
+    $stored = bin2hex(random_bytes(16)) . '.txt';
+    file_put_contents($dir . '/' . $stored, $content);
+    $name = 'Transcricao da reuniao ' . $start->format('Y-m-d H\hi') . '.txt';
+    $fid = insert('files', ['case_id' => $id, 'original_name' => $name, 'stored_name' => $stored, 'mime' => 'text/plain', 'size' => strlen($content),
+        'uploaded_by_client' => 0, 'uploaded_at' => now_str(), 'kind' => 'transcricao', 'internal' => 1]);
+    // Interna (só o escritório vê), mas vai para a pasta do atendimento no Drive.
+    if (drive_enabled() && ([$folder] = drive_case_folder($c)) && $folder) {
+        [$did] = drive_upload(['name' => 'Transcrição da reunião ' . $start->format('Y-m-d H\hi') . '.txt', 'parents' => [$folder]], $content, 'text/plain');
+        if ($did) {
+            q('UPDATE files SET drive_id = ? WHERE id = ?', [$did, $fid]);
+        }
+    }
+    q('UPDATE case_meetings SET transcript_file_id = ?, transcript_at = ? WHERE id = ?', [$fid, now_str(), $m['id']]);
+    add_event($id, 'reuniao', 'Transcrição da reunião salva', $name . (drive_enabled() ? ' · também na pasta do atendimento no Drive' : ''));
+    return 'Transcrição salva no atendimento' . (drive_enabled() ? ' e no Google Drive' : '') . '.';
+}
+
+/** Procura as transcrições pendentes (chamado no painel e no agendador de avisos). */
+function transcripts_sweep(int $limit = 3): int
+{
+    if (!google_connected()) {
+        return 0;
+    }
+    $n = 0;
+    $from = now()->modify('-' . (TRANSCRIPT_GIVE_UP_DAYS + 1) . ' days')->format('Y-m-d H:i:s');
+    foreach (all("SELECT * FROM case_meetings WHERE channel = 'meet' AND url IS NOT NULL AND transcript_file_id IS NULL AND status IN ('confirmada', 'realizada') AND starts_at > ? AND starts_at < ? ORDER BY starts_at", [$from, now_str()]) as $m) {
+        if ($n >= $limit) {
+            break;
+        }
+        if (transcript_due($m)) {
+            meeting_transcript_fetch($m);
+            $n++;
+        }
+    }
+    return $n;
+}
+
+/** Rodada leve nas visitas ao site: no máximo a cada 10 minutos. */
+function transcripts_tick(bool $force = false): int
+{
+    if (!google_connected()) {
+        return 0;
+    }
+    if (!$force) {
+        $now = now_str();
+        $limit = now()->modify('-10 minutes')->format('Y-m-d H:i:s');
+        q("INSERT OR IGNORE INTO settings (key, value, updated_at) VALUES ('transcript_last_run', '0', ?)", [$now]);
+        if (!q("UPDATE settings SET value = ?, updated_at = ? WHERE key = 'transcript_last_run' AND value < ?", [$now, $now, $limit])->rowCount()) {
+            return 0;
+        }
+        setting('__reset');
+    }
+    return transcripts_sweep();
+}
+
 /* ---------- Agendamento ---------- */
 
 /** Compromissos ocupados no período: Google Agenda + reuniões confirmadas no sistema. [lista, erro do Google]. */
@@ -451,44 +758,25 @@ function agenda_book(array $c, string $origin = 'pedido', ?DateTimeImmutable $at
         set_next($id, 'Combinar horário: ' . mb_strtolower($R['next']), in_business_days(1));
         return null;
     }
-    $c = find_case($id);
-    $desc = $R['why']
-        . "\nProtocolo " . $c['protocol'] . ' · ' . client_case_title($c)
-        . "\nTelefone: " . ($c['client_phone'] ? format_phone((string) $c['client_phone']) : 'não informado')
-        . "\nFicha: " . public_link('painel/atendimento/' . $id)
-        . (($qm = qualif_missing($id)) ? "\nPerguntar na conversa: " . implode(', ', qualif_labels($qm)) . '.' : '');
-    $ev = null;
-    $link = null;
-    if (google_connected() && !$gerr) {
-        [$ev, $link, $err] = google_create_meeting($c, $start, $dur, $desc);
-        if ($err) {
-            add_event($id, 'reuniao', 'Não foi possível criar o compromisso no Google Agenda', $err . ' O horário ficou reservado no sistema.');
-        }
-    }
-    $phone = only_digits((string) $c['client_phone']);
-    $channel = $link ? 'meet' : (strlen($phone) >= 10 ? 'phone' : 'site_chat');
+    // Padrão do escritório: sempre por vídeo no Google Meet, com o compromisso criado na agenda de Sidney.
     $mid = insert('case_meetings', [
-        'case_id' => $id, 'status' => 'confirmada', 'channel' => $channel, 'starts_at' => $start->format('Y-m-d H:i:s'),
-        'duration_min' => $dur, 'url' => $link, 'phone' => $channel === 'phone' ? $phone : null,
+        'case_id' => $id, 'status' => 'confirmada', 'channel' => 'meet', 'starts_at' => $start->format('Y-m-d H:i:s'),
+        'duration_min' => $dur, 'url' => null, 'phone' => null,
         'note' => $R['note'], 'confirmed_at' => now_str(),
-        'confirmed_by' => null, 'created_at' => now_str(), 'google_event_id' => $ev['id'] ?? null, 'origin' => $origin === 'coleta' ? 'coleta' : 'assistente',
+        'confirmed_by' => null, 'created_at' => now_str(), 'origin' => $origin === 'coleta' ? 'coleta' : 'assistente',
     ]);
-    if ($channel === 'site_chat') {
-        bump_case($id, ['chat_mode' => 'human']);
-    }
+    $m = meeting_google_ensure(one('SELECT * FROM case_meetings WHERE id = ?', [$mid]));
+    $c = find_case($id);
     $when = agenda_when($start) . ' (horário de Brasília)';
-    $how = match ($channel) {
-        'meet' => 'por vídeo no Google Meet. Link: ' . $link . (filter_var((string) $c['client_email'], FILTER_VALIDATE_EMAIL) ? "\nO convite também foi para o seu e-mail." : ''),
-        'phone' => 'por ligação: Sidney vai ligar para ' . format_phone($phone) . '.',
-        default => 'aqui mesmo, neste chat.',
-    };
+    $how = 'por vídeo no Google Meet. ' . ($m['url'] ? 'Link: ' . $m['url'] : 'O link aparece na aba Reunião assim que a sala estiver pronta.')
+        . (filter_var((string) $c['client_email'], FILTER_VALIDATE_EMAIL) ? "\nA confirmação com todos os detalhes vai para o seu e-mail." : '');
     $falta = $origin === 'coleta' ? docs_pending_labels($id) : agent_guide_missing($id);
     chat_post($id, 'bot', sprintf($R['intro'], $dur, $when, $how)
         . ($falta ? "\nAté lá, se encontrar, mande por aqui: " . implode(', ', array_slice($falta, 0, 4)) . '. Assim Sidney já chega preparado.' : ''));
     add_event($id, 'reuniao', $R['event'], $R['why'] . ' '
-        . MEETING_CHANNELS[$channel]['short'] . ' ' . fmt_datetime($start->format('Y-m-d H:i:s')) . ($ev ? ' · Google Agenda' : ' · só no sistema') . '.', true);
+        . 'Google Meet ' . fmt_datetime($start->format('Y-m-d H:i:s')) . ($m['google_event_id'] ? ' · Google Agenda' : ' · só no sistema') . '.', true);
     set_next($id, $R['next'], $start->format('Y-m-d H:i:s'));
-    case_sync_later($id, false);
+    meeting_after_booking($mid);
     return one('SELECT * FROM case_meetings WHERE id = ?', [$mid]);
 }
 
@@ -556,7 +844,7 @@ function meeting_pitch(int $id): array
             'quanto custa, como funciona e o que acontece em cada etapa;',
             'espaço para tirar todas as suas dúvidas.',
         ],
-        'São ' . agenda_int('agenda_duracao') . ' minutos, ' . (google_connected() ? 'por vídeo no Google Meet' : 'por ligação') . ', sem compromisso de contratar. Quanto antes conversarmos, mais opções você tem.',
+        'São ' . agenda_int('agenda_duracao') . ' minutos, por vídeo no Google Meet, sem compromisso de contratar. Quanto antes conversarmos, mais opções você tem.',
     ];
 }
 

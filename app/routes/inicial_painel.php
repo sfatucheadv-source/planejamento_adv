@@ -123,6 +123,13 @@ $router->get('/painel/atendimento/{id}', function (string $id) {
     $cid = (int) $c['id'];
     q('UPDATE cases SET activity_seen_at = ? WHERE id = ?', [now_str(), $cid]);
     $c = find_case($cid);
+    // Depois da tela: Meet ainda sem link e transcrições de reuniões já encerradas.
+    after_response(function () use ($cid) {
+        if (($m = current_meeting($cid)) && $m['channel'] === 'meet' && !$m['url'] && google_connected()) {
+            meeting_google_ensure($m);
+        }
+        transcripts_sweep(2);
+    });
     view('panel/atendimento', [
         'meta_title' => $c['client_name'] . ' · ' . $c['protocol'],
         'c' => $c,
@@ -554,6 +561,26 @@ function initial_panel_action(array $c, string $op): string
             flash($err ? 'error' : 'ok', $err ? 'Honorários registrados na proposta, mas a minuta do contrato não foi gerada: ' . $err
                 : 'Honorários registrados. O contrato ganhou uma nova minuta com estas condições: revise e publique no Kit.');
             return 'honorarios';
+
+        case 'reuniao_google':
+        case 'reuniao_email':
+        case 'reuniao_transcricao':
+            $m = one('SELECT * FROM case_meetings WHERE id = ? AND case_id = ?', [(int) input('meeting_id'), $id]);
+            if (!$m) {
+                flash('error', 'Reunião não encontrada.');
+                return 'reuniao';
+            }
+            if ($op === 'reuniao_google') {
+                $m = meeting_google_ensure($m);
+                flash($m['url'] ? 'ok' : 'error', $m['url'] ? 'Compromisso e link do Meet prontos no Google Agenda.' : (string) $m['google_error']);
+            } elseif ($op === 'reuniao_email') {
+                $err = meeting_notify_client($m);
+                flash($err ? 'error' : 'ok', $err ? 'O e-mail não saiu: ' . $err : 'Confirmação enviada para ' . $c['client_email'] . '.');
+            } else {
+                $msg = meeting_transcript_fetch($m, true);
+                flash(str_starts_with($msg, 'Transcrição salva') ? 'ok' : 'error', $msg);
+            }
+            return 'reuniao';
 
         case 'kit_gerar':
             $msg(kit_generate($c, (string) input('kind')), 'Minuta gerada com os dados atuais.');

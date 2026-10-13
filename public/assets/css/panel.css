@@ -1005,3 +1005,15 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .hon-mark p { margin: 0 0 6px; }
 .hon-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 760px) { .hon-res { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hon-facil { grid-template-columns: 1fr; } }
+
+/* Reunião agendada: dados, Google, e-mail e transcrição */
+.reu-card { border: 1px solid var(--line); border-radius: 12px; background: var(--card); padding: 12px 14px; margin-bottom: 12px; overflow-wrap: anywhere; }
+.reu-card-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 8px; }
+.reu-card-head > div { display: flex; flex-direction: column; gap: 2px; }
+.reu-quando { font-size: 18px; font-weight: 700; color: var(--petrol); }
+.reu-status { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.reu-status li { padding: 6px 10px 6px 12px; border-left: 3px solid var(--line); border-radius: 6px; background: #FAFAF8; }
+.reu-status li.ok { border-left-color: var(--green); }
+.reu-status li.warn { border-left-color: #C98A1B; background: #FFF8EA; }
+.reu-status li.info { border-left-color: var(--teal); }
+.reu-status form.inline { display: inline; margin-left: 6px; }

@@ -52,7 +52,7 @@ foreach ($files as $f) {
 }
 $internal = array_filter($files, fn($f) => (int) $f['internal'] === 1 || $f['kind'] === 'assinado');
 $proposalVersions = array_filter($versions, fn($v) => in_array($v['status'], ['revisado', 'publicado'], true));
-$canMeet = $c['preparation_at'] && !$c['review_flag'] && in_array($st, ['analysis', 'meeting_scheduled', 'awaiting_decision'], true);
+$canMeet = in_array($st, ['collecting', 'analysis', 'meeting_scheduled', 'awaiting_decision'], true); // a análise pode ser feita até o horário
 $calc = null;
 $P = fv($id, 'capital') !== null ? ((int) fv($id, 'capital')) / 100 : null;
 $N = fv($id, 'prazo') !== null ? (int) fv($id, 'prazo') : null;
@@ -467,12 +467,42 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
   <?php if ($qm = qualif_missing($id)): ?>
     <div class="fx-lembrete"><strong>Lembrete para a conversa:</strong> perguntar <?= e(implode(', ', qualif_labels($qm))) ?>. <span class="hint">O assistente perguntou uma vez e não insistiu. Registre as respostas no <a href="#criticas">Resumo</a>.</span></div>
   <?php endif ?>
-  <?php if ($meeting): ?>
-    <div class="at-meet">
-      <strong><?= e(MEETING_CHANNELS[$meeting['channel']]['label']) ?></strong> · <?= e(brasilia($meeting['starts_at'])) ?> · <?= (int) $meeting['duration_min'] ?> min
-      <?php if ($meeting['url']): ?><br><a href="<?= e($meeting['url']) ?>" target="_blank" rel="noopener"><?= e($meeting['url']) ?></a><?php endif ?>
-      <?php if ($meeting['phone']): ?><br>Ligar para <?= e(format_phone($meeting['phone'])) ?><?php endif ?>
-      <?php if ($meeting['note']): ?><br><small><?= e($meeting['note']) ?></small><?php endif ?>
+  <?php if ($meeting): $tf = $meeting['transcript_file_id'] ? one('SELECT * FROM files WHERE id = ?', [$meeting['transcript_file_id']]) : null;
+      $mStart = dt($meeting['starts_at']); $mEnd = $mStart->modify('+' . (int) $meeting['duration_min'] . ' minutes'); ?>
+    <div class="reu-card">
+      <div class="reu-card-head">
+        <div>
+          <span class="reu-quando"><?= e(ucfirst(SEMANA[(int) $mStart->format('w')])) ?>, <?= e($mStart->format('d/m/Y')) ?> · <?= e($mStart->format('H\hi')) ?>–<?= e($mEnd->format('H\hi')) ?></span>
+          <span class="hint"><?= e(MEETING_CHANNELS[$meeting['channel']]['label']) ?> · <?= (int) $meeting['duration_min'] ?> min · <?= e(['coleta' => 'escolhido pelo cliente', 'assistente' => 'marcado pelo assistente', 'painel' => 'confirmado por você'][$meeting['origin'] ?? ''] ?? 'confirmado') ?> em <?= e(fmt_datetime($meeting['confirmed_at'])) ?><?= $mStart < now() ? ' · já começou' : ' · ' . e(fmt_when($mStart)) ?></span>
+        </div>
+        <?php if ($meeting['url']): ?><a class="b b-primary" href="<?= e($meeting['url']) ?>" target="_blank" rel="noopener">Entrar no Meet</a><?php endif ?>
+      </div>
+      <ul class="reu-status">
+        <?php if ($meeting['channel'] === 'meet'): ?>
+          <li class="<?= $meeting['url'] ? 'ok' : 'warn' ?>"><strong>Google Meet:</strong>
+            <?php if ($meeting['url']): ?><a href="<?= e($meeting['url']) ?>" target="_blank" rel="noopener"><?= e($meeting['url']) ?></a><?php else: ?><?= e($meeting['google_error'] ?: 'link ainda não criado') ?><?php endif ?></li>
+          <li class="<?= $meeting['google_event_id'] ? 'ok' : 'warn' ?>"><strong>Sua agenda:</strong> <?= $meeting['google_event_id'] ? 'horário bloqueado no Google Agenda, com convite para o cliente' : 'compromisso não criado no Google Agenda' ?>
+            <?php if (!$meeting['google_event_id'] || !$meeting['url']): ?>
+              <?= $form('reuniao_google', 'reuniao', false, 'inline') ?><input type="hidden" name="meeting_id" value="<?= (int) $meeting['id'] ?>"><button class="b b-sm" type="submit">Criar no Google agora</button></form>
+            <?php endif ?></li>
+        <?php elseif ($meeting['phone']): ?>
+          <li class="ok"><strong>Ligação:</strong> <?= e(format_phone((string) $meeting['phone'])) ?></li>
+        <?php endif ?>
+        <li class="<?= $meeting['client_mail_at'] ? 'ok' : 'warn' ?>"><strong>E-mail ao cliente:</strong> <?= $meeting['client_mail_at'] ? 'confirmação enviada em ' . e(fmt_datetime($meeting['client_mail_at'])) : (filter_var((string) $c['client_email'], FILTER_VALIDATE_EMAIL) ? 'ainda não enviado' : 'cliente sem e-mail') ?>
+          <?php if (filter_var((string) $c['client_email'], FILTER_VALIDATE_EMAIL)): ?>
+            <?= $form('reuniao_email', 'reuniao', false, 'inline') ?><input type="hidden" name="meeting_id" value="<?= (int) $meeting['id'] ?>"><button class="b b-sm" type="submit"><?= $meeting['client_mail_at'] ? 'Reenviar' : 'Enviar agora' ?></button></form>
+          <?php endif ?></li>
+        <?php if ($meeting['channel'] === 'meet'): ?>
+          <li class="<?= $tf ? 'ok' : 'info' ?>"><strong>Transcrição:</strong>
+            <?php if ($tf): ?><a href="<?= e(url('arquivo/' . $tf['id'])) ?>" target="_blank" rel="noopener">salva em <?= e(fmt_datetime($meeting['transcript_at'])) ?></a><?= $tf['drive_id'] ? ' · também no Drive' : '' ?>
+            <?php else: ?><?= e($meeting['transcript_note'] ?: 'será procurada no Google depois da reunião') ?><?= $meeting['transcript_checked_at'] ? ' · última busca ' . e(fmt_datetime($meeting['transcript_checked_at'])) : '' ?>
+              <?php if ($mStart < now() && $meeting['url']): ?><?= $form('reuniao_transcricao', 'reuniao', false, 'inline') ?><input type="hidden" name="meeting_id" value="<?= (int) $meeting['id'] ?>"><button class="b b-sm" type="submit">Buscar agora</button></form><?php endif ?>
+            <?php endif ?></li>
+        <?php endif ?>
+        <li class="info"><strong>Cliente:</strong> <?= e($c['client_name']) ?> · <?= e(format_phone((string) $c['client_phone'])) ?><?= $c['client_email'] ? ' · ' . e($c['client_email']) : '' ?></li>
+        <?php if (!$c['preparation_at']): ?><li class="info"><strong>Análise:</strong> ainda pendente; você pode concluir até o horário ou durante a conversa.</li><?php endif ?>
+      </ul>
+      <?php if ($meeting['note']): ?><p class="small muted"><?= e($meeting['note']) ?></p><?php endif ?>
     </div>
   <?php endif ?>
 
@@ -487,7 +517,7 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
       <?= $form('confirmar_reuniao', 'reuniao') ?>
         <fieldset class="radios at-channels"><legend class="lbl">Canal</legend>
           <?php foreach (MEETING_CHANNELS as $k => $m): ?>
-            <label class="chk"><input type="radio" name="channel" value="<?= $k ?>" <?= checked(($meeting['channel'] ?? fv($id, 'reuniao_canal') ?? 'meet') === $k) ?> required> <?= e($m['label']) ?></label>
+            <label class="chk"><input type="radio" name="channel" value="<?= $k ?>" <?= checked(($meeting['channel'] ?? 'meet') === $k) ?> required> <?= e($m['label']) ?><?= $k === 'meet' ? ' <small class="muted">(padrão do escritório)</small>' : '' ?></label>
           <?php endforeach ?>
         </fieldset>
         <div class="row3">
@@ -495,17 +525,15 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
           <label class="fld"><span>Duração (min)</span><input type="number" name="duration" min="10" max="240" step="5" value="<?= (int) ($meeting['duration_min'] ?? 30) ?>"></label>
           <label class="fld"><span>Telefone (se ligação)</span><input name="phone" inputmode="tel" value="<?= e(format_phone((string) ($meeting['phone'] ?? $c['client_phone']))) ?>"></label>
         </div>
-        <label class="fld"><span>Link do Google Meet (se vídeo; criado por você)</span><input name="url" type="url" placeholder="https://meet.google.com/abc-defg-hij" value="<?= e((string) ($meeting['url'] ?? '')) ?>"></label>
+        <label class="fld"><span>Link do Google Meet (opcional)</span><input name="url" type="url" placeholder="em branco: o sistema cria a sala no Google Meet" value=""></label>
         <label class="fld"><span>Orientação ao cliente (opcional)</span><input name="note" placeholder="Ex.: tenha o contrato em mãos"></label>
-        <p class="hint">O sistema confere conflito com outras reuniões suas. Nada é criado no Google automaticamente.</p>
+        <p class="hint">O sistema confere conflito com outras reuniões suas, cria o compromisso com o Meet no seu Google Agenda (convite para o cliente) e manda a confirmação por e-mail.</p>
         <button class="b b-primary" type="submit"><?= $meeting ? 'Reagendar' : 'Confirmar reunião' ?></button>
       </form>
     </details>
-  <?php elseif (in_array($st, ['collecting', 'analysis'], true)): ?>
-    <p class="hint">A reunião é confirmada depois de validar a análise e a proposta (bloco 3).</p>
   <?php endif ?>
 
-  <?php if ($st === 'meeting_scheduled' && $meeting): ?>
+  <?php if ($meeting && in_array($st, ['collecting', 'analysis', 'meeting_scheduled'], true)): ?>
     <details class="at-inline" open>
       <summary>Registrar reunião</summary>
       <?= $form('registrar_reuniao', 'reuniao') ?>

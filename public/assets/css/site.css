@@ -849,3 +849,15 @@ body.app-body { height: 100%; height: 100dvh; margin: 0; overflow: hidden; backg
 .docs-proximo { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 0 0; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--paper-2); font-size: .92rem; }
 .cv-libera { margin: 6px 0 0; padding: 6px 12px; border-radius: 10px; background: var(--ok-soft); font-size: .88rem; color: var(--ink-2); }
 .cv-libera a { font-weight: 700; }
+
+/* Reunião confirmada na área do cliente */
+.reu-conf { padding: 14px 16px; border-radius: var(--radius-sm); background: var(--teal-soft); margin: 0 0 12px; }
+.reu-conf p { margin: 0; }
+.reu-conf-tag { font-size: .78rem; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; color: var(--teal-2); }
+.reu-conf-dia { font-size: 1.25rem; font-weight: 700; margin-top: 4px !important; }
+.reu-conf-hora { font-size: 1.05rem; }
+.reu-conf-hora small { font-size: .85rem; opacity: .8; }
+.reu-conf-como { margin-top: 4px !important; font-size: .93rem; }
+.reu-acoes { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.reu-dicas { margin: 6px 0 0; padding-left: 18px; font-size: .93rem; }
+.reu-dicas li { margin: 3px 0; }
