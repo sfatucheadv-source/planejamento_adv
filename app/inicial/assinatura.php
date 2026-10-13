@@ -610,9 +610,13 @@ function sig_sign(array $c, array $v, array $in): array
     q('UPDATE case_artifact_versions SET signed_file_id = ? WHERE id = ?', [$fid, $v['id']]);
     add_event($id, 'assinatura', 'Cliente assinou eletronicamente: ' . kit_label($v['kind']) . ' v' . $v['version'],
         'Código ' . $code . ' · IP ' . client_ip() . ' · localização: ' . sig_geo_text($geo) . ' · selo na página ' . $seal['pagina'] . '. Confira e registre a contratação.', true, 'cliente');
-    set_next($id, 'Conferir a assinatura eletrônica (' . kit_label($v['kind']) . ') e registrar a contratação', in_business_days(1));
     $sig = one('SELECT * FROM doc_signatures WHERE id = ?', [$sid]);
     sig_mail_copy($c, $v, $sig, $pdf);
+    // Todos os documentos assinados: a contratação passa sozinha a formalizada.
+    if (contract_sync($id) !== 'formalizado') {
+        $faltam = array_column(array_filter(contract_docs($id), fn($d) => !$d['sig']), 'label');
+        set_next($id, $faltam ? 'Aguardar a assinatura do cliente: ' . implode(', ', $faltam) : 'Conferir a assinatura eletrônica (' . kit_label($v['kind']) . ')', in_business_days(1));
+    }
     case_sync_later($id, false);
     return [$sig, null];
 }
@@ -648,6 +652,69 @@ function sig_mail_copy(array $c, array $v, array $sig, string $pdf): void
     add_event((int) $c['id'], 'assinatura', $ok ? 'Via assinada enviada ao cliente por e-mail' : 'A via assinada não foi enviada por e-mail', $ok ? sig_mask_email($to) : $err);
     sig_log((string) $sig['code'], $ok ? 'via_enviada_email' : 'via_nao_enviada_email', ['para' => sig_mask_email($to), 'hash_anexo' => hash('sha256', $pdf)] + ($ok ? [] : ['erro' => $err]));
 }
+/* ---------- Contratação acompanha as assinaturas ---------- */
+
+/**
+ * Documentos que o cliente assina neste atendimento (contrato, procuração e,
+ * se houver gratuidade, a declaração), com a situação de cada um: enviado
+ * (versão mais recente publicada) e assinado (assinatura eletrônica dessa versão).
+ */
+function contract_docs(int $caseId): array
+{
+    $out = [];
+    foreach (SIGNABLE_KINDS as $k) {
+        if (!kit_applicable($caseId, $k)) {
+            continue;
+        }
+        $v = kit_latest($caseId, $k);
+        if ($v && $v['status'] === 'nao_aplicavel') {
+            continue;
+        }
+        $sent = $v && $v['status'] === 'publicado';
+        $out[$k] = ['label' => kit_label($k), 'version' => $v, 'sent' => $sent, 'sig' => $sent ? sig_for_version((int) $v['id']) : null];
+    }
+    return $out;
+}
+
+/**
+ * Situação da contratação, derivada dos documentos: enviados ao cliente →
+ * assinatura pendente; todos assinados eletronicamente → formalizado (com o
+ * aceite registrado). Depois de formalizada, não volta atrás. Retorna a nova
+ * situação, ou null se nada mudou.
+ */
+function contract_sync(int $caseId): ?string
+{
+    $c = find_case_or_null($caseId);
+    if (!$c || $c['contract_state'] === 'formalizado' || ($c['initial_status'] ?? '') === 'completed') {
+        return null;
+    }
+    $docs = contract_docs($caseId);
+    if (!$docs || !array_filter($docs, fn($d) => $d['sent'])) {
+        return null;
+    }
+    $signed = array_filter($docs, fn($d) => $d['sig']);
+    if (count($signed) === count($docs)) {
+        $last = max(array_map(fn($d) => (string) $d['sig']['signed_at'], $signed));
+        $main = ($docs['honorarios']['sig'] ?? null) ?: reset($signed)['sig'];
+        $f = ['contract_state' => 'formalizado', 'contract_file_id' => $main['file_id'], 'contract_signed_at' => substr($last, 0, 10), 'contract_verified_at' => now_str()];
+        if ($c['decision'] !== 'aceitou') {
+            $f += ['decision' => 'aceitou', 'decision_at' => now_str()];
+            add_event($caseId, 'decisao', 'Decisão: ' . DECISIONS['aceitou'], 'Aceite confirmado pela assinatura eletrônica dos documentos.', true, 'sistema');
+        }
+        bump_case($caseId, $f);
+        add_event($caseId, 'contratacao', 'Contratação: ' . CONTRACT_STATES['formalizado'],
+            'Todos os documentos foram assinados eletronicamente pelo cliente: ' . implode('; ', array_map(fn($d) => $d['label'] . ' v' . $d['version']['version'] . ' (código ' . $d['sig']['code'] . ')', $signed)) . '.', true, 'sistema');
+        set_next($caseId, 'Finalizar o atendimento inicial e iniciar a execução contratada', in_business_days(1));
+        return 'formalizado';
+    }
+    if ($c['contract_state'] !== 'assinatura_pendente') {
+        bump_case($caseId, ['contract_state' => 'assinatura_pendente']);
+        add_event($caseId, 'contratacao', 'Contratação: ' . CONTRACT_STATES['assinatura_pendente'], 'Documentos enviados ao cliente para assinatura eletrônica.', true, 'sistema');
+        return 'assinatura_pendente';
+    }
+    return null;
+}
+
 /* ---------- Retificação pedida pelo cliente ---------- */
 
 function rect_open(int $caseId): array

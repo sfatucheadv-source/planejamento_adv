@@ -717,11 +717,24 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
   <?php if ($c['contract_state'] === 'formalizado'): $as = asaas_summary($id); ?>
     <p class="hint">Cobrança no Asaas: <?= $as ? 'recebido ' . e(brl($as['pago'])) . ' de ' . e(brl($as['total'])) . ($as['vencidas'] ? ' · ' . (int) $as['vencidas'] . ' vencida(s)' : '') . ' · ' : 'ainda não criada · ' ?><a href="<?= e(url('painel/propostas/' . $id)) ?>#asaas"><?= $as ? 'ver cobranças' : 'criar as cobranças do contrato' ?></a></p>
   <?php endif ?>
+  <?php $cdocs = contract_docs($id); if ($cdocs): ?>
+    <ul class="contr-docs">
+      <?php foreach ($cdocs as $cd): ?>
+        <li class="<?= $cd['sig'] ? 'is-ok' : ($cd['sent'] ? 'is-pend' : 'is-off') ?>">
+          <strong><?= e($cd['label']) ?></strong><?= $cd['version'] ? ' · v' . (int) $cd['version']['version'] : '' ?> —
+          <?php if ($cd['sig']): ?>assinado eletronicamente em <?= e(fmt_datetime((string) $cd['sig']['signed_at'])) ?> · <a href="<?= e(url('verificar/' . $cd['sig']['code'])) ?>" target="_blank" rel="noopener">código <?= e($cd['sig']['code']) ?></a>
+          <?php elseif ($cd['sent']): ?>aguardando a assinatura do cliente
+          <?php else: ?>ainda não enviado ao cliente<?php endif ?>
+        </li>
+      <?php endforeach ?>
+    </ul>
+  <?php endif ?>
+  <p class="hint">A situação muda sozinha: com os documentos enviados ao cliente, fica “Assinatura pendente”; quando ele assina todos na área do cliente, passa a “Formalizado”, com o aceite registrado.</p>
   <?php if ($c['contract_state'] !== 'formalizado'): ?>
     <details class="at-inline">
-      <summary>Atualizar contratação</summary>
+      <summary>Assinatura fora do sistema (papel ou outra plataforma)</summary>
       <?= $form('contrato', 'kit', true) ?>
-        <label class="fld fld-s"><span>Situação</span><select name="contract_state"><?php foreach (CONTRACT_STATES as $k => $l): ?><option value="<?= $k ?>" <?= selected($k, $c['contract_state']) ?>><?= e($l) ?></option><?php endforeach ?></select></label>
+        <input type="hidden" name="contract_state" value="formalizado">
         <?php $signedFiles = array_filter($files, fn($f) => $f['kind'] === 'assinado'); ?>
         <div class="row2">
           <label class="fld"><span>Instrumento assinado</span><select name="signed_file_id"><option value="0">Anexar novo arquivo abaixo</option><?php foreach ($signedFiles as $f): ?><option value="<?= (int) $f['id'] ?>"><?= e($f['original_name']) ?> · <?= e(fmt_date($f['uploaded_at'])) ?></option><?php endforeach ?></select></label>
@@ -732,8 +745,8 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
           <label class="chk at-mid"><input type="checkbox" name="verified" value="1"> Conferi assinatura e eficácia (versão exata)</label>
         </div>
         <label class="fld"><span>Observação</span><input name="note"></label>
-        <button class="b" type="submit">Salvar</button>
-        <p class="hint">Aceite sem assinatura não recebe o rótulo “contratado”. Não há integração de assinatura eletrônica: anexe o instrumento assinado.</p>
+        <button class="b" type="submit">Registrar como formalizado</button>
+        <p class="hint">Só para documentos assinados fora da área do cliente. Aceite sem assinatura não recebe o rótulo “contratado”.</p>
       </form>
     </details>
   <?php endif ?>

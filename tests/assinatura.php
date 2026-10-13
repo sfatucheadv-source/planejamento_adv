@@ -93,6 +93,8 @@ $vh = kit_latest($id, 'honorarios');
 $vp = kit_latest($id, 'procuracao');
 $vpar = kit_latest($id, 'parecer');
 ok($vh && $vp && $vh['status'] === 'publicado', 'documentos publicados ao cliente');
+ok(contract_sync($id) === 'assinatura_pendente' && find_case($id)['contract_state'] === 'assinatura_pendente', 'documentos enviados ao cliente: contratação fica “Assinatura pendente” sozinha');
+ok(array_keys(contract_docs($id)) === ['honorarios', 'procuracao'], 'para assinar: contrato e procuração (declaração só com gratuidade; parecer não se assina)');
 
 $port = 23000 + random_int(0, 900);
 $mockPort = $port + 1000;
@@ -199,6 +201,7 @@ ok($dl2 === $pdf, 'segundo download: idêntico');
 $cli->get('/cliente?area=reuniao');
 $j = $cli->json('/cliente/documento-kit/' . $vh['id'] . '/codigo', []);
 ok(!$j['ok'] && str_contains((string) $j['erro'], 'já foi assinado'), 'não assina duas vezes');
+ok(find_case($id)['contract_state'] === 'assinatura_pendente' && str_contains((string) find_case($id)['next_action'], 'Procuração'), 'só o contrato assinado: continua pendente, aguardando a procuração');
 
 echo "\nS3b. Conferência pública e proteção do registro\n";
 $pub = new Http($base);
@@ -281,6 +284,20 @@ $adm->post('/painel/atendimento/' . $id, ['op' => 'kit_retificacao', 'rid' => $r
 ok(scalar('SELECT status FROM doc_rectifications WHERE id = ?', [$rid]) === 'resolvida', 'Sidney marca a retificação como resolvida');
 $adm->get('/painel/atendimento/' . $id . '/kit/' . $vh['id'] . '?baixar=docx');
 ok(str_contains($adm->type, 'wordprocessingml'), 'o .docx continua disponível no painel do escritório');
+
+echo "\nS5. Todos os documentos assinados: contratação formalizada sozinha\n";
+$cli->get('/cliente/documento-kit/' . $vp['id']);
+$cli->json('/cliente/documento-kit/' . $vp['id'] . '/codigo', []);
+$all = $mails();
+preg_match_all('/é: (\d{6})/u', implode('', array_filter($all, fn($x) => str_contains($x, 'Procura'))), $cds);
+$codigo = end($cds[1]);
+$j = $cli->json('/cliente/documento-kit/' . $vp['id'] . '/assinar', array_merge($sign, ['codigo' => $codigo, 'selo' => json_encode(['pagina' => 1, 'x' => 40, 'y' => 200])]));
+$cc = find_case($id);
+ok($j['ok'] && $cc['contract_state'] === 'formalizado' && $cc['decision'] === 'aceitou' && $cc['contract_verified_at'] && $cc['contract_signed_at'] === substr(now_str(), 0, 10), 'procuração assinada: contratação “Formalizado”, com o aceite e a data da assinatura');
+ok((int) $cc['contract_file_id'] === (int) $sig['file_id'] && str_contains((string) $cc['next_action'], 'Finalizar o atendimento inicial'), 'instrumento principal: o contrato assinado; próxima ação: finalizar e iniciar a execução');
+ok((bool) one("SELECT 1 FROM events WHERE case_id = ? AND type = 'contratacao' AND title LIKE '%Formalizado' AND body LIKE '%Procuração v%'", [$id]), 'histórico registra a formalização com os códigos das assinaturas');
+$adm->get('/painel/atendimento/' . $id);
+ok(str_contains($adm->html, 'contr-docs') && substr_count($adm->html, 'assinado eletronicamente em') >= 2 && !str_contains($adm->html, 'Registrar como formalizado'), 'painel mostra cada documento assinado; o registro manual some depois de formalizado');
 
 echo "\n" . ($fails ? "FALHAS: $fails" : 'TUDO OK') . " · $passes verificações aprovadas\n";
 exit($fails ? 1 : 0);

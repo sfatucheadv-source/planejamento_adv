@@ -122,6 +122,7 @@ $router->get('/painel/atendimento/{id}', function (string $id) {
     }
     $cid = (int) $c['id'];
     q('UPDATE cases SET activity_seen_at = ? WHERE id = ?', [now_str(), $cid]);
+    contract_sync($cid); // a contratação acompanha os documentos enviados e assinados
     $c = find_case($cid);
     // Depois da tela: Meet ainda sem link e transcrições de reuniões já encerradas.
     after_response(function () use ($cid) {

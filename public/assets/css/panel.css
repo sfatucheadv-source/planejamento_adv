@@ -1048,3 +1048,11 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .drive-diag-passos li { padding: 6px 10px; border-radius: 6px; overflow-wrap: anywhere; }
 .drive-diag-passos li.ok { background: var(--green-soft); color: var(--green); }
 .drive-diag-passos li.erro { background: #fdecea; color: var(--red, #b42318); }
+
+/* Contratação: documentos para assinar e a situação de cada um */
+.contr-docs { list-style: none; margin: 6px 0 8px; padding: 0; display: grid; gap: 4px; font-size: .92rem; }
+.contr-docs li { padding: 6px 10px; border-radius: 6px; background: var(--paper-2, #F4F1EA); }
+.contr-docs li.is-ok { background: var(--green-soft); }
+.contr-docs li.is-pend { background: #FFF6DB; }
+.contr-docs li.is-ok::before { content: "✓ "; color: var(--green); font-weight: 700; }
+.contr-docs li.is-pend::before { content: "… "; }

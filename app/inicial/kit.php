@@ -598,12 +598,10 @@ function kit_publish(array $c, int $vid): ?string
         return 'Há alterações ainda não revisadas. Gere e revise uma nova versão.';
     }
     q("UPDATE case_artifact_versions SET status = 'publicado', published_at = ? WHERE id = ?", [now_str(), $vid]);
-    if (in_array($v['kind'], ['honorarios', 'procuracao'], true) && in_array($c['contract_state'], ['nao_preparado', 'minuta'], true)) {
-        bump_case((int) $c['id'], ['contract_state' => 'enviado']);
-    }
     $label = kit_label($v['kind']);
     add_event((int) $c['id'], 'kit', 'Disponível para você: ' . $label, 'Versão ' . $v['version'] . '.', true);
     chat_post((int) $c['id'], 'operator', 'Disponibilizei para você: ' . $label . ' (versão ' . $v['version'] . '). Veja em “Reunião e proposta”.');
+    contract_sync((int) $c['id']); // enviado ao cliente: assinatura pendente
     return null;
 }
 
@@ -626,6 +624,7 @@ function kit_not_applicable(array $c, string $kind, string $reason): ?string
     $next = ((int) scalar('SELECT MAX(version) FROM case_artifact_versions WHERE case_id = ? AND kind = ?', [$id, $kind])) + 1;
     insert('case_artifact_versions', ['case_id' => $id, 'kind' => $kind, 'version' => $next, 'content' => trim($reason), 'status' => 'nao_aplicavel', 'created_at' => now_str(), 'created_by' => current_user()['id'] ?? null]);
     add_event($id, 'kit', kit_label($kind) . ': não se aplica', trim($reason));
+    contract_sync($id);
     return null;
 }
 
