@@ -457,9 +457,6 @@ function pdfx_sign(string $pdf, array $cert, int $pageIndex, array $rect, array 
     $page = pdfx_object($pdf, $info, $pnum);
     $rootNum = pdfx_ref(pdfx_get($info['trailer'], 'Root'));
     $root = pdfx_object($pdf, $info, $rootNum);
-    if (str_contains($root, '/AcroForm')) {
-        return [null, 'O documento já tem formulário de assinaturas; assinatura adicional não suportada.'];
-    }
     $k = 72 / 25.4;
     [$x, $y, $w, $h] = $rect;
     $sig = $info['size'];
@@ -473,8 +470,18 @@ function pdfx_sign(string $pdf, array $cert, int $pageIndex, array $rect, array 
             . ' /ContactInfo ' . pdfx_utext($meta['contato'] ?? '') . ' >>',
         $wid => '<< /Type /Annot /Subtype /Widget /FT /Sig /T ' . pdfx_utext($meta['campo'] ?? 'Assinatura do advogado') . ' /V ' . $sig . ' 0 R /F 132 /Rect ' . $sigRect . ' /P ' . $pnum . ' 0 R >>',
         $pnum => pdfx_page_with_annots($page, [$wid]),
-        $rootNum => preg_replace('#>>\s*$#', ' /AcroForm << /Fields [' . $wid . ' 0 R] /SigFlags 3 >> >>', $root, 1),
     ];
+    // Formulário de assinaturas: cria, ou acrescenta o campo novo ao que já existe (várias assinaturas em sequência).
+    if (preg_match('#/AcroForm\s+(\d+)\s+0\s+R#', $root, $af)) {
+        $form = pdfx_object($pdf, $info, (int) $af[1]);
+        $objs[(int) $af[1]] = preg_match('#/Fields\s*\[#', $form)
+            ? preg_replace('#/Fields\s*\[#', '/Fields [' . $wid . ' 0 R ', $form, 1)
+            : preg_replace('#>>\s*$#', ' /Fields [' . $wid . ' 0 R] >>', $form, 1);
+    } elseif (preg_match('#/AcroForm\s*<<#', $root)) {
+        $objs[$rootNum] = preg_replace('#(/AcroForm\s*<<.*?/Fields\s*\[)#s', '$1' . $wid . ' 0 R ', $root, 1);
+    } else {
+        $objs[$rootNum] = preg_replace('#>>\s*$#', ' /AcroForm << /Fields [' . $wid . ' 0 R] /SigFlags 3 >> >>', $root, 1);
+    }
     $out = pdfx_append($pdf, $info, $objs);
     // ByteRange: tudo, menos o conteúdo hexadecimal entre < e >
     $cpos = strpos($out, '/Contents <' . $placeholder) + strlen('/Contents ');
@@ -535,7 +542,7 @@ function pdfx_signatures(string $pdf): array
             @unlink($tmp . $e);
         }
         preg_match('/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/s', $crt, $first);
-        $out[] = ['integra' => $ok === true, 'cobre_bytes' => $c + $d, 'cobre_tudo' => $c + $d === strlen($pdf), 'certificado' => $first ? pdfx_cert_info($first[0]) : null];
+        $out[] = ['integra' => $ok === true, 'cobre_bytes' => $c + $d, 'cobre_tudo' => $c + $d === strlen($pdf), 'certificado' => $first ? pdfx_cert_info($first[0]) : null, 'pem' => $first[0] ?? null];
     }
     return $out;
 }

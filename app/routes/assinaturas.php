@@ -37,9 +37,28 @@ $router->post('/painel/conta/certificado', function () {
     redirect('painel/conta#certificado');
 });
 
+$router->post('/painel/conta/certificado-a3', function () {
+    $u = require_user();
+    $f = $_FILES['arquivo'] ?? null;
+    $bin = $f && ($f['error'] ?? 1) === UPLOAD_ERR_OK ? (string) file_get_contents($f['tmp_name']) : '';
+    $err = team_cert_register_a3($u, $bin);
+    flash($err ? 'error' : 'ok', $err ?? 'Certificado A3 cadastrado. Para assinar, você baixa o PDF, assina no token e envia de volta.');
+    redirect('painel/conta#certificado');
+});
+
+$router->get('/painel/conta/certificado-a3/pdf', function () {
+    $u = require_user();
+    $pdf = team_cert_a3_pdf($u);
+    header('Content-Type: application/pdf');
+    header('Content-Disposition: attachment; filename="cadastro-certificado-a3.pdf"');
+    header('Content-Length: ' . strlen($pdf));
+    echo $pdf;
+    exit;
+});
+
 $router->post('/painel/conta/certificado/remover', function () {
     team_cert_remove(require_user());
-    flash('ok', 'Certificado removido do sistema.');
+    flash('ok', 'Certificado removido. Você passa a assinar com a senha do sistema.');
     redirect('painel/conta#certificado');
 });
 
@@ -72,8 +91,11 @@ $router->post('/painel/assinaturas/{id}/pessoa', function (string $id) {
     require_config_editor();
     $p = sig_party_or_404($id);
     $uid = (int) input('user_id');
+    $preq = one('SELECT * FROM sig_requests WHERE id = ?', [$p['request_id']]);
     if ($p['signed_at']) {
         flash('error', 'Esta assinatura já foi feita.');
+    } elseif ($preq['signed_path'] && $p['role'] === 'testemunha') {
+        flash('error', 'O documento já começou a ser assinado com os nomes das testemunhas; para trocar, gere uma nova versão.');
     } elseif ($uid && !one('SELECT 1 FROM users WHERE id = ? AND active = 1', [$uid])) {
         flash('error', 'Usuário não encontrado.');
     } else {
@@ -106,13 +128,13 @@ $router->get('/painel/assinaturas/{id}', function (string $id) {
 $router->post('/painel/assinaturas/{id}/assinar', function (string $id) {
     $u = require_user();
     $p = sig_party_or_404($id);
-    $err = $p['role'] === 'testemunha' ? sig_witness_sign($p, $u, $_POST) : sig_lawyer_sign_a1($p, $u, $_POST);
+    $err = sig_team_sign($p, $u, $_POST);
     if ($err) {
         flash('error', $err);
         redirect('painel/assinaturas/' . $p['id']);
     }
     audit('assinatura_equipe', (int) one('SELECT case_id FROM sig_requests WHERE id = ?', [$p['request_id']])['case_id'], $p['role']);
-    flash('ok', $p['role'] === 'testemunha' ? 'Assinatura de testemunha registrada.' : 'Documento assinado com o certificado digital. Ele já está com o cliente para assinar.');
+    flash('ok', $p['role'] === 'testemunha' ? 'Assinatura de testemunha registrada.' : 'Documento assinado. Ele já está com o cliente para assinar.');
     redirect('painel/assinaturas');
 });
 
@@ -120,10 +142,7 @@ $router->post('/painel/assinaturas/{id}/assinar', function (string $id) {
 $router->post('/painel/assinaturas/{id}/pdf-a3', function (string $id) {
     $u = require_user();
     $p = sig_party_or_404($id);
-    if ($p['role'] !== 'advogado') {
-        forbidden();
-    }
-    [$pdf, $err] = sig_lawyer_prepare_a3($p, $u, $_POST);
+    [$pdf, $err] = sig_team_prepare_a3($p, $u, $_POST);
     if (!$pdf) {
         flash('error', $err);
         redirect('painel/assinaturas/' . $p['id']);
@@ -141,12 +160,12 @@ $router->post('/painel/assinaturas/{id}/a3', function (string $id) {
     $p = sig_party_or_404($id);
     $f = $_FILES['pdf'] ?? null;
     $bin = $f && ($f['error'] ?? 1) === UPLOAD_ERR_OK ? (string) file_get_contents($f['tmp_name']) : '';
-    $err = $bin === '' ? 'Envie o PDF assinado.' : sig_lawyer_upload($p, $u, $bin);
+    $err = $bin === '' ? 'Envie o PDF assinado.' : sig_team_upload_a3($p, $u, $bin);
     if ($err) {
         flash('error', $err);
         redirect('painel/assinaturas/' . $p['id']);
     }
-    flash('ok', 'Assinatura com o certificado A3 conferida e registrada. O documento já está com o cliente.');
+    flash('ok', 'Assinatura com o certificado A3 conferida e registrada.');
     redirect('painel/assinaturas');
 });
 
@@ -161,9 +180,10 @@ function sig_party_page(array $p, array $u, array $req, array $v, array $c): str
     $pending = json_decode((string) $p['seal'], true) ?: null;
     $pos = $pending && !$p['signed_at'] ? sig_seal_clamp($pending, count($L['pages'])) : sig_seal_place($L, sig_party_block($p), sig_party_rects($req, (int) $p['id']));
     $pr = team_profile($u);
-    $cert = json_decode((string) ($u['cert_info'] ?? ''), true) ?: null;
+    $cert = team_cert($u);
+    $method = team_sign_method($u);
     $meta = ['nome' => $pr['nome_completo'], 'quando' => null, 'fuso' => null, 'codigo' => $req['code'], 'host' => preg_replace('#^https?://#', '', rtrim(public_root(), '/')),
-        'rotulo' => sig_seal_label($p['role'], $cert)];
+        'rotulo' => sig_seal_label($p['role'], $cert, $method)];
     $sealSvg = '<svg viewBox="0 0 ' . SEAL_W . ' ' . SEAL_H . '" xmlns="http://www.w3.org/2000/svg">' . pdoc_svg(sig_seal_ops($meta, team_signature($u))) . '</svg>';
     $label = kit_label($v['kind']);
     $tok = csrf_field();
@@ -173,29 +193,25 @@ function sig_party_page(array $p, array $u, array $req, array $v, array $c): str
         $flash .= '<p class="folhas-aviso -' . e($f['type'] ?? 'ok') . '">' . e($f['msg'] ?? '') . '</p>';
     }
     $who = SIG_PARTY_LABELS[$p['role']] . ($p['role'] === 'testemunha' ? ' ' . (int) $p['ord'] : '');
+    $consent = $p['role'] === 'testemunha' ? SIG_WITNESS_CONSENT : SIG_LAWYER_CONSENT;
+    $back = '<a class="assin-btn -sec" href="' . e(url('painel/assinaturas')) . '">Voltar</a>';
+    $form = fn(string $action, string $inner, string $extra = '') => '<form method="post" action="' . e(url('painel/assinaturas/' . $p['id'] . '/' . $action)) . '" data-form-selo' . $extra . '>' . $tok . '<input type="hidden" name="selo" data-selo-campo>' . $inner . '</form>';
+    $aceite = '<label class="assin-ok"><input type="checkbox" name="aceite" value="1" required> ' . e($consent) . '</label>';
     if (!$can) {
-        $bar = '<div class="assin-barra"><p><strong>' . e($who) . ':</strong> ' . e($why) . '</p><div class="assin-acoes"><a class="assin-btn -sec" href="' . e(url('painel/assinaturas')) . '">Voltar</a>'
+        $bar = '<div class="assin-barra"><p><strong>' . e($who) . ':</strong> ' . e($why) . '</p><div class="assin-acoes">' . $back
             . (str_contains((string) $why, 'Minha conta') ? '<a class="assin-btn" href="' . e(url('painel/conta')) . '">Abrir Minha conta</a>' : '') . '</div></div>';
-    } elseif ($p['role'] === 'testemunha') {
-        $bar = '<form class="assin-barra -equipe" method="post" action="' . e(url('painel/assinaturas/' . $p['id'] . '/assinar')) . '" data-form-selo>' . $tok
-            . '<input type="hidden" name="selo" data-selo-campo><p><strong>Arraste o seu selo</strong> até o lugar da sua assinatura. <span data-selo-onde></span></p>'
-            . '<label class="assin-ok"><input type="checkbox" name="aceite" value="1" required> ' . e(SIG_WITNESS_CONSENT) . '</label>'
-            . '<div class="assin-acoes"><a class="assin-btn -sec" href="' . e(url('painel/assinaturas')) . '">Voltar</a><button class="assin-btn" type="submit">Aprovar e assinar como testemunha</button></div></form>';
     } else {
-        $hasA1 = $u['cert_path'] && $cert;
-        $bar = '<div class="assin-barra -equipe"><p><strong>Arraste o seu selo</strong> até o lugar da assinatura do escritório. <span data-selo-onde></span></p>'
-            . ($hasA1 ? '<form class="assin-cert" method="post" action="' . e(url('painel/assinaturas/' . $p['id'] . '/assinar')) . '" data-form-selo>' . $tok . '<input type="hidden" name="selo" data-selo-campo>'
-                . '<p class="assin-sub">Certificado: <strong>' . e($cert['titular']) . '</strong> · ' . e($cert['emissor']) . ' · válido até ' . e(fmt_date((string) $cert['valido_ate'])) . '</p>'
-                . '<label class="assin-ok"><input type="checkbox" name="aceite" value="1" required> ' . e(SIG_LAWYER_CONSENT) . '</label>'
-                . '<div class="assin-codigo"><input type="password" name="senha_certificado" autocomplete="off" placeholder="Senha do certificado" required><button class="assin-btn" type="submit">Assinar com o certificado</button></div></form>'
-                : '<p class="assin-sub">Sem certificado A1 cadastrado. <a href="' . e(url('painel/conta#certificado')) . '">Cadastrar em Minha conta</a> ou use o token (A3) abaixo.</p>')
-            . '<details class="assin-a3"><summary>Assinar com certificado A3 (token ou cartão)</summary>'
-            . '<form method="post" action="' . e(url('painel/assinaturas/' . $p['id'] . '/pdf-a3')) . '" data-form-selo>' . $tok . '<input type="hidden" name="selo" data-selo-campo>'
-            . '<p class="assin-sub">1. Baixe o PDF com os selos (a posição do seu selo fica a que está na tela). 2. Assine no assinador do token (ex.: Assinador SERPRO ou Adobe), sem alterar mais nada. 3. Envie o arquivo assinado.</p>'
-            . '<button class="assin-btn -sec" type="submit">Baixar o PDF para assinar</button></form>'
-            . '<form method="post" enctype="multipart/form-data" action="' . e(url('painel/assinaturas/' . $p['id'] . '/a3')) . '">' . $tok
-            . '<div class="assin-codigo"><input type="file" name="pdf" accept="application/pdf" required><button class="assin-btn" type="submit">Enviar o PDF assinado</button></div></form></details>'
-            . '<div class="assin-acoes"><a class="assin-btn -sec" href="' . e(url('painel/assinaturas')) . '">Voltar</a></div></div>';
+        $head = '<p><strong>Arraste o seu selo</strong> até o lugar da sua assinatura (' . e(mb_strtolower($who)) . '). <span data-selo-onde></span></p>'
+            . '<p class="assin-sub">Você assina com: <strong>' . e(TEAM_SIGN_METHODS[$method]) . '</strong>' . ($cert && $method !== 'senha' ? ' · ' . e($cert['titular']) . ' · ' . e($cert['emissor']) : '')
+            . ' · <a href="' . e(url('painel/conta#certificado')) . '">mudar em Minha conta</a></p>';
+        $body = match ($method) {
+            'a1' => $form('assinar', $aceite . '<div class="assin-codigo"><input type="password" name="senha_certificado" autocomplete="off" placeholder="Senha do certificado" required><button class="assin-btn" type="submit">Assinar com o certificado</button></div>', ' class="assin-cert"'),
+            'a3' => '<div class="assin-a3 -aberto">' . $form('pdf-a3', $aceite . '<p class="assin-sub">1. Baixe o PDF com o seu selo (na posição da tela). 2. Assine no assinador do token (Assinador SERPRO, Adobe ou outro), sem alterar mais nada. 3. Envie o arquivo assinado.</p><button class="assin-btn -sec" type="submit">Baixar o PDF para assinar no token</button>')
+                . '<form method="post" enctype="multipart/form-data" action="' . e(url('painel/assinaturas/' . $p['id'] . '/a3')) . '">' . $tok
+                . '<div class="assin-codigo"><input type="file" name="pdf" accept="application/pdf" required><button class="assin-btn" type="submit">Enviar o PDF assinado</button></div></form></div>',
+            default => $form('assinar', $aceite . '<div class="assin-codigo"><input type="password" name="senha" autocomplete="current-password" placeholder="Sua senha do sistema" required><button class="assin-btn" type="submit">' . ($p['role'] === 'testemunha' ? 'Assinar como testemunha' : 'Assinar') . '</button></div>', ' class="assin-cert"'),
+        };
+        $bar = '<div class="assin-barra -equipe">' . $head . $body . '<div class="assin-acoes">' . $back . '</div></div>';
     }
     return sig_sheet_page($label . ' · ' . $c['protocol'] . ' · assinatura do escritório',
         '<header class="folhas-topo"><strong>' . e($label) . ' · ' . e($who) . '</strong><span>versão ' . (int) $v['version'] . ' · atendimento ' . e($c['protocol']) . ' · ' . e($c['client_name']) . ' · código ' . e($req['code']) . '</span></header>'

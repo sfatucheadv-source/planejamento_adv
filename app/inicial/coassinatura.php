@@ -110,7 +110,9 @@ function team_signature(array $u): ?array
     return is_array($s) ? sig_strokes($s) : null;
 }
 
-/* ---------- Certificado digital do advogado ---------- */
+/* ---------- Forma de assinar: certificado A1, certificado A3 (token) ou senha ---------- */
+
+const TEAM_SIGN_METHODS = ['senha' => 'Senha do sistema', 'a1' => 'Certificado A1 (arquivo)', 'a3' => 'Certificado A3 (token ou cartão)'];
 
 function team_cert_dir(): string
 {
@@ -119,9 +121,52 @@ function team_cert_dir(): string
     return $dir;
 }
 
+/** Certificado cadastrado (dados, tipo a1/a3) ou null. */
+function team_cert(array $u): ?array
+{
+    $c = json_decode((string) ($u['cert_info'] ?? ''), true);
+    if (!is_array($c)) {
+        return null;
+    }
+    $c['tipo'] ??= $u['cert_path'] ? 'a1' : 'a3';
+    return $c;
+}
+
+/** Como a pessoa assina: com o certificado cadastrado ou, sem ele, com a senha do sistema. */
+function team_sign_method(array $u): string
+{
+    $c = team_cert($u);
+    if ($c && ($c['tipo'] === 'a3' || ($c['tipo'] === 'a1' && $u['cert_path'] && is_file(team_cert_dir() . '/' . basename((string) $u['cert_path']))))) {
+        return $c['tipo'];
+    }
+    return 'senha';
+}
+
+/** Confere o certificado lido (validade e CPF do cadastro). Retorna erro ou null. */
+function team_cert_check(array $u, array $info): ?string
+{
+    if ($info['valido_ate'] && $info['valido_ate'] < now_str()) {
+        return 'Este certificado venceu em ' . fmt_datetime($info['valido_ate']) . '.';
+    }
+    $cpf = only_digits((string) (team_profile($u)['cpf'] ?? ''));
+    if ($cpf !== '' && $info['cpf'] && $info['cpf'] !== $cpf) {
+        return 'O CPF do certificado (' . sig_fmt_cpf($info['cpf']) . ') não é o do seu cadastro.';
+    }
+    return null;
+}
+
+function team_cert_drop_file(array $u): void
+{
+    if ($u['cert_path']) {
+        $p = team_cert_dir() . '/' . basename((string) $u['cert_path']);
+        @chmod($p, 0600);
+        @unlink($p);
+    }
+}
+
 /**
- * Guarda o arquivo do certificado A1 (.pfx/.p12), que já é protegido pela senha.
- * A senha é pedida aqui só para conferir o arquivo e ler os dados; não é guardada.
+ * A1: guarda o arquivo (.pfx/.p12), que já é protegido pela senha. A senha é
+ * pedida aqui só para conferir o arquivo e ler os dados; não é guardada.
  */
 function team_cert_store(array $u, string $pfx, string $password): ?string
 {
@@ -133,33 +178,83 @@ function team_cert_store(array $u, string $pfx, string $password): ?string
         return $err;
     }
     $info = pdfx_cert_info($c['cert']);
-    if ($info['valido_ate'] && $info['valido_ate'] < now_str()) {
-        return 'Este certificado venceu em ' . fmt_datetime($info['valido_ate']) . '.';
-    }
-    $cpf = only_digits((string) (team_profile($u)['cpf'] ?? ''));
-    if ($cpf !== '' && $info['cpf'] && $info['cpf'] !== $cpf) {
-        return 'O CPF do certificado (' . sig_fmt_cpf($info['cpf']) . ') não é o do seu cadastro.';
+    if ($err = team_cert_check($u, $info)) {
+        return $err;
     }
     $file = 'u' . (int) $u['id'] . '-' . bin2hex(random_bytes(6)) . '.pfx';
     $path = team_cert_dir() . '/' . $file;
     file_put_contents($path, $pfx);
     @chmod($path, 0400);
-    if ($u['cert_path'] && is_file(team_cert_dir() . '/' . basename((string) $u['cert_path']))) {
-        @chmod(team_cert_dir() . '/' . basename((string) $u['cert_path']), 0600);
-        @unlink(team_cert_dir() . '/' . basename((string) $u['cert_path']));
-    }
-    update('users', (int) $u['id'], ['cert_path' => $file, 'cert_info' => json_encode($info, JSON_UNESCAPED_UNICODE), 'cert_at' => now_str()]);
-    audit('certificado_cadastrado', null, $info['titular'] . ' · ' . $info['emissor']);
+    team_cert_drop_file($u);
+    update('users', (int) $u['id'], ['cert_path' => $file, 'cert_info' => json_encode(['tipo' => 'a1'] + $info, JSON_UNESCAPED_UNICODE), 'cert_at' => now_str()]);
+    audit('certificado_cadastrado', null, 'A1 · ' . $info['titular'] . ' · ' . $info['emissor']);
     return null;
+}
+
+/**
+ * A3 (token ou cartão): a chave nunca sai do token, então o sistema guarda só a
+ * parte pública. Aceita o certificado exportado (.cer, .crt ou .pem) ou o PDF
+ * de cadastro assinado no token — de onde o certificado é lido.
+ */
+function team_cert_register_a3(array $u, string $bin): ?string
+{
+    $bin = trim($bin) === '' ? '' : $bin;
+    if ($bin === '' || strlen($bin) > 5000000) {
+        return 'Envie o certificado exportado do token (.cer) ou o PDF de cadastro assinado com ele.';
+    }
+    $pem = null;
+    if (str_starts_with($bin, '%PDF')) {
+        $sigs = pdfx_signatures($bin);
+        $last = end($sigs);
+        if (!$last || !$last['integra'] || empty($last['pem'])) {
+            return 'Não encontrei uma assinatura digital válida no PDF. Assine o PDF de cadastro com o token e envie de novo.';
+        }
+        $pem = $last['pem'];
+    } elseif (str_contains($bin, '-----BEGIN CERTIFICATE-----')) {
+        preg_match('/-----BEGIN CERTIFICATE-----.*?-----END CERTIFICATE-----/s', $bin, $m);
+        $pem = $m[0] ?? null;
+    } else {
+        $pem = "-----BEGIN CERTIFICATE-----\n" . chunk_split(base64_encode($bin), 64, "\n") . "-----END CERTIFICATE-----\n";
+    }
+    if (!$pem || !openssl_x509_parse($pem)) {
+        return 'Arquivo de certificado não reconhecido.';
+    }
+    $info = pdfx_cert_info($pem);
+    if (!$info['cpf']) {
+        return 'Este certificado não traz CPF (e-CPF). Use o certificado pessoal do token.';
+    }
+    if ($err = team_cert_check($u, $info)) {
+        return $err;
+    }
+    team_cert_drop_file($u);
+    update('users', (int) $u['id'], ['cert_path' => null, 'cert_info' => json_encode(['tipo' => 'a3'] + $info, JSON_UNESCAPED_UNICODE), 'cert_at' => now_str()]);
+    audit('certificado_cadastrado', null, 'A3 · ' . $info['titular'] . ' · ' . $info['emissor']);
+    return null;
+}
+
+/** PDF de uma página para cadastrar o A3: a pessoa assina com o token e envia de volta. */
+function team_cert_a3_pdf(array $u): string
+{
+    $p = team_profile($u);
+    $lines = ['Cadastro de certificado digital A3', 'Sistema de atendimento · ' . (office('name') ?: 'Sidney Fatuche Advocacia'), '',
+        'Usuário: ' . $p['nome_completo'] . ' (' . $u['email'] . ')', 'Gerado em ' . fmt_datetime(now_str()) . ' (horário de Brasília)', '',
+        'Assine este arquivo com o seu token (Assinador SERPRO, Adobe ou outro) e envie de volta em Minha conta.',
+        'O sistema lê do arquivo apenas o certificado público; a chave continua no token.'];
+    $ops = [];
+    $y = 40.0;
+    foreach ($lines as $i => $t) {
+        $enc = pdoc_enc($t);
+        $key = $i === 0 ? 'poppinsb' : 'poppins';
+        $pt = $i === 0 ? 14.0 : 10.0;
+        $ops[] = ['t', 30.0, $y, $key, $pt, PDOC_TINTA, $enc, pdoc_width($enc, $key, $pt), false];
+        $y += $i === 0 ? 10 : 6;
+    }
+    return pdoc_pdf(['pages' => [$ops], 'sigs' => []], ['titulo' => 'Cadastro de certificado A3 · ' . $p['nome_completo']]);
 }
 
 function team_cert_remove(array $u): void
 {
-    if ($u['cert_path']) {
-        $p = team_cert_dir() . '/' . basename((string) $u['cert_path']);
-        @chmod($p, 0600);
-        @unlink($p);
-    }
+    team_cert_drop_file($u);
     update('users', (int) $u['id'], ['cert_path' => null, 'cert_info' => null, 'cert_at' => null]);
     audit('certificado_removido');
 }
@@ -318,8 +413,8 @@ function sig_request_advance(int $rid): void
     $label = kit_label($v['kind']);
     if ($st === 'advogado') {
         $adv = reset($pendA);
-        set_next((int) $req['case_id'], 'Assinar com o certificado digital: ' . $label, in_business_days(1));
-        add_event((int) $req['case_id'], 'assinatura', 'Testemunhas assinaram: ' . $label, 'Falta a assinatura do advogado com certificado digital.');
+        set_next((int) $req['case_id'], 'Assinar pelo escritório: ' . $label, in_business_days(1));
+        add_event((int) $req['case_id'], 'assinatura', 'Testemunhas assinaram: ' . $label, 'Falta a assinatura do advogado pelo escritório.');
     }
     if ($st === 'cliente') {
         $c = find_case((int) $req['case_id']);
@@ -380,12 +475,14 @@ function sig_party_rects(?array $req, ?int $exceptParty = null): array
     return $out;
 }
 
-/** Texto do rótulo do selo conforme o papel. */
-function sig_seal_label(string $role, ?array $cert = null): string
+/** Texto do rótulo do selo conforme o papel e a forma de assinar. */
+function sig_seal_label(string $role, ?array $cert = null, string $method = 'senha'): string
 {
+    $digital = in_array($method, ['a1', 'a3', 'certificado_a1', 'certificado_a3', 'certificado_externo'], true);
+    $cert_label = !empty($cert['icp_brasil']) ? 'CERTIFICADO ICP-BRASIL' : 'CERTIFICADO DIGITAL';
     return match ($role) {
-        'testemunha' => 'TESTEMUNHA · ASSINADO ELETRONICAMENTE',
-        'advogado' => !empty($cert['icp_brasil']) ? 'ASSINADO COM CERTIFICADO ICP-BRASIL' : 'ASSINADO COM CERTIFICADO DIGITAL',
+        'testemunha' => 'TESTEMUNHA · ' . ($digital ? $cert_label : 'ASSINADO ELETRONICAMENTE'),
+        'advogado' => $digital ? 'ASSINADO COM ' . $cert_label : 'ASSINADO ELETRONICAMENTE',
         default => 'ASSINADO ELETRONICAMENTE',
     };
 }
@@ -412,6 +509,11 @@ function sig_party_check(array $p, array $u): array
     if ($p['role'] === 'advogado' && $req['status'] !== 'advogado') {
         return [false, 'O advogado assina depois das testemunhas.'];
     }
+    foreach (sig_parties((int) $req['id']) as $o) {
+        if (!$o['user_id']) {
+            return [false, 'Falta escolher quem assina como ' . mb_strtolower(SIG_PARTY_LABELS[$o['role']]) . ($o['role'] === 'testemunha' ? ' ' . $o['ord'] : '') . ' (em Assinaturas).'];
+        }
+    }
     if ($miss = team_profile_missing($u)) {
         return [false, 'Complete os seus dados em Minha conta: ' . implode(', ', $miss) . '.'];
     }
@@ -433,8 +535,8 @@ function sig_party_evidence(array $u, array $v, array $seal, string $consent, ar
         'selo' => $seal + ['largura_mm' => SEAL_W, 'altura_mm' => SEAL_H], 'aceite' => $consent] + $extra;
 }
 
-const SIG_WITNESS_CONSENT = 'Assino como testemunha o documento acima, na versão exibida, e reconheço esta assinatura eletrônica, feita com o meu usuário do sistema, como válida (MP 2.200-2/2001, art. 10, § 2º).';
-const SIG_LAWYER_CONSENT = 'Assino o documento acima, na versão exibida, com o meu certificado digital, em nome do escritório.';
+const SIG_WITNESS_CONSENT = 'Assino como testemunha o documento acima, na versão exibida, e reconheço esta assinatura, feita com o meu usuário do sistema, como válida (MP 2.200-2/2001, art. 10, § 2º).';
+const SIG_LAWYER_CONSENT = 'Assino o documento acima, na versão exibida, em nome do escritório, e reconheço esta assinatura como válida (MP 2.200-2/2001, art. 10).';
 
 /** Posição recebida da tela (ou a sugerida), já dentro da folha. */
 function sig_party_position(array $p, array $c, array $v, ?array $req, array $in): array
@@ -446,65 +548,66 @@ function sig_party_position(array $p, array $c, array $v, ?array $req, array $in
         : sig_seal_place($L, sig_party_block($p), sig_party_rects($req, (int) $p['id']));
 }
 
-/** Testemunha aprova: selo com a rubrica guardada e os dados do cadastro. Retorna erro ou null. */
-function sig_witness_sign(array $p, array $u, array $in): ?string
+/**
+ * PDF em assinatura (a versão mais recente, conferida pelo hash). Na primeira
+ * assinatura da equipe, gera o documento (com os nomes das testemunhas nas
+ * linhas delas) e o guarda: a partir daí, cada selo e cada assinatura digital
+ * entram como acréscimo ao fim do arquivo. Retorna [pdf, sha, erro].
+ */
+function sig_team_current(array $req): array
 {
-    [$ok, $why] = sig_party_check($p, $u);
-    if (!$ok) {
-        return $why;
+    $dir = sig_storage_dir();
+    if ($req['signed_path']) {
+        $bin = (string) @file_get_contents($dir . '/' . basename((string) $req['signed_path']));
+        if ($bin === '' || !hash_equals((string) $req['signed_sha256'], hash('sha256', $bin))) {
+            sig_log((string) $req['code'], 'divergencia_arquivo', ['arquivo' => 'PDF em assinatura ausente ou alterado']);
+            return [null, null, 'O PDF em assinatura não confere com o registrado. Fale com Sidney.'];
+        }
+        return [$bin, $req['signed_sha256'], null];
     }
-    if (($in['aceite'] ?? '') !== '1') {
-        return 'Marque a declaração de que assina como testemunha.';
+    $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
+    $c = find_case((int) $req['case_id']);
+    $L = sig_doc_layout($v, $req);
+    // selos já registrados antes deste formato (no conteúdo da página)
+    foreach (sig_party_seals($req) as $s) {
+        $L['pages'][$s['pagina'] - 1] = array_merge($L['pages'][$s['pagina'] - 1], $s['ops']);
     }
-    $req = one('SELECT * FROM sig_requests WHERE id = ?', [$p['request_id']]);
+    $pdf = pdoc_pdf($L, ['titulo' => kit_label($v['kind']) . ' · ' . $c['protocol'] . ' · v' . $v['version'], 'assunto' => 'Documento em assinatura · código ' . $req['code'],
+        'palavras' => 'verificação ' . $req['code'], 'autor' => office('lawyer') ?: 'Sidney Fatuche', 'fontes' => ['poppins', 'poppinsb', 'poppinssb']]);
+    $file = $req['code'] . '-0.pdf';
+    file_put_contents($dir . '/' . $file, $pdf);
+    @chmod($dir . '/' . $file, 0440);
+    $sha = hash('sha256', $pdf);
+    q('UPDATE sig_requests SET base_path = ?, base_sha256 = ?, signed_path = ?, signed_sha256 = ?, updated_at = ? WHERE id = ? AND signed_path IS NULL', [$file, $sha, $file, $sha, now_str(), $req['id']]);
+    sig_log((string) $req['code'], 'pdf_gerado', ['hash_pdf' => $sha, 'bytes' => strlen($pdf), 'paginas' => count($L['pages'])]);
+    $req = one('SELECT * FROM sig_requests WHERE id = ?', [$req['id']]);
+    return [$pdf, $req['signed_sha256'], $req['signed_sha256'] === $sha ? null : 'Outra pessoa começou a assinar agora. Tente de novo.'];
+}
+
+/** Selo do integrante como carimbo (acréscimo) no PDF atual. [pdf, selo, dados do selo]. */
+function sig_team_stamp(string $pdf, array $p, array $u, array $req, array $in, string $method, ?array $cert): array
+{
     $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
     $c = find_case((int) $req['case_id']);
     $seal = sig_party_position($p, $c, $v, $req, $in);
-    $pr = team_profile($u);
-    $now = now();
-    [$quando, $fuso] = sig_when($now);
-    $meta = ['nome' => $pr['nome_completo'], 'quando' => $quando, 'fuso' => $fuso, 'codigo' => $req['code'], 'host' => preg_replace('#^https?://#', '', rtrim(public_root(), '/')), 'rotulo' => sig_seal_label('testemunha')];
-    $strokes = team_signature($u);
-    $ev = sig_party_evidence($u, $v, $seal, SIG_WITNESS_CONSENT);
-    q('UPDATE sig_parties SET name = ?, cpf = ?, seal = ?, strokes = ?, method = ?, evidence = ?, ip = ?, user_agent = ?, signed_at = ? WHERE id = ? AND signed_at IS NULL',
-        [$pr['nome_completo'], only_digits((string) $pr['cpf']), json_encode($seal + ['meta' => $meta], JSON_UNESCAPED_UNICODE), json_encode($strokes), 'aprovacao_no_sistema',
-            json_encode($ev, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), client_ip(), mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 400), $now->format('Y-m-d H:i:s'), $p['id']]);
-    sig_log((string) $req['code'], 'testemunha_assinou', ['ordem' => (int) $p['ord'], 'nome' => $pr['nome_completo'], 'cpf' => sig_fmt_cpf((string) $pr['cpf']), 'usuario' => (int) $u['id'],
-        'em' => $now->format('Y-m-d H:i:s') . ' (' . $now->format('P') . ')', 'selo' => $seal, 'hash_texto' => sig_doc_hash($v)]);
-    add_event((int) $req['case_id'], 'assinatura', 'Testemunha assinou: ' . $pr['nome_completo'], kit_label($v['kind']) . ' v' . $v['version'] . ' · selo na página ' . $seal['pagina'] . '.');
-    sig_request_advance((int) $req['id']);
-    return null;
+    [$quando, $fuso] = sig_when(now());
+    $meta = ['nome' => team_profile($u)['nome_completo'], 'quando' => $quando, 'fuso' => $fuso, 'codigo' => $req['code'], 'host' => preg_replace('#^https?://#', '', rtrim(public_root(), '/')),
+        'rotulo' => sig_seal_label($p['role'], $cert, $method)];
+    $rect = [$seal['x'], $seal['y'], SEAL_W, SEAL_H];
+    $who = SIG_PARTY_LABELS[$p['role']] . ($p['role'] === 'testemunha' ? ' ' . $p['ord'] : '');
+    $out = pdfx_add_annots($pdf, [$seal['pagina'] - 1 => [
+        ['draw' => pdoc_move(sig_seal_ops($meta, team_signature($u)), $seal['x'], $seal['y']), 'rect' => $rect, 'name' => 'Assinatura', 'title' => $who . ': ' . $meta['nome']],
+        ['link' => public_link('verificar/' . $req['code']), 'rect' => $rect],
+    ]], ['poppins', 'poppinsb', 'poppinssb']);
+    return [$out, $seal, $meta];
 }
 
 /**
- * PDF do advogado (antes do certificado): o documento com os selos das
- * testemunhas e o do advogado, e os links dos selos para a conferência.
- * Fica guardado: é o que o certificado assina (A1) ou o que se baixa para o A3.
+ * Assina pela forma cadastrada: senha do sistema ou certificado A1 (senha do
+ * certificado). O certificado A3 é em dois passos (sig_team_prepare_a3 e
+ * sig_team_upload_a3). Retorna erro ou null.
  */
-function sig_lawyer_base(array $p, array $u, array $in, ?array $cert): array
-{
-    $req = one('SELECT * FROM sig_requests WHERE id = ?', [$p['request_id']]);
-    $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
-    $c = find_case((int) $req['case_id']);
-    $seal = sig_party_position($p, $c, $v, $req, $in);
-    $pr = team_profile($u);
-    $now = now();
-    [$quando, $fuso] = sig_when($now);
-    $meta = ['nome' => $pr['nome_completo'], 'quando' => $quando, 'fuso' => $fuso, 'codigo' => $req['code'], 'host' => preg_replace('#^https?://#', '', rtrim(public_root(), '/')), 'rotulo' => sig_seal_label('advogado', $cert)];
-    $L = sig_doc_layout($v, $req);
-    foreach (sig_party_seals($req, (int) $p['id']) as $s) {
-        $L['pages'][$s['pagina'] - 1] = array_merge($L['pages'][$s['pagina'] - 1], $s['ops']);
-    }
-    $mine = pdoc_move(sig_seal_ops($meta, team_signature($u)), $seal['x'], $seal['y']);
-    $mine[] = ['link', $seal['x'], $seal['y'], SEAL_W, SEAL_H, public_link('verificar/' . $req['code'])];
-    $L['pages'][$seal['pagina'] - 1] = array_merge($L['pages'][$seal['pagina'] - 1], $mine);
-    $pdf = pdoc_pdf($L, ['titulo' => kit_label($v['kind']) . ' · ' . $c['protocol'] . ' · v' . $v['version'], 'assunto' => 'Assinaturas do escritório · código ' . $req['code'],
-        'palavras' => 'verificação ' . $req['code'], 'autor' => office('lawyer') ?: 'Sidney Fatuche', 'fontes' => ['poppins', 'poppinsb', 'poppinssb']]);
-    return [$pdf, $seal, $meta, $req, $v, $c, $L];
-}
-
-/** Advogado assina com o certificado A1 guardado (a senha vem a cada assinatura). Retorna erro ou null. */
-function sig_lawyer_sign_a1(array $p, array $u, array $in): ?string
+function sig_team_sign(array $p, array $u, array $in): ?string
 {
     [$ok, $why] = sig_party_check($p, $u);
     if (!$ok) {
@@ -513,68 +616,66 @@ function sig_lawyer_sign_a1(array $p, array $u, array $in): ?string
     if (($in['aceite'] ?? '') !== '1') {
         return 'Marque a declaração de assinatura.';
     }
-    $path = $u['cert_path'] ? team_cert_dir() . '/' . basename((string) $u['cert_path']) : '';
-    if ($path === '' || !is_file($path)) {
-        return 'Cadastre o seu certificado A1 em Minha conta (ou use o certificado A3 fora do sistema).';
+    $method = team_sign_method($u);
+    if ($method === 'a3') {
+        return 'Seu certificado é A3 (token): baixe o PDF, assine no token e envie de volta.';
     }
-    [$cert, $err] = pdfx_open_pfx((string) file_get_contents($path), (string) ($in['senha_certificado'] ?? ''));
-    if (!$cert) {
+    $cert = null;
+    $info = null;
+    if ($method === 'a1') {
+        [$cert, $err] = pdfx_open_pfx((string) file_get_contents(team_cert_dir() . '/' . basename((string) $u['cert_path'])), (string) ($in['senha_certificado'] ?? ''));
+        if (!$cert) {
+            return $err;
+        }
+        $info = pdfx_cert_info($cert['cert']);
+        if ($err = team_cert_check($u, $info)) {
+            return $err;
+        }
+    } elseif (!password_verify((string) ($in['senha'] ?? ''), (string) $u['pass_hash'])) {
+        return 'Senha incorreta. Use a mesma senha de entrada no sistema.';
+    }
+    $req = one('SELECT * FROM sig_requests WHERE id = ?', [$p['request_id']]);
+    [$pdf, $prev, $err] = sig_team_current($req);
+    if (!$pdf) {
         return $err;
     }
-    $info = pdfx_cert_info($cert['cert']);
-    $cpf = only_digits((string) team_profile($u)['cpf']);
-    if ($info['cpf'] && $info['cpf'] !== $cpf) {
-        return 'O CPF do certificado não é o do seu cadastro.';
+    [$out, $seal, $meta] = sig_team_stamp($pdf, $p, $u, $req, $in, $method, $info);
+    if ($cert) {
+        $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
+        [$out, $err] = pdfx_sign($out, $cert, $seal['pagina'] - 1, [$seal['x'], $seal['y'], SEAL_W, SEAL_H],
+            ['nome' => $info['titular'] ?: $meta['nome'], 'motivo' => SIG_PARTY_LABELS[$p['role']] . ' · ' . kit_label($v['kind']) . ' v' . $v['version'], 'local' => 'Brasil',
+                'contato' => (string) (team_profile($u)['email'] ?? ''), 'campo' => SIG_PARTY_LABELS[$p['role']] . ' ' . $p['ord'] . ' · ' . $req['code']]);
+        if (!$out) {
+            return $err;
+        }
     }
-    if ($info['valido_ate'] && $info['valido_ate'] < now_str()) {
-        return 'O certificado está vencido.';
-    }
-    [$base, $seal, $meta, $req, $v, $c] = sig_lawyer_base($p, $u, $in, $info);
-    [$signed, $err] = pdfx_sign($base, $cert, $seal['pagina'] - 1, [$seal['x'], $seal['y'], SEAL_W, SEAL_H],
-        ['nome' => $info['titular'] ?: $meta['nome'], 'motivo' => 'Assinatura do escritório (contratada) · ' . kit_label($v['kind']) . ' v' . $v['version'], 'local' => 'Brasil',
-            'contato' => (string) (team_profile($u)['email'] ?? ''), 'campo' => 'Advogado ' . $req['code']]);
-    if (!$signed) {
-        return $err;
-    }
-    return sig_lawyer_finish($p, $u, $req, $v, $seal, $meta, $base, $signed, 'certificado_a1', $info);
+    return sig_team_finish($p, $u, $req, $prev, $out, $seal, $meta, $cert ? 'certificado_a1' : 'senha', $info);
 }
 
-/** Registra a assinatura do advogado e o PDF assinado. */
-function sig_lawyer_finish(array $p, array $u, array $req, array $v, array $seal, array $meta, string $base, string $signed, string $method, array $info): ?string
+/** A3: gera o PDF com o selo para assinar no token (guarda de qual versão partiu). [pdf, erro]. */
+function sig_team_prepare_a3(array $p, array $u, array $in): array
 {
-    $check = pdfx_signatures($signed);
-    $last = end($check);
-    if (!$last || !$last['integra']) {
-        return 'A assinatura digital não confere com o documento.';
+    [$ok, $why] = sig_party_check($p, $u);
+    if (!$ok) {
+        return [null, $why];
     }
-    $dir = sig_storage_dir();
-    $bf = $req['code'] . '-base.pdf';
-    $sf = $req['code'] . '-escritorio.pdf';
-    foreach ([[$bf, $base], [$sf, $signed]] as [$f, $bin]) {
-        @chmod($dir . '/' . $f, 0600);
-        file_put_contents($dir . '/' . $f, $bin);
-        @chmod($dir . '/' . $f, 0440);
+    $req = one('SELECT * FROM sig_requests WHERE id = ?', [$p['request_id']]);
+    [$pdf, $prev, $err] = sig_team_current($req);
+    if (!$pdf) {
+        return [null, $err];
     }
-    $pr = team_profile($u);
-    $ev = sig_party_evidence($u, $v, $seal, SIG_LAWYER_CONSENT, ['certificado' => $info, 'pdf_base_sha256' => hash('sha256', $base), 'pdf_assinado_sha256' => hash('sha256', $signed)]);
-    q('UPDATE sig_requests SET base_path = ?, base_sha256 = ?, signed_path = ?, signed_sha256 = ?, updated_at = ? WHERE id = ?', [$bf, hash('sha256', $base), $sf, hash('sha256', $signed), now_str(), $req['id']]);
-    q('UPDATE sig_parties SET name = ?, cpf = ?, seal = ?, strokes = ?, method = ?, cert_info = ?, evidence = ?, ip = ?, user_agent = ?, signed_at = ? WHERE id = ? AND signed_at IS NULL',
-        [$pr['nome_completo'], only_digits((string) $pr['cpf']), json_encode($seal + ['meta' => $meta], JSON_UNESCAPED_UNICODE), json_encode(team_signature($u)), $method,
-            json_encode($info, JSON_UNESCAPED_UNICODE), json_encode($ev, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), client_ip(), mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 400), now_str(), $p['id']]);
-    sig_log((string) $req['code'], 'advogado_assinou', ['nome' => $pr['nome_completo'], 'meio' => $method, 'certificado' => ['titular' => $info['titular'], 'cpf' => $info['cpf'] ? sig_fmt_cpf($info['cpf']) : null,
-        'emissor' => $info['emissor'], 'serie' => $info['serie'], 'sha256' => $info['sha256']], 'hash_pdf_assinado' => hash('sha256', $signed), 'selo' => $seal]);
-    add_event((int) $req['case_id'], 'assinatura', 'Advogado assinou com certificado digital: ' . kit_label($v['kind']), $info['titular'] . ' · ' . $info['emissor']);
-    sig_request_advance((int) $req['id']);
-    return null;
+    [$out, $seal, $meta] = sig_team_stamp($pdf, $p, $u, $req, $in, 'a3', team_cert($u));
+    file_put_contents(sig_storage_dir() . '/' . $req['code'] . '-a3-' . (int) $p['id'] . '.pdf', $out);
+    q('UPDATE sig_parties SET seal = ? WHERE id = ? AND signed_at IS NULL', [json_encode($seal + ['meta' => $meta, 'parte_de' => $prev], JSON_UNESCAPED_UNICODE), $p['id']]);
+    return [$out, null];
 }
 
 /**
- * Certificado A3 (token): o advogado baixa o PDF com os selos, assina no
- * assinador dele e devolve o arquivo. O sistema confere que é o mesmo PDF
- * (os bytes gerados ficam intactos no começo do arquivo), que a assinatura
- * confere e que o CPF do certificado é o do advogado.
+ * A3: recebe o PDF assinado no token. Confere que é o arquivo baixado (os bytes
+ * dele ficam intactos no começo), que a assinatura é íntegra e que o CPF do
+ * certificado é o do cadastro. Retorna erro ou null.
  */
-function sig_lawyer_upload(array $p, array $u, string $uploaded): ?string
+function sig_team_upload_a3(array $p, array $u, string $uploaded): ?string
 {
     [$ok, $why] = sig_party_check($p, $u);
     if (!$ok) {
@@ -582,13 +683,16 @@ function sig_lawyer_upload(array $p, array $u, string $uploaded): ?string
     }
     $pending = json_decode((string) $p['seal'], true) ?: [];
     $req = one('SELECT * FROM sig_requests WHERE id = ?', [$p['request_id']]);
-    $basePath = sig_storage_dir() . '/' . $req['code'] . '-base-a3.pdf';
-    if (!is_file($basePath) || empty($pending['meta'])) {
+    $path = sig_storage_dir() . '/' . $req['code'] . '-a3-' . (int) $p['id'] . '.pdf';
+    if (!is_file($path) || empty($pending['meta'])) {
         return 'Baixe primeiro o PDF para assinar com o token.';
     }
-    $base = (string) file_get_contents($basePath);
+    $base = (string) file_get_contents($path);
     if (!str_starts_with($uploaded, $base) || strlen($uploaded) <= strlen($base)) {
         return 'O arquivo enviado não é o PDF baixado para assinatura (ou não recebeu a assinatura).';
+    }
+    if (($pending['parte_de'] ?? '') !== $req['signed_sha256']) {
+        return 'Outra pessoa assinou enquanto isso. Baixe o PDF de novo e assine a versão atual.';
     }
     $sigs = pdfx_signatures($uploaded);
     $last = end($sigs);
@@ -600,23 +704,48 @@ function sig_lawyer_upload(array $p, array $u, string $uploaded): ?string
     if (empty($info['cpf']) || $info['cpf'] !== $cpf) {
         return 'O certificado usado não é o do seu CPF.';
     }
-    $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
-    $seal = array_diff_key($pending, ['meta' => 1]);
-    $meta = $pending['meta']; // o selo do PDF baixado é o que vale (já está desenhado nele)
-    return sig_lawyer_finish($p, $u, $req, $v, $seal, $meta, $base, $uploaded, 'certificado_externo', $info);
+    $seal = array_diff_key($pending, ['meta' => 1, 'parte_de' => 1]);
+    return sig_team_finish($p, $u, $req, (string) $pending['parte_de'], $uploaded, $seal, $pending['meta'], 'certificado_a3', $info);
 }
 
-/** Gera e guarda o PDF para o A3 (posição do selo fica reservada até o envio). */
-function sig_lawyer_prepare_a3(array $p, array $u, array $in): array
+/** Grava a nova versão do PDF (se ninguém assinou ao mesmo tempo) e registra a assinatura. */
+function sig_team_finish(array $p, array $u, array $req, string $prev, string $pdf, array $seal, array $meta, string $method, ?array $info): ?string
 {
-    [$ok, $why] = sig_party_check($p, $u);
-    if (!$ok) {
-        return [null, $why];
+    if ($info) {
+        $check = pdfx_signatures($pdf);
+        $last = end($check);
+        if (!$last || !$last['integra']) {
+            return 'A assinatura digital não confere com o documento.';
+        }
     }
-    [$base, $seal, $meta, $req] = sig_lawyer_base($p, $u, $in, json_decode((string) $u['cert_info'], true));
-    file_put_contents(sig_storage_dir() . '/' . $req['code'] . '-base-a3.pdf', $base);
-    q('UPDATE sig_parties SET seal = ? WHERE id = ? AND signed_at IS NULL', [json_encode($seal + ['meta' => $meta], JSON_UNESCAPED_UNICODE), $p['id']]);
-    return [$base, null];
+    $n = 1 + (int) scalar('SELECT COUNT(*) FROM sig_parties WHERE request_id = ? AND signed_at IS NOT NULL', [$req['id']]);
+    $file = $req['code'] . '-' . $n . '.pdf';
+    $path = sig_storage_dir() . '/' . $file;
+    @chmod($path, 0600);
+    file_put_contents($path, $pdf);
+    @chmod($path, 0440);
+    $sha = hash('sha256', $pdf);
+    $st = db()->prepare('UPDATE sig_requests SET signed_path = ?, signed_sha256 = ?, updated_at = ? WHERE id = ? AND signed_sha256 = ?');
+    $st->execute([$file, $sha, now_str(), $req['id'], $prev]);
+    if ($st->rowCount() !== 1) {
+        return 'Outra pessoa assinou ao mesmo tempo. Abra a página de novo e assine a versão atual.';
+    }
+    $v = one('SELECT * FROM case_artifact_versions WHERE id = ?', [$req['version_id']]);
+    $pr = team_profile($u);
+    $meio = ['senha' => 'senha do usuário confirmada no momento da assinatura', 'certificado_a1' => 'certificado digital A1', 'certificado_a3' => 'certificado digital A3 (token), assinado fora do sistema'][$method];
+    $ev = sig_party_evidence($u, $v, $seal, $p['role'] === 'testemunha' ? SIG_WITNESS_CONSENT : SIG_LAWYER_CONSENT,
+        ['meio' => $meio, 'certificado' => $info, 'pdf_anterior_sha256' => $prev, 'pdf_assinado_sha256' => $sha]);
+    q('UPDATE sig_parties SET name = ?, cpf = ?, seal = ?, strokes = ?, method = ?, cert_info = ?, evidence = ?, ip = ?, user_agent = ?, signed_at = ? WHERE id = ? AND signed_at IS NULL',
+        [$pr['nome_completo'], only_digits((string) $pr['cpf']), json_encode($seal + ['meta' => $meta], JSON_UNESCAPED_UNICODE), json_encode(team_signature($u)), $method,
+            $info ? json_encode($info, JSON_UNESCAPED_UNICODE) : null, json_encode($ev, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), client_ip(), mb_substr((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 400), now_str(), $p['id']]);
+    sig_log((string) $req['code'], $p['role'] === 'testemunha' ? 'testemunha_assinou' : 'advogado_assinou', ['ordem' => (int) $p['ord'], 'nome' => $pr['nome_completo'], 'cpf' => sig_fmt_cpf((string) $pr['cpf']),
+        'usuario' => (int) $u['id'], 'meio' => $method, 'certificado' => $info ? ['titular' => $info['titular'], 'cpf' => $info['cpf'] ? sig_fmt_cpf($info['cpf']) : null, 'emissor' => $info['emissor'], 'serie' => $info['serie'], 'sha256' => $info['sha256']] : null,
+        'hash_pdf' => $sha, 'selo' => $seal]);
+    add_event((int) $req['case_id'], 'assinatura', ($p['role'] === 'testemunha' ? 'Testemunha assinou: ' : 'Advogado assinou: ') . $pr['nome_completo'],
+        kit_label($v['kind']) . ' v' . $v['version'] . ' · ' . $meio . ' · selo na página ' . $seal['pagina'] . '.');
+    @unlink(sig_storage_dir() . '/' . $req['code'] . '-a3-' . (int) $p['id'] . '.pdf');
+    sig_request_advance((int) $req['id']);
+    return null;
 }
 
 /** Assinaturas que esperam o usuário (as que ele já pode fazer). */

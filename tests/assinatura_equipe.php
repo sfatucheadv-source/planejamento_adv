@@ -100,6 +100,17 @@ $mails = function () use ($tmp): array {
     return $out;
 };
 
+/** Assinatura com token (A3) simulada: baixa o PDF, assina "no token" e envia de volta. */
+$a3 = function (Http $h, int $pid, array $cert, ?array $selo = null) use (&$tmp): string {
+    $h->get('/painel/assinaturas/' . $pid);
+    $pdf = $h->post('/painel/assinaturas/' . $pid . '/pdf-a3', $selo ? ['selo' => json_encode($selo)] : []);
+    [$signed] = pdfx_sign($pdf, $cert, 0, [0, 0, 0, 0], ['nome' => 'token']);
+    file_put_contents($tmp . '/token-' . $pid . '.pdf', (string) $signed);
+    $h->get('/painel/assinaturas/' . $pid);
+    $h->post('/painel/assinaturas/' . $pid . '/a3', ['pdf' => new CURLFile($tmp . '/token-' . $pid . '.pdf', 'application/pdf', 'assinado.pdf')], true);
+    return $pdf;
+};
+
 echo "E1. Equipe: qualificação, rubrica e certificado\n";
 set_setting('mail_driver', 'arquivo');
 seed_templates();
@@ -130,7 +141,7 @@ $qual = fn(string $nome, string $cpf) => ['nome_completo' => $nome, 'nacionalida
 $hs = new Http($base);
 $hs->login('sidney@teste.local', $pw);
 $hs->get('/painel/conta');
-ok(str_contains($hs->html, 'Qualificação') && str_contains($hs->html, 'data-rubrica-pad') && str_contains($hs->html, 'Certificado digital'), 'Minha conta: qualificação, rubrica e certificado');
+ok(str_contains($hs->html, 'Qualificação') && str_contains($hs->html, 'data-rubrica-pad') && str_contains($hs->html, 'Como você assina'), 'Minha conta: qualificação, rubrica e certificado');
 $hs->post('/painel/conta/dados', $qual('Sidney Fatuche', '000.000.000-00'));
 ok(str_contains($hs->html, 'CPF inválido'), 'CPF inválido é recusado');
 $hs->post('/painel/conta/dados', ['oab' => 'PR 131.033', 'profissao' => 'advogado'] + $qual('Sidney Fatuche', $cpfS));
@@ -204,10 +215,14 @@ ok(($sd['selo']['pagina'] ?? 0) === $t1[0] && $sd['selo']['y'] < $t1[3] && str_c
 $ha->post('/painel/assinaturas/' . $parts[0]['id'] . '/assinar', ['selo' => json_encode($sd['selo'])]);
 ok(str_contains($ha->html, 'Marque a declaração'), 'sem a declaração, não assina');
 $ha->get('/painel/assinaturas/' . $parts[0]['id']);
-$ha->post('/painel/assinaturas/' . $parts[0]['id'] . '/assinar', ['aceite' => '1', 'selo' => json_encode(['pagina' => $sd['selo']['pagina'], 'x' => $sd['selo']['x'] + 3, 'y' => $sd['selo']['y'], 'largura_folha_px' => 800])]);
+ok(str_contains($ha->html, 'Você assina com: <strong>Senha do sistema') && str_contains($ha->html, 'name="senha"'), 'sem certificado: a testemunha assina com a senha do sistema');
+$ha->post('/painel/assinaturas/' . $parts[0]['id'] . '/assinar', ['aceite' => '1', 'senha' => 'errada', 'selo' => json_encode($sd['selo'])]);
+ok(str_contains($ha->html, 'Senha incorreta') && !one('SELECT signed_at FROM sig_parties WHERE id = ?', [$parts[0]['id']])['signed_at'], 'senha errada: não assina');
+$ha->get('/painel/assinaturas/' . $parts[0]['id']);
+$ha->post('/painel/assinaturas/' . $parts[0]['id'] . '/assinar', ['aceite' => '1', 'senha' => $pw, 'selo' => json_encode(['pagina' => $sd['selo']['pagina'], 'x' => $sd['selo']['x'] + 3, 'y' => $sd['selo']['y'], 'largura_folha_px' => 800])]);
 $p1 = one('SELECT * FROM sig_parties WHERE id = ?', [$parts[0]['id']]);
 $ev = json_decode((string) $p1['evidence'], true);
-ok($p1['signed_at'] && $p1['name'] === 'Ana Paula Ribeiro' && $p1['cpf'] === $cpfA && $p1['method'] === 'aprovacao_no_sistema' && str_contains($ev['usuario']['qualificacao'], 'CPF') && $ev['selo']['x'] == $sd['selo']['x'] + 3, 'testemunha 1 assinou: nome, CPF, qualificação, posição do selo e evidências');
+ok($p1['signed_at'] && $p1['name'] === 'Ana Paula Ribeiro' && $p1['cpf'] === $cpfA && $p1['method'] === 'senha' && str_contains($ev['meio'], 'senha') && str_contains($ev['usuario']['qualificacao'], 'CPF') && $ev['selo']['x'] == $sd['selo']['x'] + 3, 'testemunha 1 assinou: nome, CPF, qualificação, posição do selo e evidências');
 $blocked = function (string $sql): bool {
     try { q($sql); return false; } catch (Throwable $e) { return true; }
 };
@@ -219,16 +234,31 @@ preg_match('#id="selo-dados">(.*?)</script>#s', $hc->html, $sd2);
 $sd2 = json_decode($sd2[1] ?? '{}', true);
 $rect1 = [$ev['selo']['x'], $ev['selo']['y']];
 ok(!(($sd2['selo']['pagina'] ?? 0) === $ev['selo']['pagina'] && abs($sd2['selo']['x'] - $rect1[0]) < SEAL_W && abs($sd2['selo']['y'] - $rect1[1]) < SEAL_H), 'selo da testemunha 2 sugerido sem cobrir o da testemunha 1');
-$hc->post('/painel/assinaturas/' . $parts[1]['id'] . '/assinar', ['aceite' => '1', 'selo' => json_encode($sd2['selo'])]);
+// Carlos tem token (A3): cadastra pelo PDF de cadastro assinado no token
+$pfxC = cert_teste('CARLOS EDUARDO LIMA', $cpfC, 'tokenC');
+openssl_pkcs12_read($pfxC, $certC, 'tokenC');
+$hc->get('/painel/conta');
+ok(str_contains($hc->html, 'Certificado A3 (token ou cartão)') && str_contains($hc->html, 'PDF de cadastro'), 'Minha conta oferece o certificado A3 (token), com o PDF de cadastro');
+$cad = $hc->get('/painel/conta/certificado-a3/pdf');
+file_put_contents($tmp . '/cadastro.pdf', (string) pdfx_sign($cad, $certC, 0, [0, 0, 0, 0], ['nome' => 'Carlos'])[0]);
+$hc->get('/painel/conta');
+$hc->post('/painel/conta/certificado-a3', ['arquivo' => new CURLFile($tmp . '/cadastro.pdf', 'application/pdf', 'cadastro.pdf')], true);
+$cu = one('SELECT * FROM users WHERE id = ?', [$car]);
+ok(str_starts_with($cad, '%PDF') && team_sign_method($cu) === 'a3' && team_cert($cu)['cpf'] === $cpfC && !$cu['cert_path'], 'A3 cadastrado pelo PDF assinado no token: só o certificado público fica no sistema');
+$hc->get('/painel/assinaturas/' . $parts[1]['id']);
+ok(str_contains($hc->html, 'Certificado A3 (token ou cartão)') && str_contains($hc->html, 'Baixar o PDF para assinar no token') && str_contains($hc->html, 'TESTEMUNHA · CERTIFICADO ICP-BRASIL'), 'testemunha com token: baixa, assina no token e envia; selo indica o certificado');
+$a3($hc, (int) $parts[1]['id'], $certC, $sd2['selo']);
+$p2 = one('SELECT * FROM sig_parties WHERE id = ?', [$parts[1]['id']]);
 $req = one('SELECT * FROM sig_requests WHERE id = ?', [$req['id']]);
-ok($req['status'] === 'advogado' && str_contains((string) find_case($id)['next_action'], 'certificado digital'), 'testemunhas assinaram: vez do advogado');
+ok($p2['method'] === 'certificado_a3' && json_decode((string) $p2['cert_info'], true)['cpf'] === $cpfC, 'testemunha 2 assinou com o certificado A3');
+ok($req['status'] === 'advogado' && str_contains((string) find_case($id)['next_action'], 'Assinar pelo escritório'), 'testemunhas assinaram: vez do advogado');
 
 echo "\nE3. Advogado assina com o certificado A1\n";
 $hs->get('/painel/assinaturas');
-ok(str_contains($hs->html, 'Assinar com certificado'), 'o pedido aparece para o advogado');
+ok(str_contains($hs->html, 'Ver e assinar') && str_contains($hs->html, 'Advogado'), 'o pedido aparece para o advogado');
 $hs->get('/painel/assinaturas/' . $pS['id']);
-ok(str_contains($hs->html, 'SIDNEY FATUCHE') && str_contains($hs->html, 'senha_certificado') && str_contains($hs->html, 'certificado A3') && str_contains($hs->html, 'ASSINADO COM CERTIFICADO ICP-BRASIL'), 'tela do advogado: certificado cadastrado, senha e a opção A3');
-ok(substr_count($hs->html, 'TESTEMUNHA · ASSINADO ELETRONICAMENTE') === 2, 'os selos das testemunhas já aparecem no documento');
+ok(str_contains($hs->html, 'SIDNEY FATUCHE') && str_contains($hs->html, 'senha_certificado') && str_contains($hs->html, 'Certificado A1') && str_contains($hs->html, 'ASSINADO COM CERTIFICADO ICP-BRASIL'), 'tela do advogado: assina com o A1 cadastrado (senha do certificado)');
+ok(substr_count($hs->html, 'TESTEMUNHA · ') === 2, 'os selos das testemunhas já aparecem no documento');
 preg_match('#id="selo-dados">(.*?)</script>#s', $hs->html, $sd3);
 $sd3 = json_decode($sd3[1] ?? '{}', true);
 $hs->post('/painel/assinaturas/' . $pS['id'] . '/assinar', ['aceite' => '1', 'senha_certificado' => 'errada', 'selo' => json_encode($sd3['selo'])]);
@@ -238,7 +268,7 @@ $hs->post('/painel/assinaturas/' . $pS['id'] . '/assinar', ['aceite' => '1', 'se
 $req = one('SELECT * FROM sig_requests WHERE id = ?', [$req['id']]);
 $office = (string) @file_get_contents($tmp . '/assinados/' . $req['signed_path']);
 $ds = pdfx_signatures($office);
-ok($req['status'] === 'cliente' && $office !== '' && hash('sha256', $office) === $req['signed_sha256'] && count($ds) === 1 && $ds[0]['integra'] && $ds[0]['cobre_tudo'] && $ds[0]['certificado']['cpf'] === $cpfS, 'PDF do escritório assinado com o certificado (íntegro, cobre o arquivo, CPF do advogado)');
+ok($req['status'] === 'cliente' && $office !== '' && hash('sha256', $office) === $req['signed_sha256'] && count($ds) === 2 && $ds[0]['integra'] && $ds[1]['integra'] && $ds[0]['certificado']['cpf'] === $cpfC && $ds[1]['cobre_tudo'] && $ds[1]['certificado']['cpf'] === $cpfS, 'PDF do escritório com as duas assinaturas digitais (testemunha A3 e advogado A1), íntegras, em sequência');
 $ps = one('SELECT * FROM sig_parties WHERE id = ?', [$pS['id']]);
 ok($ps['method'] === 'certificado_a1' && json_decode((string) $ps['cert_info'], true)['cpf'] === $cpfS && (bool) one("SELECT 1 FROM sig_log WHERE code = ? AND event = 'advogado_assinou'", [$req['code']]), 'assinatura do advogado registrada com os dados do certificado e no histórico');
 $sigTxt = (string) shell_exec('pdfsig ' . escapeshellarg($tmp . '/assinados/' . $req['signed_path']) . ' 2>&1');
@@ -250,7 +280,7 @@ ok(str_contains($m, 'bruno@exemplo.com') && str_contains($m, 'Contrato de honor'
 
 echo "\nE4. Cliente assina por último\n";
 $cli->get('/cliente/documento-kit/' . $vh['id']);
-ok(str_contains($cli->html, 'data-abrir="assinar"') && substr_count($cli->html, 'TESTEMUNHA · ASSINADO ELETRONICAMENTE') === 2 && str_contains($cli->html, 'ASSINADO COM CERTIFICADO'), 'cliente vê os selos do escritório e agora pode assinar');
+ok(str_contains($cli->html, 'data-abrir="assinar"') && substr_count($cli->html, 'TESTEMUNHA · ') === 2 && str_contains($cli->html, 'ASSINADO COM CERTIFICADO'), 'cliente vê os selos do escritório e agora pode assinar');
 ok(str_contains($cli->html, '>Ana</text>') || str_contains($cli->html, 'Ana'), 'a faixa da prévia já lista quem assinou');
 preg_match('#id="assin-dados">(.*?)</script>#s', $cli->html, $cd0);
 $cd0 = json_decode($cd0[1] ?? '{}', true);
@@ -270,7 +300,7 @@ $final = $sig ? (string) file_get_contents($tmp . '/assinados/' . $sig['pdf_path
 ok(($j['ok'] ?? false) && $sig && $sig['code'] === $req['code'] && one('SELECT status FROM sig_requests WHERE id = ?', [$req['id']])['status'] === 'concluido', 'cliente assinou; o mesmo código de verificação do pedido');
 ok(str_starts_with($final, $office) && strlen($final) > strlen($office), 'o PDF do escritório fica intacto: selo e faixa do cliente acrescentados ao fim');
 $fs = pdfx_signatures($final);
-ok(count($fs) === 1 && $fs[0]['integra'] && !$fs[0]['cobre_tudo'], 'assinatura digital do advogado continua válida depois do acréscimo do cliente');
+ok(count($fs) === 2 && $fs[0]['integra'] && $fs[1]['integra'] && !$fs[1]['cobre_tudo'], 'assinaturas digitais continuam válidas depois do acréscimo do cliente');
 $txt = preg_replace('/\s+/', ' ', (string) shell_exec('pdftotext ' . escapeshellarg($tmp . '/assinados/' . $sig['pdf_path']) . ' - 2>/dev/null'));
 if ($txt !== ' ' && $txt !== '') {
     ok(str_contains($txt, 'Bruno Teste Souza') && str_contains($txt, 'Ana Paula Ribeiro') && str_contains($txt, 'Carlos Eduardo Lima') && str_contains($txt, 'Sidney Fatuche') && str_contains($txt, $sig['code']), 'faixa com o cliente, as testemunhas e o advogado, e o código');
@@ -286,13 +316,20 @@ echo "\nE5. Conferência pública com todos os assinantes\n";
 $pub = new Http($base);
 $pub->get('/verificar/' . $sig['code']);
 ok(str_contains($pub->html, 'Ana Paula Ribeiro') && str_contains($pub->html, 'Carlos Eduardo Lima') && str_contains($pub->html, 'Sidney Fatuche') && str_contains($pub->html, 'Bruno Teste Souza'), 'conferência mostra todos os assinantes');
-ok(str_contains($pub->html, 'Testemunha 1') && str_contains($pub->html, 'Certificado digital ICP-Brasil') && str_contains($pub->html, 'Assinatura digital íntegra') && !str_contains($pub->html, $cpfA), 'papel e meio de cada um; certificado conferido; CPFs mascarados');
-ok(str_contains($pub->html, 'Testemunha assinou') && str_contains($pub->html, 'Advogado assinou com certificado digital'), 'histórico com cada assinatura');
+ok(str_contains($pub->html, 'Testemunha 1') && str_contains($pub->html, 'Certificado digital A1 ICP-Brasil') && str_contains($pub->html, 'Certificado digital A3 (token) ICP-Brasil') && str_contains($pub->html, 'senha confirmada') && str_contains($pub->html, 'Assinatura digital íntegra') && !str_contains($pub->html, $cpfA), 'papel e meio de cada um; certificado conferido; CPFs mascarados');
+ok(str_contains($pub->html, 'Testemunha assinou') && str_contains($pub->html, 'Advogado assinou pelo escritório'), 'histórico com cada assinatura');
 $pub->get('/verificar/' . $sig['code']);
 $j = $pub->json('/verificar/' . $sig['code'] . '/conferir', ['hash' => hash('sha256', $final)]);
 ok(($j['resultado'] ?? '') === 'identica', 'a via final confere pelo hash');
 
-echo "\nE6. Certificado A3 (fora do sistema)\n";
+echo "\nE6. Advogado com certificado A3 (token)\n";
+// Sidney troca o A1 pelo token: cadastra enviando o certificado exportado (.cer)
+openssl_pkcs12_read($pfx, $certS, 'segredo123');
+file_put_contents($tmp . '/sidney.cer', base64_decode(preg_replace('/-----[^-]+-----|\s+/', '', $certS['cert'])));
+$hs->get('/painel/conta');
+$hs->post('/painel/conta/certificado-a3', ['arquivo' => new CURLFile($tmp . '/sidney.cer', 'application/pkix-cert', 'sidney.cer')], true);
+$su = one('SELECT * FROM users WHERE id = ?', [$sid]);
+ok(team_sign_method($su) === 'a3' && !$su['cert_path'] && !glob($tmp . '/certificados/u' . $sid . '-*'), 'A3 cadastrado pelo .cer exportado; o arquivo A1 anterior é apagado');
 $c2 = create_initial_case(['nome' => 'Dora', 'telefone' => '(41) 96666-2222', 'email' => 'dora@exemplo.com', 'adaptacao' => ''], 'site');
 foreach (['nome_completo' => 'Dora Lima', 'cpf' => cpf_valido('222333444')] as $k => $v) {
     set_field((int) $c2['id'], $k, $v, 'informado', 'contrato');
@@ -302,24 +339,46 @@ q("UPDATE case_artifact_versions SET status = 'publicado', published_at = ? WHER
 $v2 = kit_latest((int) $c2['id'], 'honorarios');
 $r2 = sig_request_open(find_case((int) $c2['id']), $v2);
 $pp2 = sig_parties((int) $r2['id']);
-foreach ([[$ha, $pp2[0]], [$hc, $pp2[1]]] as [$h, $pt]) {
-    $h->get('/painel/assinaturas/' . $pt['id']);
-    $h->post('/painel/assinaturas/' . $pt['id'] . '/assinar', ['aceite' => '1']);
-}
+$ha->get('/painel/assinaturas/' . $pp2[0]['id']);
+$ha->post('/painel/assinaturas/' . $pp2[0]['id'] . '/assinar', ['aceite' => '1', 'senha' => $pw]);
+$a3($hc, (int) $pp2[1]['id'], $certC);
 $hs->get('/painel/assinaturas/' . $pp2[2]['id']);
+ok(str_contains($hs->html, 'Baixar o PDF para assinar no token') && !str_contains($hs->html, 'senha_certificado'), 'tela do advogado com token: baixar, assinar e enviar');
 $baseA3 = $hs->post('/painel/assinaturas/' . $pp2[2]['id'] . '/pdf-a3', []);
-ok(str_starts_with($baseA3, '%PDF'), 'baixa o PDF com os selos para assinar no token');
-openssl_pkcs12_read($pfx, $certA3, 'segredo123');
-[$assinadoFora] = pdfx_sign($baseA3, $certA3, 0, [0, 0, 0, 0], ['nome' => 'Sidney (token)']);
-file_put_contents($tmp . '/fora.pdf', $assinadoFora);
-file_put_contents($tmp . '/outro.pdf', pdfx_sign(pdoc_pdf(sig_doc_layout($v2)), $certA3, 0, [0, 0, 0, 0], [])[0]);
+ok(str_starts_with($baseA3, '%PDF') && count(pdfx_signatures($baseA3)) === 1, 'baixa o PDF com o selo, já com a assinatura da testemunha A3');
+file_put_contents($tmp . '/outro.pdf', (string) pdfx_sign(pdoc_pdf(sig_doc_layout($v2)), $certS, 0, [0, 0, 0, 0], [])[0]);
 $hs->get('/painel/assinaturas/' . $pp2[2]['id']);
 $hs->post('/painel/assinaturas/' . $pp2[2]['id'] . '/a3', ['pdf' => new CURLFile($tmp . '/outro.pdf', 'application/pdf', 'outro.pdf')], true);
 ok(str_contains($hs->html, 'não é o PDF baixado'), 'PDF diferente do baixado: recusado');
+file_put_contents($tmp . '/fora.pdf', (string) pdfx_sign($baseA3, $certC, 0, [0, 0, 0, 0], [])[0]);
+$hs->get('/painel/assinaturas/' . $pp2[2]['id']);
+$hs->post('/painel/assinaturas/' . $pp2[2]['id'] . '/a3', ['pdf' => new CURLFile($tmp . '/fora.pdf', 'application/pdf', 'fora.pdf')], true);
+ok(str_contains($hs->html, 'não é o do seu CPF'), 'assinado com o token de outra pessoa: recusado');
+file_put_contents($tmp . '/fora.pdf', (string) pdfx_sign($baseA3, $certS, 0, [0, 0, 0, 0], [])[0]);
 $hs->get('/painel/assinaturas/' . $pp2[2]['id']);
 $hs->post('/painel/assinaturas/' . $pp2[2]['id'] . '/a3', ['pdf' => new CURLFile($tmp . '/fora.pdf', 'application/pdf', 'fora.pdf')], true);
 $r2 = one('SELECT * FROM sig_requests WHERE id = ?', [$r2['id']]);
-ok($r2['status'] === 'cliente' && one('SELECT method FROM sig_parties WHERE id = ?', [$pp2[2]['id']])['method'] === 'certificado_externo', 'PDF assinado com o token conferido (mesmo arquivo, assinatura íntegra, CPF do advogado): vai para o cliente');
+$fin2 = (string) file_get_contents($tmp . '/assinados/' . $r2['signed_path']);
+ok($r2['status'] === 'cliente' && one('SELECT method FROM sig_parties WHERE id = ?', [$pp2[2]['id']])['method'] === 'certificado_a3' && count(array_filter(pdfx_signatures($fin2), fn($x) => $x['integra'])) === 2, 'PDF assinado no token conferido (mesmo arquivo, íntegro, CPF do advogado): vai para o cliente');
+
+echo "\nE6b. Sem certificado: senha do sistema, para todos\n";
+$hc->get('/painel/conta');
+$hc->post('/painel/conta/certificado/remover', []);
+$hs->get('/painel/conta');
+$hs->post('/painel/conta/certificado/remover', []);
+ok(team_sign_method(one('SELECT * FROM users WHERE id = ?', [$car])) === 'senha' && team_sign_method(one('SELECT * FROM users WHERE id = ?', [$sid])) === 'senha', 'certificado removido: a pessoa passa a assinar com a senha');
+$c3 = create_initial_case(['nome' => 'Elias', 'telefone' => '(41) 95555-3333', 'email' => 'elias@exemplo.com', 'adaptacao' => ''], 'site');
+set_field((int) $c3['id'], 'nome_completo', 'Elias Rocha', 'informado', 'contrato');
+kit_generate(find_case((int) $c3['id']), 'honorarios');
+q("UPDATE case_artifact_versions SET status = 'publicado', published_at = ? WHERE case_id = ? AND kind = 'honorarios'", [now_str(), $c3['id']]);
+$r3 = sig_request_open(find_case((int) $c3['id']), kit_latest((int) $c3['id'], 'honorarios'));
+foreach (array_map(null, sig_parties((int) $r3['id']), [$ha, $hc, $hs]) as [$pt, $h]) {
+    $h->get('/painel/assinaturas/' . $pt['id']);
+    $h->post('/painel/assinaturas/' . $pt['id'] . '/assinar', ['aceite' => '1', 'senha' => $pw]);
+}
+$r3 = one('SELECT * FROM sig_requests WHERE id = ?', [$r3['id']]);
+$methods = array_column(sig_parties((int) $r3['id']), 'method');
+ok($r3['status'] === 'cliente' && $methods === ['senha', 'senha', 'senha'] && str_contains(implode('', array_map(fn($p) => (string) $p['seal'], sig_parties((int) $r3['id']))), 'ASSINADO ELETRONICAMENTE'), 'testemunhas e advogado sem certificado assinam com a senha; o documento vai para o cliente');
 
 echo "\nE7. Contratação formalizada com todos os documentos assinados\n";
 $cli->get('/cliente/documento-kit/' . $vp['id']);

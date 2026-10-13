@@ -16,8 +16,8 @@ $fuso = $ev['momento']['fuso'] ?? '-03:00';
 $events = ['assinatura_registrada' => 'Assinatura registrada e via em PDF guardada', 'via_enviada_email' => 'Via assinada enviada ao e-mail do assinante',
     'via_nao_enviada_email' => 'Tentativa de envio da via por e-mail sem sucesso', 'registro_legado' => 'Registro anterior à via em PDF: hashes do texto e do arquivo passam a ser exibidos separadamente',
     'divergencia_arquivo' => 'Divergência detectada no arquivo guardado', 'pedido_criado' => 'Documento enviado para as assinaturas do escritório',
-    'pedido_substituido' => 'Pedido substituído por nova versão do documento', 'testemunha_assinou' => 'Testemunha assinou (aprovação no sistema)',
-    'advogado_assinou' => 'Advogado assinou com certificado digital'];
+    'pedido_substituido' => 'Pedido substituído por nova versão do documento', 'testemunha_assinou' => 'Testemunha assinou', 'pdf_gerado' => 'PDF do documento gerado para as assinaturas',
+    'advogado_assinou' => 'Advogado assinou pelo escritório'];
 $cpfMask = fn(?string $c) => strlen((string) $c) === 11 ? '•••.' . substr($c, 3, 3) . '.' . substr($c, 6, 3) . '-••' : '';
 $quando = fn(?string $t) => $t ? dt($t)->format('d/m/Y \à\s H:i:s') : '';
 // assinantes: equipe (na ordem em que assinaram) e o cliente
@@ -27,7 +27,8 @@ foreach ($parties as $pt) {
         $ce = json_decode((string) $pt['cert_info'], true) ?: [];
         $pev = json_decode((string) $pt['evidence'], true) ?: [];
         $signers[] = ['nome' => $pt['name'], 'papel' => $pt['role'] === 'testemunha' ? 'Testemunha ' . $pt['ord'] : 'Advogado, pelo escritório (contratada)', 'cpf' => $pt['cpf'], 'em' => $pt['signed_at'],
-            'meio' => $pt['role'] === 'testemunha' ? 'Aprovação no sistema com o usuário da equipe' : 'Certificado digital' . (!empty($ce['icp_brasil']) ? ' ICP-Brasil' : '') . ($ce ? ' · ' . $ce['titular'] . ' · emitido por ' . $ce['emissor'] . ' · série ' . $ce['serie'] : ''),
+            'meio' => in_array($pt['method'], ['senha', 'aprovacao_no_sistema'], true) ? 'Assinatura eletrônica com o usuário da equipe e a senha confirmada no sistema'
+                : 'Certificado digital' . ($pt['method'] === 'certificado_a1' ? ' A1' : ' A3 (token)') . (!empty($ce['icp_brasil']) ? ' ICP-Brasil' : '') . ($ce ? ' · ' . $ce['titular'] . ' · emitido por ' . $ce['emissor'] . ' · série ' . $ce['serie'] : ''),
             'extra' => preg_replace('/,?\s*(CPF [\d.\-]+|e-mail [^,]+|telefone [^,]+|residente em .*)$/u', '', (string) ($pev['usuario']['qualificacao'] ?? ''))];
     }
 }

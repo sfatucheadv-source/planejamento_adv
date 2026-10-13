@@ -4,7 +4,8 @@ $u = current_user();
 $p = team_profile($u);
 $miss = team_profile_missing($u);
 $sig = team_signature($u);
-$cert = json_decode((string) ($u['cert_info'] ?? ''), true) ?: null;
+$cert = team_cert($u);
+$method = team_sign_method($u);
 $f = fn(string $k, string $type = 'text', string $extra = '') => '<label class="fld"><span>' . e(TEAM_PROFILE_FIELDS[$k]) . (in_array($k, TEAM_PROFILE_REQUIRED, true) ? '' : ' <small>(opcional)</small>') . '</span><input type="' . $type . '" name="' . $k . '" value="' . e((string) ($p[$k] ?? '')) . '"' . $extra . '></label>';
 ?>
 <div class="page-head"><div><h1>Minha conta</h1><p class="sub">Seus dados entram nas assinaturas que você faz pelo escritório (como testemunha ou advogado).</p></div></div>
@@ -44,20 +45,36 @@ $f = fn(string $k, string $type = 'text', string $extra = '') => '<label class="
 </section>
 
 <section class="box narrow-box" id="certificado">
-  <h2>Certificado digital (advogado)</h2>
+  <h2>Como você assina</h2>
+  <p class="ok-line">Agora: <strong><?= e(TEAM_SIGN_METHODS[$method]) ?></strong><?php if ($cert && $method !== 'senha'): ?> · <?= e($cert['titular']) ?><?= $cert['cpf'] ? ' · CPF ' . e(sig_fmt_cpf($cert['cpf'])) : '' ?> · <?= e($cert['emissor']) ?> · válido até <?= e(fmt_date((string) $cert['valido_ate'])) ?><?php endif ?></p>
+  <p class="hint">Quem tem certificado digital assina com ele; quem não tem assina com a senha do sistema, confirmada no momento da assinatura. O selo é o mesmo, com a sua rubrica.</p>
   <?php if ($cert): ?>
-    <p class="ok-line"><strong><?= e($cert['titular']) ?></strong><?= $cert['cpf'] ? ' · CPF ' . e(sig_fmt_cpf($cert['cpf'])) : '' ?> · <?= e($cert['emissor']) ?> · válido até <?= e(fmt_date((string) $cert['valido_ate'])) ?></p>
-    <form method="post" action="<?= e(url('painel/conta/certificado/remover')) ?>"><?= csrf_field() ?><button class="b b-ghost b-sm" type="submit">Remover do sistema</button></form>
+    <form method="post" action="<?= e(url('painel/conta/certificado/remover')) ?>"><?= csrf_field() ?><button class="b b-ghost b-sm" type="submit">Remover o certificado (passar a assinar com a senha)</button></form>
   <?php endif ?>
-  <p class="hint">Certificado A1 (arquivo .pfx ou .p12): fica guardado no servidor, protegido pela própria senha, que <strong>não é guardada</strong> — você a digita a cada assinatura. Com certificado A3 (token ou cartão), não é preciso cadastrar: na hora de assinar, baixe o PDF, assine no seu assinador e envie de volta.</p>
-  <form method="post" enctype="multipart/form-data" action="<?= e(url('painel/conta/certificado')) ?>" class="stack">
-    <?= csrf_field() ?>
-    <div class="row2">
-      <label class="fld"><span>Arquivo do certificado A1</span><input type="file" name="certificado" accept=".pfx,.p12,application/x-pkcs12" required></label>
-      <label class="fld"><span>Senha (só para conferir agora)</span><input type="password" name="senha" autocomplete="off" required></label>
-    </div>
-    <button class="b" type="submit"><?= $cert ? 'Trocar o certificado' : 'Cadastrar o certificado' ?></button>
-  </form>
+
+  <details class="at-inline" <?= $method === 'a3' || !$cert ? 'open' : '' ?>>
+    <summary>Certificado A3 (token ou cartão)</summary>
+    <p class="hint">A chave fica no token e nunca sai dele: o sistema guarda só o certificado público. Para assinar, você baixa o PDF, assina no assinador do token (Assinador SERPRO, Adobe ou outro) e envia de volta; o sistema confere que é o mesmo documento e o seu CPF.</p>
+    <p class="small"><strong>Cadastro:</strong> escolha um jeito — (a) baixe o <a href="<?= e(url('painel/conta/certificado-a3/pdf')) ?>">PDF de cadastro</a>, assine com o token e envie aqui; ou (b) envie o certificado exportado do token (.cer).</p>
+    <form method="post" enctype="multipart/form-data" action="<?= e(url('painel/conta/certificado-a3')) ?>" class="stack">
+      <?= csrf_field() ?>
+      <label class="fld"><span>PDF de cadastro assinado ou certificado (.cer, .crt, .pem)</span><input type="file" name="arquivo" accept="application/pdf,.pdf,.cer,.crt,.pem,.der" required></label>
+      <button class="b" type="submit"><?= $method === 'a3' ? 'Trocar o certificado A3' : 'Cadastrar o certificado A3' ?></button>
+    </form>
+  </details>
+
+  <details class="at-inline" <?= $method === 'a1' ? 'open' : '' ?>>
+    <summary>Certificado A1 (arquivo .pfx ou .p12)</summary>
+    <p class="hint">O arquivo fica guardado no servidor, protegido pela própria senha, que <strong>não é guardada</strong>: você a digita a cada assinatura, e o sistema assina na hora.</p>
+    <form method="post" enctype="multipart/form-data" action="<?= e(url('painel/conta/certificado')) ?>" class="stack">
+      <?= csrf_field() ?>
+      <div class="row2">
+        <label class="fld"><span>Arquivo do certificado A1</span><input type="file" name="certificado" accept=".pfx,.p12,application/x-pkcs12" required></label>
+        <label class="fld"><span>Senha (só para conferir agora)</span><input type="password" name="senha" autocomplete="off" required></label>
+      </div>
+      <button class="b" type="submit"><?= $method === 'a1' ? 'Trocar o certificado A1' : 'Cadastrar o certificado A1' ?></button>
+    </form>
+  </details>
 </section>
 
 <section class="box narrow-box">
