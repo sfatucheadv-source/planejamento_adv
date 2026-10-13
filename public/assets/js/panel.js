@@ -102,3 +102,46 @@
     });
   }
 })();
+
+/* Ficha do atendimento em abas. A âncora do endereço (#documentos, #doc-12,
+   #g-financiamento…) abre a aba que contém o alvo; sem JavaScript, tudo
+   aparece em sequência. */
+(function () {
+  'use strict';
+  var nav = document.querySelector('[data-ficha-abas]');
+  if (!nav) { return; }
+  var paineis = Array.prototype.slice.call(document.querySelectorAll('[data-aba-painel]'));
+  var links = Array.prototype.slice.call(nav.querySelectorAll('[data-aba]'));
+  document.documentElement.classList.add('fx-js');
+  function abrir(nome, alvo) {
+    var achou = false;
+    paineis.forEach(function (p) {
+      var on = p.getAttribute('data-aba-painel') === nome;
+      p.classList.toggle('is-on', on);
+      achou = achou || on;
+    });
+    if (!achou) { return false; }
+    links.forEach(function (a) {
+      var on = a.getAttribute('data-aba') === nome;
+      a.classList.toggle('is-on', on);
+      if (on) { a.setAttribute('aria-current', 'page'); } else { a.removeAttribute('aria-current'); }
+    });
+    if (alvo && alvo.tagName === 'DETAILS') { alvo.open = true; }
+    var el = alvo && !alvo.hasAttribute('data-aba-painel') ? alvo : null;
+    if (el) { setTimeout(function () { el.scrollIntoView({ block: 'start' }); }, 0); }
+    else { window.scrollTo(0, Math.min(window.scrollY, nav.offsetTop)); }
+    return true;
+  }
+  function pelaAncora() {
+    var h = decodeURIComponent((location.hash || '').slice(1));
+    if (!h) { return abrir('resumo'); }
+    var alvo = document.getElementById(h);
+    if (!alvo) { return abrir('resumo'); }
+    var painel = alvo.closest('[data-aba-painel]');
+    if (!painel) { abrir('resumo'); alvo.scrollIntoView({ block: 'start' }); return true; } // fora das abas (cabeçalho, conversa)
+    abrir(painel.getAttribute('data-aba-painel'), alvo);
+    return true;
+  }
+  window.addEventListener('hashchange', pelaAncora);
+  pelaAncora();
+})();

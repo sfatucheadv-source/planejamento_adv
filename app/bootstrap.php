@@ -34,6 +34,7 @@ require APP_DIR . '/inicial/ia.php';
 require APP_DIR . '/inicial/agente.php';
 require APP_DIR . '/inicial/agenda.php';
 require APP_DIR . '/inicial/drive.php';
+require APP_DIR . '/inicial/ficha.php';
 require APP_DIR . '/inicial/conversas.php';
 require APP_DIR . '/inicial/negociacao.php';
 require APP_DIR . '/inicial/kit.php';

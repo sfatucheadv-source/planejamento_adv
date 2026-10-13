@@ -534,11 +534,47 @@ function initial_panel_action(array $c, string $op): string
             $msg(kit_edit($c, (int) input('vid'), (string) ($_POST['content'] ?? '')), 'Minuta salva. Revise de novo antes de publicar.');
             return 'kit-' . input('kind');
         case 'kit_revisar':
-            $msg(kit_review($c, (int) input('vid')), 'Documento revisado.');
-            return 'kit-' . input('kind');
         case 'kit_publicar':
-            $msg(kit_publish($c, (int) input('vid')), 'Documento publicado para o cliente.');
+            // Versão final (revisada ou publicada): o .docx vai para a pasta do atendimento no Drive.
+            $err = $op === 'kit_revisar' ? kit_review($c, (int) input('vid')) : kit_publish($c, (int) input('vid'));
+            if (!$err && ($v = kit_version($c, (int) input('vid')))) {
+                after_response(fn() => drive_save_kit(find_case($id), $v));
+            }
+            $msg($err, ($op === 'kit_revisar' ? 'Versão final revisada.' : 'Documento publicado para o cliente.') . (drive_enabled() ? ' O .docx vai para a pasta do atendimento no Drive.' : ''));
             return 'kit-' . input('kind');
+
+        case 'doc_exigir':
+            $doc = one('SELECT * FROM documents WHERE id = ? AND case_id = ?', [(int) input('doc_id'), $id]);
+            if ($doc) {
+                $on = input('essential') === '1';
+                q('UPDATE documents SET essential = ? WHERE id = ?', [$on ? 1 : 0, $doc['id']]);
+                add_event($id, 'documento', ($on ? 'Passou a ser exigido: ' : 'Deixou de ser exigido: ') . $doc['label']);
+                bump_case($id, []);
+                flash('ok', $doc['label'] . ($on ? ': exigido.' : ': opcional.'));
+            }
+            return 'documentos';
+
+        case 'pedir_dados':
+            $keys = array_values(array_intersect(critical_missing($id), (array) ($_POST['keys'] ?? [])));
+            if (!$keys) {
+                flash('error', 'Marque o que quer perguntar.');
+                return 'resumo';
+            }
+            chat_post($id, 'operator', critical_question($c, $keys));
+            set_next($id, 'Aguardar dados do cliente: ' . implode(', ', array_map(fn($k) => mb_strtolower(field_def($k)['label']), array_slice($keys, 0, 4))), in_business_days(1), in_business_days(2));
+            add_event($id, 'pendencia', 'Pedido de dados ao cliente pela conversa do site', implode(', ', array_map(fn($k) => field_def($k)['label'], $keys)) . '.');
+            flash('ok', 'Pergunta enviada na conversa do site. O cliente recebe o aviso por e-mail.');
+            return 'resumo';
+
+        case 'contexto_ia':
+            $r = case_context_refresh($id);
+            flash($r ? 'ok' : 'error', $r ? 'Contexto do caso atualizado.' : 'Não foi possível atualizar com a IA agora.');
+            return 'resumo';
+
+        case 'ia_sugerir':
+            [$done, $err] = analysis_ai_suggest($id);
+            flash($err ? 'error' : 'ok', $err ?: 'A IA sugeriu ' . plural(count($done), 'campo', 'campos') . ' (marcados “IA · conferir”). Revise antes de validar.');
+            return 'analise';
         case 'kit_na':
             $msg(kit_not_applicable($c, (string) input('kind'), (string) input('reason')), 'Marcado como não aplicável.');
             return 'kit-' . input('kind');

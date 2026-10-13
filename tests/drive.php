@@ -110,6 +110,29 @@ ok($n2 === 0 && $drive['patch'] === 1 && count($drive['files']) === 2 && str_con
 $b = create_initial_case(['nome' => 'Bruno Teste', 'telefone' => '(41) 92222-2222', 'email' => 'b@t.local', 'adaptacao' => ''], 'site');
 drive_sync_case((int) $b['id']);
 ok(count($drive['folders']) === 4 && end($drive['folders'])['parent'] === $f[1]['id'], 'outro atendimento: só cria a pasta dele, reaproveitando “Atendimentos Site”');
+
+echo "\nR3. Painel do caso: variáveis críticas e pergunta ao cliente\n";
+$miss = critical_missing($id);
+ok(in_array('cpf', $miss, true) && in_array('cep', $miss, true) && !in_array('banco', $miss, true) && !in_array('veiculo_placa', $miss, true), 'pendentes: CPF e endereço; banco e placa já informados');
+$st = critical_status($id);
+ok(isset($st['Qualificação'], $st['Endereço'], $st['Financiamento e veículo'], $st['Para a análise']), 'grupos: qualificação, endereço, financiamento e análise');
+$q = critical_question(find_case($id), ['cpf', 'estado_civil', 'cep']);
+ok(str_starts_with($q, 'Olá, Thais! Aqui é Sidney Fatuche.') && str_contains($q, "• CPF\n• estado civil\n• CEP") && str_contains($q, find_case($id)['protocol']), 'uma única mensagem com tudo o que falta');
+ok(str_contains(whatsapp_link($q, '41911111111'), 'https://wa.me/5541911111111?text='), 'link do WhatsApp com a pergunta pronta');
+set_field($id, 'cpf', '52998224725', 'informado', 'cliente');
+ok(!in_array('cpf', critical_missing($id), true), 'informado o CPF, sai da lista');
+ok(analysis_ai_suggest($id)[1] !== null, 'sem IA ligada, a sugestão da análise avisa e não preenche nada');
+
+echo "\nR4. Versão final do documento no Drive (.docx)\n";
+$v = ['id' => 77, 'kind' => 'procuracao', 'version' => 3, 'content' => "# PROCURAÇÃO\n\nOutorgante: Thais Ribeiro Lima."];
+[$did, $err] = drive_save_kit(find_case($id), $v);
+$arq = $drive['files'][$did] ?? null;
+ok($err === null && $arq && $arq['name'] === 'Procuração - ' . $prot . ' - v3.docx' && $arq['parent'] === $f[2]['id'], 'Procuração v3 gravada como .docx na pasta do atendimento');
+ok($arq && str_contains($arq['raw'], 'wordprocessingml') && str_contains($arq['raw'], 'PK'), 'arquivo é um .docx de verdade');
+$antes = count($drive['files']);
+drive_save_kit(find_case($id), $v);
+ok(count($drive['files']) === $antes, 'a mesma versão não é gravada duas vezes');
+
 set_setting('drive_off', '1');
 ok(!drive_enabled(), 'gravação no Drive pode ser desligada');
 

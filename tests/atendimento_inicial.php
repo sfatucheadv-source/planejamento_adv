@@ -536,5 +536,20 @@ ok(str_contains($sid->html, 'Maria Teste') === false || true, 'pesquisa por núm
 $sid->get('/painel/atendimentos?q=' . urlencode($c3['protocol']));
 ok(str_contains($sid->html, 'João Desistente'), 'pesquisa por protocolo');
 
+echo "\nT30. Ficha em abas: painel do caso, documentos e pedido de dados\n";
+$sid->get('/painel/atendimento/' . $c3['id']);
+ok(str_contains($sid->html, 'data-ficha-abas') && str_contains($sid->html, 'data-aba-painel="resumo"') && str_contains($sid->html, 'data-aba-painel="kit"') && str_contains($sid->html, 'data-aba-painel="mais"'), 'ficha em abas: resumo, dados, documentos, análise, reunião, kit e gestão');
+ok(str_contains($sid->html, 'Dados para a qualificação, a procuração e o contrato') && str_contains($sid->html, 'Perguntar pelo WhatsApp') && str_contains($sid->html, 'Perguntar na conversa do site'), 'painel mostra as variáveis críticas pendentes e as duas formas de perguntar');
+$d3 = (int) scalar("SELECT id FROM documents WHERE case_id = ? AND status <> 'dispensado' ORDER BY id LIMIT 1", [$c3['id']]);
+$ess = (int) scalar('SELECT essential FROM documents WHERE id = ?', [$d3]);
+op($sid, (int) $c3['id'], ['op' => 'doc_exigir', 'doc_id' => (string) $d3, 'essential' => $ess ? '0' : '1']);
+ok((int) scalar('SELECT essential FROM documents WHERE id = ?', [$d3]) === ($ess ? 0 : 1), 'documento passa de exigido a opcional (e volta) com um clique');
+op($sid, (int) $c3['id'], ['op' => 'doc_conferir', 'doc_id' => (string) $d3, 'status' => 'dispensado', 'essential' => '0']);
+$sid->get('/painel/atendimento/' . $c3['id']);
+ok(scalar('SELECT status FROM documents WHERE id = ?', [$d3]) === 'dispensado' && str_contains($sid->html, 'Removidos do checklist (1)'), 'documento removido do checklist fica em “Removidos”, com opção de voltar a pedir');
+$falta3 = critical_missing((int) $c3['id']);
+op($sid, (int) $c3['id'], ['op' => 'pedir_dados', 'keys' => array_slice($falta3, 0, 3)]);
+ok((bool) scalar("SELECT 1 FROM chat_messages WHERE case_id = ? AND author = 'operator' AND body LIKE '%só falta confirmar:%'", [$c3['id']]), 'pergunta com os dados que faltam vai para a conversa do site');
+
 echo "\n" . ($fails ? "FALHAS: $fails" : 'TUDO OK') . " · $passes verificações aprovadas\n";
 exit($fails ? 1 : 0);

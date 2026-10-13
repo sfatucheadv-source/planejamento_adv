@@ -125,16 +125,86 @@ if ($P && $N) {
 
 <?php if ($c['archived_at']): ?><p class="warn-line">Atendimento arquivado em <?= e(fmt_datetime($c['archived_at'])) ?>: não aparece nas listas do escritório.</p><?php endif ?>
 
-<nav class="at-blocks" aria-label="Blocos da ficha">
-  <a href="#dados">1 · Dados e contexto</a><a href="#documentos">2 · Documentos</a><a href="#analise">3 · Análise e proposta</a><a href="#reuniao">4 · Reunião</a><a href="#kit">5 · Kit e decisão</a><a href="#conversa">Conversa</a>
+<?php
+$crit = critical_status($id);
+$critMiss = critical_missing($id);
+$pct = agent_progress_pct($id);
+$docsAtivos = array_filter($docs, fn($d) => $d['status'] !== 'dispensado');
+$docsOk = count(array_filter($docsAtivos, fn($d) => in_array($d['status'], ['recebido', 'conferido'], true)));
+$ctx = (array) case_data($c, 'contexto_ia', []);
+$prop = proposal_get($id);
+$abaN = ['resumo' => 'Resumo', 'dados' => 'Dados', 'documentos' => 'Documentos', 'analise' => 'Análise e proposta', 'reuniao' => 'Reunião', 'kit' => 'Kit e decisão', 'mais' => 'Arquivo e gestão'];
+$abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - $docsOk];
+?>
+<nav class="fx-abas" data-ficha-abas aria-label="Áreas do atendimento">
+  <?php foreach ($abaN as $k => $l): ?><a href="#<?= $k ?>" data-aba="<?= $k ?>"><?= e($l) ?><?php if (!empty($abaBadge[$k])): ?> <span class="fx-badge"><?= (int) $abaBadge[$k] ?></span><?php endif ?></a><?php endforeach ?>
 </nav>
 
 <div class="grid-main-side at-grid">
 <div>
 
+<!-- Resumo: painel do caso -->
+<section class="fx-aba" id="resumo" data-aba-painel="resumo" aria-label="Resumo do caso">
+  <div class="fx-kpis">
+    <div class="fx-kpi"><span>Coleta</span><strong><?= $pct ?>%</strong><i class="fx-bar"><b style="width: <?= $pct ?>%"></b></i><small><?= $c['intake_done_at'] ? 'resumo confirmado pelo cliente' : ($pct >= MEETING_UNLOCK_PCT ? 'agendamento liberado' : 'em andamento') ?></small></div>
+    <div class="fx-kpi"><span>Documentos</span><strong><?= $docsOk ?>/<?= count($docsAtivos) ?></strong><small><?= count($docsAtivos) - $docsOk ? (count($docsAtivos) - $docsOk) . ' faltando' : 'todos recebidos' ?></small></div>
+    <div class="fx-kpi"><span>Reunião</span><strong><?= $meeting ? e(fmt_when(dt($meeting['starts_at']))) : '—' ?></strong><small><?= $meeting ? e(MEETING_CHANNELS[$meeting['channel']]['short']) : 'não marcada' ?></small></div>
+    <div class="fx-kpi"><span>Proposta</span><strong><?= $prop ? e(brl(proposal_totals($prop['data'])['total'])) : '—' ?></strong><small><a href="<?= e(url('painel/propostas/' . $id)) ?>"><?= $prop ? 'ver proposta' : 'montar proposta' ?></a></small></div>
+    <?php if ($cap = case_data($c, 'capacidade')): ?><div class="fx-kpi fx-cap-<?= e($cap['nivel']) ?>" title="<?= e((string) ($cap['obs'] ?? '')) ?>"><span>Capacidade</span><strong><?= e(CAPACITY_LEVELS[$cap['nivel']] ?? $cap['nivel']) ?></strong><small>anotação interna</small></div><?php endif ?>
+  </div>
+
+  <div class="fx-card">
+    <div class="fx-card-head"><h2>Contexto do caso</h2>
+      <?php if (llm_enabled()): ?><?= $form('contexto_ia', 'resumo', false, 'inline-form') ?><button class="b b-xs" type="submit"><?= $ctx ? 'Atualizar com IA' : 'Montar com IA' ?></button></form><?php endif ?></div>
+    <p class="fx-ctx"><?= nl2br(e(!empty($ctx['contexto']) ? $ctx['contexto'] : case_story($id))) ?></p>
+    <?php if (!empty($ctx['necessidades']) || !empty($ctx['relevante'])): ?>
+      <div class="fx-2col">
+        <?php if (!empty($ctx['necessidades'])): ?><div><h3>Principais necessidades</h3><ul><?php foreach ($ctx['necessidades'] as $n): ?><li><?= e($n) ?></li><?php endforeach ?></ul></div><?php endif ?>
+        <?php if (!empty($ctx['relevante'])): ?><div><h3>Pontos relevantes</h3><ul><?php foreach ($ctx['relevante'] as $n): ?><li><?= e($n) ?></li><?php endforeach ?></ul></div><?php endif ?>
+      </div>
+    <?php endif ?>
+  </div>
+
+  <div class="fx-card" id="criticas">
+    <div class="fx-card-head"><h2>Dados para a qualificação, a procuração e o contrato</h2><span class="hint"><?= $critMiss ? count($critMiss) . ' pendente(s)' : 'tudo informado' ?></span></div>
+    <div class="fx-crit">
+      <?php foreach ($crit as $g => $items): $faltam = array_filter($items, fn($it) => !$it['ok']); ?>
+        <div class="fx-crit-g <?= $faltam ? 'is-falta' : 'is-ok' ?>">
+          <h3><?= $faltam ? '•' : '✓' ?> <?= e($g) ?></h3>
+          <ul><?php foreach ($items as $it): ?><li class="<?= $it['ok'] ? 'ok' : 'falta' ?>"><span><?= e($it['label']) ?></span><b><?= $it['ok'] ? e(field_display($it['key'], $it['row'])) . ' ' . $src($it['key']) : 'falta' ?></b></li><?php endforeach ?></ul>
+        </div>
+      <?php endforeach ?>
+    </div>
+    <?php if ($critMiss): $pergunta = critical_question($c, $critMiss); ?>
+      <div class="fx-crit-acoes">
+        <details class="fx-sanar">
+          <summary class="b b-xs b-primary">Preencher agora</summary>
+          <?= $form('dados', 'resumo') ?>
+            <div class="at-fields"><?php foreach ($critMiss as $k): ?><div class="at-field"><?= $input($k, false) ?></div><?php endforeach ?></div>
+            <div class="inline-form">
+              <label class="fld fld-s"><span>Origem</span><select name="source"><option value="cliente">Cliente (telefone/WhatsApp)</option><option value="contrato">Conferido no documento</option><option value="sidney">Sidney</option></select></label>
+              <button class="b b-primary" type="submit">Salvar</button>
+            </div>
+          </form>
+        </details>
+        <?php if ($c['client_phone']): ?><a class="b b-xs fx-wa" href="<?= e(whatsapp_link($pergunta, (string) $c['client_phone'])) ?>" target="_blank" rel="noopener">Perguntar pelo WhatsApp</a><?php endif ?>
+        <?= $form('pedir_dados', 'resumo', false, 'inline-form') ?><?php foreach ($critMiss as $k): ?><input type="hidden" name="keys[]" value="<?= e($k) ?>"><?php endforeach ?><button class="b b-xs" type="submit">Perguntar na conversa do site</button></form>
+      </div>
+      <details class="fx-msg"><summary class="small">Ver a mensagem que vai para o cliente</summary><pre><?= e($pergunta) ?></pre></details>
+    <?php endif ?>
+  </div>
+
+  <div class="fx-card">
+    <div class="fx-card-head"><h2>Pendências</h2><a class="hint" href="#documentos">ver documentos</a></div>
+    <?php if (!$open): ?><p class="empty">Nenhuma pendência aberta.</p><?php else: ?>
+      <ul class="fx-pend"><?php foreach ($open as $p): ?><li><span class="tag <?= $p['essential'] ? 'tag-red' : 'tag-gray' ?>"><?= $p['essential'] ? 'exigido' : 'opcional' ?></span> <?= e($p['description']) ?></li><?php endforeach ?></ul>
+    <?php endif ?>
+  </div>
+</section>
+
 <!-- 1 · Dados e contexto -->
-<section class="box at-block" id="dados" aria-labelledby="h-dados">
-  <div class="box-head"><h2 id="h-dados">1 · Dados e contexto</h2><span class="hint">Coleta <?= $c['intake_done_at'] ? 'concluída pelo cliente em ' . e(fmt_date($c['intake_done_at'])) : 'em andamento' ?></span></div>
+<section class="box at-block fx-aba" data-aba-painel="dados" id="dados" aria-labelledby="h-dados">
+  <div class="box-head"><h2 id="h-dados">Dados e contexto</h2><span class="hint">Coleta <?= $c['intake_done_at'] ? 'concluída pelo cliente em ' . e(fmt_date($c['intake_done_at'])) : 'em andamento' ?></span></div>
 
   <?php if ($cap = case_data($c, 'capacidade')): ?>
     <p class="at-cap at-cap-<?= e($cap['nivel']) ?>" title="Anotação interna do assistente; o cliente não vê"><span>Capacidade de contratação</span> <strong><?= e(CAPACITY_LEVELS[$cap['nivel']] ?? $cap['nivel']) ?></strong><?= $cap['obs'] ? ' <small>' . e($cap['obs']) . '</small>' : '' ?></p>
@@ -199,58 +269,61 @@ if ($P && $N) {
 </section>
 
 <!-- 2 · Documentos -->
-<section class="box at-block" id="documentos" aria-labelledby="h-docs">
-  <div class="box-head"><h2 id="h-docs">2 · Documentos e pendências</h2>
+<section class="box at-block fx-aba" data-aba-painel="documentos" id="documentos" aria-labelledby="h-docs">
+  <div class="box-head"><h2 id="h-docs">Documentos</h2>
     <span class="hint"><?= $c['sufficiency_at'] ? 'Suficiência aprovada em ' . e(fmt_date($c['sufficiency_at'])) : 'Suficiência ainda não aprovada' ?></span></div>
-  <div class="tbl-wrap">
-    <table class="tbl tbl-compact at-docs">
-      <thead><tr><th>Documento</th><th>Situação</th><th>Arquivos</th><th>Conferência</th></tr></thead>
-      <tbody>
-      <?php foreach ($docs as $d): $tone = DOC_STATUS[$d['status']]['tone'] ?? ''; ?>
-        <tr id="doc-<?= (int) $d['id'] ?>">
-          <td><strong><?= e($d['label']) ?></strong><br><span class="tag <?= $d['essential'] ? 'tag-red' : 'tag-gray' ?>"><?= $d['essential'] ? 'essencial' : 'pontual' ?></span><?= $d['origin'] && !in_array($d['origin'], ['checklist'], true) ? ' <small>' . e($d['origin']) . '</small>' : '' ?></td>
-          <td><span class="tag tag-<?= ['ok' => 'green', 'warn' => 'amber', 'info' => 'blue', 'muted' => 'gray'][$tone] ?? 'gray' ?>"><?= e(DOC_STATUS[$d['status']]['label'] ?? $d['status']) ?></span><?= $d['reject_reason'] ? '<br><small>' . e($d['reject_reason']) . '</small>' : '' ?></td>
-          <td><?php foreach ($filesByDoc[(int) $d['id']] ?? [] as $f): ?><a class="file-line" href="<?= e(url('arquivo/' . $f['id'])) ?>" target="_blank" rel="noopener"><?= e($f['original_name']) ?></a><small><?= $f['uploaded_by_client'] ? 'cliente' : 'Sidney' ?> · <?= e(fmt_date($f['uploaded_at'])) ?></small><br><?php endforeach ?>
-            <?php if (llm_enabled() && !empty($filesByDoc[(int) $d['id']])): ?>
-              <?= $form('ia_extrair', '', false, 'inline-form') ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><button class="b b-xs" type="submit">Ler com IA</button></form>
-            <?php endif ?>
-            <details><summary class="small">Registrar arquivo obtido</summary>
-              <?= $form('doc_upload', '', true) ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" required><input name="origin" placeholder="Origem (ex.: enviado pelo banco)"><button class="b b-xs" type="submit">Registrar</button></form>
-            </details>
-          </td>
-          <td>
-            <?= $form('doc_conferir', '', false, 'mini-form') ?>
-              <input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>">
-              <select name="status" aria-label="Situação de <?= e($d['label']) ?>">
-                <?php foreach (['conferido' => 'Conferido', 'pendencia' => 'Rejeitar · reenviar', 'falta' => 'Falta', 'ajuda' => 'Vamos ajudar a obter', 'dispensado' => 'Não se aplica'] as $k => $l): ?>
-                  <option value="<?= $k ?>" <?= selected($k, $d['status'] === 'recebido' ? 'conferido' : $d['status']) ?>><?= $l ?></option>
-                <?php endforeach ?>
-              </select>
-              <input name="reason" placeholder="Motivo, se rejeitar" value="<?= e((string) $d['reject_reason']) ?>">
-              <label class="chk"><input type="checkbox" name="essential" value="1" <?= checked((bool) $d['essential']) ?>> essencial</label>
-              <button class="b b-xs" type="submit">Salvar</button>
-            </form>
-          </td>
-        </tr>
+  <ul class="fd-lista">
+    <?php foreach ($docsAtivos as $d): $arqs = $filesByDoc[(int) $d['id']] ?? []; $ok = in_array($d['status'], ['recebido', 'conferido'], true); $tone = DOC_STATUS[$d['status']]['tone'] ?? ''; ?>
+      <li class="fd-item is-<?= $ok ? 'ok' : ($d['status'] === 'pendencia' ? 'reenviar' : 'falta') ?>" id="doc-<?= (int) $d['id'] ?>">
+        <span class="fd-ico" aria-hidden="true"><?= $ok ? '✓' : '•' ?></span>
+        <div class="fd-nome">
+          <strong><?= e($d['label']) ?></strong>
+          <small>
+            <span class="tag tag-<?= ['ok' => 'green', 'warn' => 'amber', 'info' => 'blue', 'muted' => 'gray'][$tone] ?? 'gray' ?>"><?= e(DOC_STATUS[$d['status']]['label'] ?? $d['status']) ?></span>
+            <?= $d['reject_reason'] ? e($d['reject_reason']) . ' · ' : '' ?>
+            <?php foreach ($arqs as $f): ?><a href="<?= e(url('arquivo/' . $f['id'])) ?>" target="_blank" rel="noopener"><?= e(mb_strimwidth($f['original_name'], 0, 40, '…')) ?></a> <span class="muted"><?= $f['uploaded_by_client'] ? 'cliente' : 'Sidney' ?> · <?= e(fmt_date($f['uploaded_at'])) ?></span> <?php endforeach ?>
+          </small>
+        </div>
+        <div class="fd-acoes">
+          <?= $form('doc_exigir', 'documentos', false, 'inline-form') ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><input type="hidden" name="essential" value="<?= $d['essential'] ? '0' : '1' ?>"><button class="fd-exige <?= $d['essential'] ? 'is-on' : '' ?>" type="submit" title="<?= $d['essential'] ? 'Exigido: clique para tornar opcional' : 'Opcional: clique para exigir' ?>"><?= $d['essential'] ? 'Exigido' : 'Opcional' ?></button></form>
+          <?php if ($d['status'] === 'recebido'): ?>
+            <?= $form('doc_conferir', '', false, 'inline-form') ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><input type="hidden" name="status" value="conferido"><input type="hidden" name="essential" value="<?= (int) $d['essential'] ?>"><button class="b b-xs b-primary" type="submit">Conferido</button></form>
+          <?php endif ?>
+          <?php if (llm_enabled() && $arqs): ?>
+            <?= $form('ia_extrair', '', false, 'inline-form') ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><button class="b b-xs" type="submit" title="Ler de novo e preencher a ficha">Ler com IA</button></form>
+          <?php endif ?>
+          <details class="fd-mais">
+            <summary class="b b-xs" aria-label="Mais ações">⋯</summary>
+            <div class="fd-menu">
+              <?= $form('doc_upload', '', true) ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><label class="fld"><span>Anexar arquivo obtido</span><input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" required></label><input name="origin" placeholder="Origem (ex.: enviado pelo banco)"><button class="b b-xs" type="submit">Anexar</button></form>
+              <?php if ($arqs): ?>
+                <?= $form('doc_conferir', '') ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><input type="hidden" name="status" value="pendencia"><input type="hidden" name="essential" value="<?= (int) $d['essential'] ?>"><label class="fld"><span>Pedir de novo ao cliente</span><input name="reason" placeholder="Por quê? (ex.: foto cortada)" required></label><button class="b b-xs" type="submit">Pedir reenvio</button></form>
+              <?php endif ?>
+              <?= $form('doc_conferir', 'documentos', false, 'inline-form') ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><input type="hidden" name="status" value="dispensado"><input type="hidden" name="essential" value="0"><button class="b b-xs b-danger" type="submit">Remover do checklist</button></form>
+            </div>
+          </details>
+        </div>
+      </li>
+    <?php endforeach ?>
+  </ul>
+  <?php $removidos = array_filter($docs, fn($d) => $d['status'] === 'dispensado'); if ($removidos): ?>
+    <details class="at-inline"><summary>Removidos do checklist (<?= count($removidos) ?>)</summary>
+      <?php foreach ($removidos as $d): ?>
+        <?= $form('doc_conferir', 'documentos', false, 'inline-form') ?><input type="hidden" name="doc_id" value="<?= (int) $d['id'] ?>"><input type="hidden" name="status" value="falta"><input type="hidden" name="essential" value="0"><span><?= e($d['label']) ?></span> <button class="b b-xs" type="submit">Voltar a pedir</button></form>
       <?php endforeach ?>
-      </tbody>
-    </table>
-  </div>
-  <details class="at-inline">
-    <summary>Incluir documento no checklist</summary>
-    <?= $form('doc_add', 'documentos', false, 'inline-form') ?>
-      <select name="kind"><option value="">Outro (descreva)</option><?php foreach (DOC_CATALOG as $k => $d): ?><option value="<?= e($k) ?>"><?= e($d['label']) ?></option><?php endforeach ?></select>
-      <input name="label" placeholder="Descrição, se “outro”">
-      <label class="chk"><input type="checkbox" name="essential" value="1"> essencial</label>
-      <button class="b b-xs" type="submit">Incluir</button>
-    </form>
-  </details>
+    </details>
+  <?php endif ?>
+  <?= $form('doc_add', 'documentos', false, 'inline-form fd-add') ?>
+    <select name="kind" aria-label="Documento a incluir"><option value="">Incluir documento…</option><?php foreach (DOC_CATALOG as $k => $dc): if (array_filter($docs, fn($x) => $x['kind'] === $k && $x['status'] !== 'dispensado')) { continue; } ?><option value="<?= e($k) ?>"><?= e($dc['label']) ?></option><?php endforeach ?><option value="">Outro (descreva ao lado)</option></select>
+    <input name="label" placeholder="Descrição, se for outro">
+    <label class="chk"><input type="checkbox" name="essential" value="1"> exigido</label>
+    <button class="b b-xs" type="submit">Incluir</button>
+  </form>
 
-  <h3>Pendências</h3>
-  <?php $openItems = array_filter($pendings, fn($p) => $p['status'] === 'aberta'); ?>
-  <?php if (!$open): ?><p class="empty">Nenhuma pendência aberta.</p><?php endif ?>
+  <?php $openItems = array_filter($open, fn($p) => $p['src'] === 'item'); ?>
+  <?php if ($openItems): ?><h3>Outras pendências</h3><?php endif ?>
   <ul class="at-pend">
-    <?php foreach ($open as $p): ?>
+    <?php foreach ($openItems as $p): ?>
       <li><span class="tag <?= $p['essential'] ? 'tag-red' : 'tag-gray' ?>"><?= $p['essential'] ? 'essencial' : 'pontual' ?></span> <?= e(PENDING_TYPES[$p['type']] ?? $p['type']) ?>: <?= e($p['description']) ?>
         <?php if ($p['src'] === 'item'): ?>
           <?= $form('pendencia_status', 'documentos', false, 'inline-form') ?><input type="hidden" name="item_id" value="<?= $p['id'] ?>">
@@ -304,87 +377,98 @@ if ($P && $N) {
 </section>
 
 <!-- 3 · Análise e proposta -->
-<section class="box at-block" id="analise" aria-labelledby="h-an">
-  <div class="box-head"><h2 id="h-an">3 · Análise e proposta</h2>
+<section class="box at-block fx-aba" data-aba-painel="analise" id="analise" aria-labelledby="h-an">
+  <div class="box-head"><h2 id="h-an">Análise e proposta</h2>
     <span class="hint"><?= $c['preparation_at'] ? 'Validada em ' . e(fmt_datetime($c['preparation_at'])) : 'Ainda não validada' ?></span></div>
   <?php if ($c['review_flag']): ?><p class="warn-line"><strong>Análise/kit precisa de revisão.</strong> Recalcule, corrija ou mantenha com justificativa e valide de novo. A proposta apresentada e os documentos assinados continuam nas versões originais.</p><?php endif ?>
 
-  <div class="at-fin">
-    <h3>Dados do financiamento usados</h3>
-    <dl class="at-dl">
-      <?php foreach (['banco', 'contrato_numero', 'contrato_data', 'capital', 'prazo', 'parcela', 'taxa_mensal', 'taxa_anual', 'cet', 'parcelas_pagas', 'saldo_cobrado', 'saldo_data'] as $k): ?>
-        <div><dt><?= e(field_def($k)['label']) ?></dt><dd><?= $val($k) !== '' ? e($val($k)) . ' ' . $src($k) : '<span class="muted">—</span>' ?></dd></div>
-      <?php endforeach ?>
-    </dl>
-    <p class="hint"><a href="#g-financiamento">Corrigir no bloco 1</a> indicando “conferido no contrato”.</p>
+  <div class="fx-fin">
+    <?php $finK = ['banco', 'capital', 'prazo', 'parcela', 'taxa_mensal', 'cet', 'parcelas_pagas', 'saldo_cobrado']; ?>
+    <dl class="fx-fin-dl"><?php foreach ($finK as $k): ?><div><dt><?= e(field_def($k)['label']) ?></dt><dd><?= $val($k) !== '' ? e($val($k)) : '<span class="muted">—</span>' ?></dd></div><?php endforeach ?></dl>
+    <p class="hint">Vêm da conversa e da leitura do contrato. <a href="#dados">Corrigir em Dados</a>.</p>
     <?php if ($calc): ?>
-      <div class="g-calc">
-        <strong>Calculadora de apoio (prestação fixa mensal regular)</strong>
+      <details class="fx-calc"><summary>Calculadora de apoio</summary>
         <ul class="small">
           <?php if ($calc['pmt'] !== null): ?><li>Parcela pela taxa contratada: <?= e(money($calc['pmt'])) ?><?= $PMT ? ' · informada ' . e(money($PMT)) : '' ?></li><?php endif ?>
           <?php if ($calc['implied'] !== null): ?><li>Taxa implícita na parcela informada: <?= e(pct($calc['implied'], 3)) ?> a.m.</li><?php endif ?>
-          <?php if ($calc['annual'] !== null): ?><li>Taxa anual efetiva equivalente: <?= e(pct($calc['annual'])) ?> a.a. ((1+i)^12 − 1)</li><?php endif ?>
+          <?php if ($calc['annual'] !== null): ?><li>Taxa anual efetiva equivalente: <?= e(pct($calc['annual'])) ?> a.a.</li><?php endif ?>
           <?php if ($calc['pmt_bcb'] !== null): ?><li>Parcela pela taxa média de referência: <?= e(money($calc['pmt_bcb'])) ?></li><?php endif ?>
         </ul>
-        <p class="hint">Estimativa técnica: PMT = P × i / (1 − (1+i)^−n). Carência, atraso, renegociação ou parcelas irregulares exigem modelo próprio ou cálculo externo. CET não se compara com taxa de juros.</p>
-      </div>
+        <p class="hint">Estimativa técnica: PMT = P × i / (1 − (1+i)^−n). Carência, atraso ou parcelas irregulares exigem cálculo próprio. CET não se compara com taxa de juros.</p>
+      </details>
     <?php endif ?>
   </div>
 
+  <?php if (llm_enabled()): ?>
+    <?= $form('ia_sugerir', 'analise', false, 'inline-form fx-ia') ?><button class="b b-xs" type="submit">Sugerir com IA</button><span class="hint">Preenche só o que está vazio (escopo, riscos, exclusões, processos relatados e perguntas da reunião) a partir da conversa e dos documentos. Tudo fica marcado “IA · conferir”.</span></form>
+  <?php endif ?>
+
   <?= $form('analise', 'analise') ?>
-    <h3>Referência e parecer</h3>
-    <div class="row3">
-      <?php foreach (['data_base', 'bacen_codigo', 'bacen_periodo'] as $k): ?><div><?= $input($k, false) ?></div><?php endforeach ?>
+    <div class="fx-sec">
+      <h3>Conclusão</h3>
+      <div class="row2"><div><?= $input('conclusao', false) ?></div><div><?= $input('revisao_data', false) ?></div></div>
+      <?= $input('conclusao_texto', false) ?>
+      <div class="row2"><div><?= $input('conflito', false) ?></div><div><?= $input('legitimidade', false) ?></div></div>
+      <?= $input('impedimento_motivo', false) ?>
     </div>
-    <div class="row2"><div><?= $input('bacen_taxa', false) ?></div><div><?= $input('bacen_fonte', false) ?></div></div>
-    <p class="hint">Série 25471 do BCB: taxa média mensal de crédito livre para pessoa física na aquisição de veículos (% a.m.). Use só quando a modalidade corresponder e guarde competência e data da consulta.</p>
-    <?php foreach (['metodo', 'resultados', 'memoria', 'limitacoes'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
-    <div class="row2"><div><?= $input('conclusao', false) ?></div><div><?= $input('revisao_data', false) ?></div></div>
-    <?= $input('conclusao_texto', false) ?>
-    <h3>Conferências de Sidney</h3>
-    <div class="row2"><div><?= $input('conflito', false) ?></div><div><?= $input('legitimidade', false) ?></div></div>
-    <?= $input('impedimento_motivo', false) ?>
-    <h3>Proposta</h3>
-    <?php $prop = proposal_get($id); ?>
-    <p class="hint prop-ficha"><?php if ($prop): $pt = proposal_totals($prop['data']); ?>Proposta registrada em <a href="<?= e(url('painel/propostas/' . $id)) ?>">Propostas</a>: honorários <?= e(brl($pt['total'])) ?><?= $prop['data']['exito']['ativo'] ? ' + êxito de ' . e(percent_extenso($prop['data']['exito']['percentual'])) : '' ?>. Ela substitui, nos documentos, os campos de honorários, base de êxito, pagamento e despesas abaixo.<?php else: ?>Sem proposta registrada: os documentos usam os campos abaixo. <a href="<?= e(url('painel/propostas/' . $id)) ?>">Cadastrar a proposta</a> (honorários, êxito, valores à parte, repasses e parcelamento).<?php endif ?></p>
-    <?php foreach (['proposta_escopo', 'proposta_honorarios', 'proposta_base_exito', 'proposta_pagamento', 'proposta_despesas', 'proposta_riscos', 'proposta_exclusoes'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
-    <div class="row2"><div><?= $input('proposta_validade', false) ?></div><div><?= $input('proposta_prazo_repasse', false) ?></div></div>
-    <?php if (!isset($fields['proposta_prazo_repasse']) && setting('default_prazo_repasse')): ?><p class="hint">Em branco, o contrato usa o padrão do escritório: “<?= e(setting('default_prazo_repasse')) ?>”.</p><?php endif ?>
-    <?= $input('proposta_percentual_exito', false) ?>
-    <?= $input('procuracao_finalidade', false) ?>
-    <?= $input('procuracao_poderes', false) ?>
-    <?php $defaultsUsed = array_filter(CASE_VAR_DEFAULTS, fn($d) => in_array($d['field'], ['proposta_percentual_exito', 'procuracao_finalidade', 'procuracao_poderes'], true) && !isset($fields[$d['field']])); ?>
-    <?php if ($defaultsUsed): ?><p class="hint">Em branco, os documentos usam o padrão do escritório (<a href="<?= e(url('painel/variaveis')) ?>#escritorio">Variáveis</a>): <?= e(implode(', ', array_map(fn($d) => mb_strtolower(field_def($d['field'])['label']) . (setting($d['setting']) ? '' : ' (sem padrão definido)'), $defaultsUsed))) ?>.</p><?php endif ?>
-    <h3>Contrato de honorários e assinatura</h3>
-    <?php $standing = financing_standing($id); ?>
-    <div class="row2">
-      <div><?= $input('contrato_situacao', false) ?><?php if (!isset($fields['contrato_situacao'])): ?><p class="hint"><?= $standing ? 'Em branco, vale o que o cliente informou: ' . e(mb_strtolower(FINANCING_STANDING[$standing])) . '.' : 'O que o cliente informou não basta para definir a situação.' ?></p><?php endif ?></div>
-      <div><?= $input('foro', false) ?><?php if (!isset($fields['foro'])): ?><p class="hint"><?= setting('default_foro') ? 'Em branco, vale o padrão do escritório: ' . e(setting('default_foro')) . '.' : 'Sem padrão do escritório: defina em Variáveis.' ?> Independe da cidade do escritório.</p><?php endif ?></div>
+
+    <div class="fx-sec">
+      <h3>Proposta</h3>
+      <p class="hint prop-ficha"><?php if ($prop): $pt = proposal_totals($prop['data']); ?>Honorários, êxito, pagamento e despesas vêm da <a href="<?= e(url('painel/propostas/' . $id)) ?>">proposta</a>: <?= e(brl($pt['total'])) ?><?= $prop['data']['exito']['ativo'] ? ' + êxito de ' . e(percent_extenso($prop['data']['exito']['percentual'])) : '' ?>.<?php else: ?>Sem proposta registrada. <a href="<?= e(url('painel/propostas/' . $id)) ?>">Montar a proposta</a> preenche honorários, êxito, pagamento e despesas.<?php endif ?></p>
+      <?= $input('proposta_escopo', false) ?>
+      <div class="row2"><div><?= $input('proposta_riscos', false) ?></div><div><?= $input('proposta_exclusoes', false) ?></div></div>
+      <details class="fx-mais-campos"><summary>Campos manuais da proposta<?= $prop ? ' (a proposta registrada prevalece)' : '' ?></summary>
+        <?php foreach (['proposta_honorarios', 'proposta_base_exito', 'proposta_pagamento', 'proposta_despesas'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
+        <div class="row2"><div><?= $input('proposta_validade', false) ?></div><div><?= $input('proposta_prazo_repasse', false) ?></div></div>
+        <?= $input('proposta_percentual_exito', false) ?>
+      </details>
     </div>
-    <?= $input('processos_notificacoes', false) ?>
-    <?php $relato = array_filter([isset($fields['aviso']) ? $val('aviso') : null, $val('aviso_data') ?: null, $val('aviso_descricao') ?: null, isset($fields['processo_existente']) ? 'processo sobre o financiamento: ' . mb_strtolower($val('processo_existente')) : null]); ?>
-    <?php if ($relato): ?><p class="hint">Relato do cliente (confira antes de escrever no contrato): <?= e(implode(' · ', $relato)) ?></p><?php endif ?>
-    <div class="row2"><div><?= $input('testemunha1_nome', false) ?></div><div><?= $input('testemunha1_cpf', false) ?></div></div>
-    <div class="row2"><div><?= $input('testemunha2_nome', false) ?></div><div><?= $input('testemunha2_cpf', false) ?></div></div>
-    <p class="hint">Testemunhas são opcionais, conforme a forma de assinatura. Os dados do veículo ficam no bloco 1, grupo Veículo.</p>
-    <?php if ($customKeys = $groupFields['personalizadas'] ?? []): ?>
-      <h3>Variáveis personalizadas</h3>
-      <?php foreach ($customKeys as $k): $cv = custom_vars()[field_def($k)['var']] ?? null; ?>
-        <?= $input($k, false) ?>
-        <p class="hint"><code>{{<?= e(field_def($k)['var']) ?>}}</code><?= $cv && $cv['help'] ? ' · ' . e($cv['help']) : '' ?><?= $cv && $cv['value'] !== null && !isset($fields[$k]) ? ' · em branco, vale o padrão: “' . e(mb_strimwidth($cv['value'], 0, 120, '…')) . '”' : '' ?></p>
-      <?php endforeach ?>
-    <?php endif ?>
-    <h3>Para a reunião e a inicial</h3>
-    <?= $input('perguntas_reuniao', false) ?>
-    <?= $input('encargos_discutidos', false) ?>
-    <?= $input('obs_juridicas', false) ?>
-    <div class="inline-form">
-      <button class="b" type="submit">Salvar (preliminar)</button>
+
+    <details class="fx-sec fx-sec-d">
+      <summary><h3>Procuração e contrato</h3><span class="hint">em branco, valem os padrões do escritório e o que o cliente informou</span></summary>
+      <?= $input('procuracao_finalidade', false) ?>
+      <?= $input('procuracao_poderes', false) ?>
+      <?php $standing = financing_standing($id); ?>
+      <div class="row2">
+        <div><?= $input('contrato_situacao', false) ?><?php if (!isset($fields['contrato_situacao'])): ?><p class="hint"><?= $standing ? 'Em branco: ' . e(mb_strtolower(FINANCING_STANDING[$standing])) . ' (informado pelo cliente).' : 'O que o cliente informou não basta para definir.' ?></p><?php endif ?></div>
+        <div><?= $input('foro', false) ?><?php if (!isset($fields['foro'])): ?><p class="hint"><?= setting('default_foro') ? 'Em branco: ' . e(setting('default_foro')) . '.' : 'Sem padrão: defina em Variáveis.' ?></p><?php endif ?></div>
+      </div>
+      <?= $input('processos_notificacoes', false) ?>
+      <?php $relato = array_filter([isset($fields['aviso']) ? $val('aviso') : null, $val('aviso_data') ?: null, $val('aviso_descricao') ?: null, isset($fields['processo_existente']) ? 'processo sobre o financiamento: ' . mb_strtolower($val('processo_existente')) : null]); ?>
+      <?php if ($relato): ?><p class="hint">Relato do cliente: <?= e(implode(' · ', $relato)) ?></p><?php endif ?>
+      <div class="row2"><div><?= $input('testemunha1_nome', false) ?></div><div><?= $input('testemunha1_cpf', false) ?></div></div>
+      <div class="row2"><div><?= $input('testemunha2_nome', false) ?></div><div><?= $input('testemunha2_cpf', false) ?></div></div>
+      <?php if ($customKeys = $groupFields['personalizadas'] ?? []): ?>
+        <h3>Variáveis personalizadas</h3>
+        <?php foreach ($customKeys as $k): $cv = custom_vars()[field_def($k)['var']] ?? null; ?>
+          <?= $input($k, false) ?>
+          <p class="hint"><code>{{<?= e(field_def($k)['var']) ?>}}</code><?= $cv && $cv['help'] ? ' · ' . e($cv['help']) : '' ?><?= $cv && $cv['value'] !== null && !isset($fields[$k]) ? ' · em branco, vale o padrão: “' . e(mb_strimwidth($cv['value'], 0, 120, '…')) . '”' : '' ?></p>
+        <?php endforeach ?>
+      <?php endif ?>
+    </details>
+
+    <details class="fx-sec fx-sec-d">
+      <summary><h3>Referência (BCB) e memória do cálculo</h3><span class="hint">para o parecer de cálculos</span></summary>
+      <div class="row3"><?php foreach (['data_base', 'bacen_codigo', 'bacen_periodo'] as $k): ?><div><?= $input($k, false) ?></div><?php endforeach ?></div>
+      <div class="row2"><div><?= $input('bacen_taxa', false) ?></div><div><?= $input('bacen_fonte', false) ?></div></div>
+      <p class="hint">Série 25471 do BCB: taxa média mensal para aquisição de veículos por pessoa física (% a.m.).</p>
+      <?php foreach (['metodo', 'resultados', 'memoria', 'limitacoes'] as $k): ?><?= $input($k, false) ?><?php endforeach ?>
+    </details>
+
+    <details class="fx-sec fx-sec-d" <?= !isset($fields['perguntas_reuniao']) ? '' : 'open' ?>>
+      <summary><h3>Para a reunião e a inicial</h3></summary>
+      <?= $input('perguntas_reuniao', false) ?>
+      <?= $input('encargos_discutidos', false) ?>
+      <?= $input('obs_juridicas', false) ?>
+    </details>
+
+    <div class="inline-form fx-salvar">
+      <button class="b" type="submit">Salvar</button>
       <?php if (in_array($st, ['analysis', 'meeting_scheduled', 'awaiting_decision'], true)): ?>
         <button class="b b-primary" type="submit" name="op" value="aprovar_preparacao">Salvar e validar análise</button>
       <?php endif ?>
+      <span class="hint">Validar exige conclusão, resultados, conferência de conflito e de titularidade, escopo, honorários, riscos e perguntas para a reunião.</span>
     </div>
-    <p class="hint">Validar exige conclusão, resultados (ou análise limitada identificada), conferência de conflito e de titularidade, escopo, honorários, riscos e perguntas para a reunião. Impedimento fundamentado bloqueia a proposta definitiva.</p>
   </form>
 
   <h3>Arquivos internos (memória, planilhas)</h3>
@@ -404,8 +488,8 @@ if ($P && $N) {
 </section>
 
 <!-- 4 · Reunião -->
-<section class="box at-block" id="reuniao" aria-labelledby="h-reu">
-  <div class="box-head"><h2 id="h-reu">4 · Reunião</h2>
+<section class="box at-block fx-aba" data-aba-painel="reuniao" id="reuniao" aria-labelledby="h-reu">
+  <div class="box-head"><h2 id="h-reu">Reunião</h2>
     <span class="hint">Preferência do cliente: <?= e($val('reuniao_canal') ?: 'não informada') ?><?= $val('reuniao_disponibilidade') ? ' · ' . e($val('reuniao_disponibilidade')) : '' ?></span></div>
 
   <?php if ($meeting): ?>
@@ -503,53 +587,67 @@ if ($P && $N) {
 </section>
 
 <!-- 5 · Kit e decisão -->
-<section class="box at-block" id="kit" aria-labelledby="h-kit">
-  <div class="box-head"><h2 id="h-kit">5 · Kit e decisão</h2>
+<section class="box at-block fx-aba" data-aba-painel="kit" id="kit" aria-labelledby="h-kit">
+  <div class="box-head"><h2 id="h-kit">Kit e decisão</h2>
     <span class="tag <?= $kit['ready'] ? 'tag-green' : 'tag-amber' ?>"><?= $kit['ready'] ? 'Kit pronto' : 'Kit em preparação' ?></span></div>
 
-  <div class="at-kit">
-    <?php foreach (KIT_ITEMS as $k => $meta): $it = $kit['items'][$k]; $v = $it['version']; $t = $meta['template'] ? doc_template($k) : null; $miss = $v ? (json_decode($v['missing'], true) ?: []) : []; ?>
-      <div class="at-kit-item" id="kit-<?= e($k) ?>">
-        <div class="at-kit-head">
+  <?php $noDrive = (array) case_data($c, 'drive_kit', []); $naItems = []; ?>
+  <div class="fk-grid">
+    <?php foreach (KIT_ITEMS as $k => $meta): $it = $kit['items'][$k]; $v = $it['version']; $t = $meta['template'] ? doc_template($k) : null; $miss = $v ? (json_decode($v['missing'], true) ?: []) : [];
+      if ($it['state'] === 'nao_aplicavel') { $naItems[$k] = [$meta, $v]; continue; } ?>
+      <article class="fk-card is-<?= e($it['state']) ?><?= $it['stale'] ? ' is-stale' : '' ?>" id="kit-<?= e($k) ?>">
+        <header>
           <strong><?= e($meta['label']) ?></strong>
-          <span class="tag <?= ['revisado' => 'tag-green', 'publicado' => 'tag-blue', 'minuta' => 'tag-amber', 'nao_aplicavel' => 'tag-gray'][$it['state']] ?? '' ?>"><?= e(KIT_STATES[$it['state']]) ?><?= $v && $v['status'] !== 'nao_aplicavel' ? ' · v' . (int) $v['version'] : '' ?></span>
+          <span class="fk-st"><?= e(KIT_STATES[$it['state']]) ?><?= $v ? ' · v' . (int) $v['version'] : '' ?></span>
+        </header>
+        <div class="fk-flags">
           <?php if ($t && !$t['approved_at']): ?><span class="tag tag-gray" title="Publicação bloqueada até a aprovação do modelo">modelo não aprovado</span><?php endif ?>
           <?php if ($v && $v['signed_file_id']): ?><span class="tag tag-green">assinado</span><?php endif ?>
+          <?php if ($v && !empty($noDrive[$v['id']])): ?><a class="tag tag-blue" href="https://drive.google.com/file/d/<?= e(rawurlencode((string) $noDrive[$v['id']])) ?>/view" target="_blank" rel="noopener">.docx no Drive</a><?php endif ?>
         </div>
-        <?php if ($it['stale']): ?><p class="warn-line">Há alterações ainda não revisadas: os dados mudaram depois desta versão. Gere uma nova versão.</p><?php endif ?>
-        <?php if ($miss): ?><p class="err">Falta: <?= e(implode('; ', $miss)) ?></p><?php endif ?>
-        <?php if ($v && $v['status'] === 'nao_aplicavel'): ?><p class="hint">Não se aplica: <?= e((string) $v['content']) ?></p><?php endif ?>
-        <div class="inline-form">
+        <?php if ($it['stale']): ?><p class="fk-aviso">Os dados mudaram depois desta versão: gere uma nova.</p><?php endif ?>
+        <?php if ($miss): ?><p class="fk-falta">Falta: <?= e(implode('; ', $miss)) ?></p><?php endif ?>
+        <div class="fk-acoes">
           <?php if ($it['state'] !== 'publicado' || $it['stale']): ?>
-            <?= $form('kit_gerar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><button class="b b-xs" type="submit"><?= $v && $v['status'] !== 'nao_aplicavel' ? 'Gerar nova versão' : 'Gerar minuta' ?></button></form>
-          <?php endif ?>
-          <?php if ($v && $v['status'] !== 'nao_aplicavel'): ?>
-            <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/kit/' . $v['id'])) ?>" target="_blank" rel="noopener">Ver no timbrado / PDF</a>
-            <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/kit/' . $v['id'], ['baixar' => 'docx'])) ?>">Baixar .docx</a>
+            <?= $form('kit_gerar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><button class="b b-xs<?= !$v ? ' b-primary' : '' ?>" type="submit"><?= $v ? 'Nova versão' : 'Gerar minuta' ?></button></form>
           <?php endif ?>
           <?php if ($v && $v['status'] === 'minuta'): ?>
-            <?= $form('kit_revisar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input type="hidden" name="vid" value="<?= (int) $v['id'] ?>"><button class="b b-xs b-primary" type="submit" <?= $miss ? 'disabled' : '' ?>>Marcar revisado</button></form>
+            <?= $form('kit_revisar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input type="hidden" name="vid" value="<?= (int) $v['id'] ?>"><button class="b b-xs b-primary" type="submit" <?= $miss ? 'disabled' : '' ?> title="Versão final: o .docx vai para o Drive">Versão final</button></form>
           <?php endif ?>
           <?php if ($v && $v['status'] === 'revisado' && $k !== 'ficha_inicial'): ?>
             <?= $form('kit_publicar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input type="hidden" name="vid" value="<?= (int) $v['id'] ?>"><button class="b b-xs b-primary" type="submit">Publicar ao cliente</button></form>
           <?php endif ?>
+          <?php if ($v): ?>
+            <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/kit/' . $v['id'])) ?>" target="_blank" rel="noopener">Ver</a>
+            <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/kit/' . $v['id'], ['baixar' => 'docx'])) ?>">.docx</a>
+          <?php endif ?>
+          <details class="fd-mais">
+            <summary class="b b-xs" aria-label="Mais ações">⋯</summary>
+            <div class="fd-menu">
+              <?php if ($v && in_array($v['status'], ['minuta', 'revisado'], true)): ?>
+                <?= $form('kit_editar') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input type="hidden" name="vid" value="<?= (int) $v['id'] ?>">
+                  <label class="fld"><span>Texto desta versão</span><textarea name="content" rows="12" class="at-doc-edit"><?= e((string) $v['content']) ?></textarea></label>
+                  <button class="b b-xs" type="submit">Salvar texto</button>
+                </form>
+              <?php endif ?>
+              <?php if ($it['state'] !== 'publicado'): ?>
+                <?= $form('kit_na', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input name="reason" placeholder="Por que não se aplica" required><button class="b b-xs b-danger" type="submit">Remover do kit</button></form>
+              <?php endif ?>
+            </div>
+          </details>
         </div>
-        <?php if ($v && in_array($v['status'], ['minuta', 'revisado'], true)): ?>
-          <details><summary class="small">Editar o texto desta versão</summary>
-            <?= $form('kit_editar') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input type="hidden" name="vid" value="<?= (int) $v['id'] ?>">
-              <textarea name="content" rows="14" class="at-doc-edit"><?= e((string) $v['content']) ?></textarea>
-              <button class="b b-xs" type="submit">Salvar minuta</button>
-            </form>
-          </details>
-        <?php endif ?>
-        <?php if ($it['state'] !== 'publicado'): ?>
-          <details><summary class="small">Não se aplica</summary>
-            <?= $form('kit_na', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><input name="reason" placeholder="Motivo" required><button class="b b-xs" type="submit">Salvar</button></form>
-          </details>
-        <?php endif ?>
-      </div>
+      </article>
     <?php endforeach ?>
   </div>
+  <?php if ($naItems): ?>
+    <div class="fk-fora">
+      <span class="hint">Fora do kit:</span>
+      <?php foreach ($naItems as $k => [$meta, $v]): ?>
+        <?= $form('kit_gerar', '', false, 'inline-form') ?><input type="hidden" name="kind" value="<?= e($k) ?>"><button class="b b-xs" type="submit" title="<?= e((string) ($v['content'] ?? '')) ?>">+ <?= e($meta['label']) ?></button></form>
+      <?php endforeach ?>
+    </div>
+  <?php endif ?>
+  <p class="hint">“Versão final” trava o texto revisado<?= drive_enabled() ? ' e grava o .docx com o número da versão na pasta do atendimento no Google Drive' : '' ?>. Para mudar um modelo para todos os casos, use <a href="<?= e(url('painel/modelos-documentos')) ?>">Modelos de documentos</a>.</p>
   <?php if (!$kit['ready'] && $st !== 'completed'): ?><p class="hint">Para o kit ficar pronto: <?= e(implode('; ', $kit['missing'])) ?>.</p><?php endif ?>
 
   <h3>Decisão do cliente</h3>
@@ -661,14 +759,58 @@ if ($P && $N) {
   <?= $form('codigo_portal', 'kit', false, 'inline-form') ?><button class="b b-xs" type="submit">Gerar código de acesso</button></form>
 </section>
 
-<details class="box" id="historico">
-  <summary><strong>Histórico interno</strong></summary>
+<div class="fx-aba" data-aba-painel="mais" id="mais">
+<section class="box at-arquivo" id="arquivo-caso">
+  <h2>Resumo do caso e Google Drive</h2>
+  <p class="hint">O arquivo .md reúne todas as variáveis conhecidas, o contexto, as necessidades, os pontos relevantes, os documentos e a conversa.</p>
+  <p class="at-arquivo-acoes">
+    <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/caso.md')) ?>">Baixar <?= e($c['protocol']) ?>.md</a>
+    <?php if (drive_enabled()): $pasta = case_data($c, 'drive_pasta'); ?>
+      <?php if ($pasta): ?><a class="b b-xs" href="https://drive.google.com/drive/folders/<?= e(rawurlencode((string) $pasta)) ?>" target="_blank" rel="noopener">Abrir a pasta no Drive</a><?php endif ?>
+      <form method="post" action="<?= e(url('painel/atendimento/' . $id . '/drive')) ?>" class="inline-form"><?= csrf_field() ?><button class="b b-xs" type="submit">Enviar ao Drive agora</button></form>
+      <span class="hint"><?= case_data($c, 'drive_at') ? 'Última gravação: ' . e(fmt_datetime((string) case_data($c, 'drive_at'))) : 'Ainda não gravado' ?> · <?= e(drive_path()) ?>/<?= e($c['protocol']) ?></span>
+    <?php else: ?>
+      <span class="hint">Drive não conectado: conecte em <a href="<?= e(url('painel/configuracoes/agenda')) ?>">Configurações › Google</a>.</span>
+    <?php endif ?>
+  </p>
+</section>
+
+<?php if (can_manage_cases()): $gest = fn(string $op) => '<form method="post" action="' . e(url('painel/atendimento/' . $id . '/gestao')) . '" class="stack">' . csrf_field() . '<input type="hidden" name="op" value="' . $op . '">'; ?>
+<section class="box at-gestao" id="gestao">
+  <div class="box-head"><h2>Gestão do atendimento</h2><span class="hint">gestor e administrador · fechar, arquivar ou excluir</span></div>
+  <div class="at-gestao-grid">
+    <?php if ($c['initial_status'] !== 'completed'): ?>
+      <?= $gest('fechar') ?>
+        <h3>Fechar</h3>
+        <p class="hint">Encerra o atendimento em qualquer etapa. O cliente vê que foi encerrado e a conversa passa para você.</p>
+        <label class="fld"><span>Motivo</span><textarea name="motivo" rows="2" required placeholder="ex.: cliente desistiu; resolveu direto com o banco"></textarea></label>
+        <button class="b" type="submit" data-confirm="Fechar este atendimento?">Fechar atendimento</button>
+      </form>
+    <?php endif ?>
+    <?= $gest($c['archived_at'] ? 'desarquivar' : 'arquivar') ?>
+      <h3><?= $c['archived_at'] ? 'Desarquivar' : 'Arquivar' ?></h3>
+      <p class="hint"><?= $c['archived_at'] ? 'Volta a aparecer nas listas do escritório.' : 'Tira das listas do escritório sem apagar nada. Fica no filtro “Arquivados”. O cliente continua vendo a conversa.' ?></p>
+      <button class="b" type="submit"><?= $c['archived_at'] ? 'Desarquivar' : 'Arquivar atendimento' ?></button>
+    </form>
+    <?= $gest('excluir') ?>
+      <h3>Excluir</h3>
+      <p class="hint">Apaga de vez o atendimento, a conversa, a ficha, os documentos e a proposta. Não dá para desfazer.</p>
+      <label class="fld"><span>Digite o protocolo <strong class="mono"><?= e($c['protocol']) ?></strong> para confirmar</span><input name="confirmar" autocomplete="off" required></label>
+      <button class="b b-danger" type="submit" data-confirm="Excluir de vez o atendimento <?= e($c['protocol']) ?>? Não dá para desfazer.">Excluir atendimento</button>
+    </form>
+  </div>
+</section>
+<?php endif ?>
+<section class="box" id="historico">
+  <div class="box-head"><h2>Histórico interno</h2></div>
   <ul class="tl">
     <?php foreach ($events as $ev): ?>
       <li><small><?= e(fmt_datetime($ev['at'])) ?><?= $ev['visible_to_client'] ? ' · visível ao cliente' : '' ?></small><br><strong><?= e($ev['title']) ?></strong><?= $ev['body'] ? '<br><span class="muted">' . nl2br(e($ev['body'])) . '</span>' : '' ?></li>
     <?php endforeach ?>
   </ul>
-</details>
+</section>
+</div>
+
 </div>
 
 <!-- Conversa -->
@@ -695,44 +837,3 @@ if ($P && $N) {
 </aside>
 </div>
 
-<section class="box at-arquivo" id="arquivo-caso">
-  <h2>Resumo do caso e Google Drive</h2>
-  <p class="hint">O arquivo .md reúne todas as variáveis conhecidas, o contexto, as necessidades, os pontos relevantes, os documentos e a conversa.</p>
-  <p class="at-arquivo-acoes">
-    <a class="b b-xs" href="<?= e(url('painel/atendimento/' . $id . '/caso.md')) ?>">Baixar <?= e($c['protocol']) ?>.md</a>
-    <?php if (drive_enabled()): $pasta = case_data($c, 'drive_pasta'); ?>
-      <?php if ($pasta): ?><a class="b b-xs" href="https://drive.google.com/drive/folders/<?= e(rawurlencode((string) $pasta)) ?>" target="_blank" rel="noopener">Abrir a pasta no Drive</a><?php endif ?>
-      <form method="post" action="<?= e(url('painel/atendimento/' . $id . '/drive')) ?>" class="inline-form"><?= csrf_field() ?><button class="b b-xs" type="submit">Enviar ao Drive agora</button></form>
-      <span class="hint"><?= case_data($c, 'drive_at') ? 'Última gravação: ' . e(fmt_datetime((string) case_data($c, 'drive_at'))) : 'Ainda não gravado' ?> · <?= e(drive_path()) ?>/<?= e($c['protocol']) ?></span>
-    <?php else: ?>
-      <span class="hint">Drive não conectado: conecte em <a href="<?= e(url('painel/configuracoes/agenda')) ?>">Configurações › Google</a>.</span>
-    <?php endif ?>
-  </p>
-</section>
-
-<?php if (can_manage_cases()): $gest = fn(string $op) => '<form method="post" action="' . e(url('painel/atendimento/' . $id . '/gestao')) . '" class="stack">' . csrf_field() . '<input type="hidden" name="op" value="' . $op . '">'; ?>
-<details class="box at-gestao" id="gestao">
-  <summary><h2>Gestão do atendimento</h2><span class="hint">gestor e administrador · fechar, arquivar ou excluir</span></summary>
-  <div class="at-gestao-grid">
-    <?php if ($c['initial_status'] !== 'completed'): ?>
-      <?= $gest('fechar') ?>
-        <h3>Fechar</h3>
-        <p class="hint">Encerra o atendimento em qualquer etapa. O cliente vê que foi encerrado e a conversa passa para você.</p>
-        <label class="fld"><span>Motivo</span><textarea name="motivo" rows="2" required placeholder="ex.: cliente desistiu; resolveu direto com o banco"></textarea></label>
-        <button class="b" type="submit" data-confirm="Fechar este atendimento?">Fechar atendimento</button>
-      </form>
-    <?php endif ?>
-    <?= $gest($c['archived_at'] ? 'desarquivar' : 'arquivar') ?>
-      <h3><?= $c['archived_at'] ? 'Desarquivar' : 'Arquivar' ?></h3>
-      <p class="hint"><?= $c['archived_at'] ? 'Volta a aparecer nas listas do escritório.' : 'Tira das listas do escritório sem apagar nada. Fica no filtro “Arquivados”. O cliente continua vendo a conversa.' ?></p>
-      <button class="b" type="submit"><?= $c['archived_at'] ? 'Desarquivar' : 'Arquivar atendimento' ?></button>
-    </form>
-    <?= $gest('excluir') ?>
-      <h3>Excluir</h3>
-      <p class="hint">Apaga de vez o atendimento, a conversa, a ficha, os documentos e a proposta. Não dá para desfazer.</p>
-      <label class="fld"><span>Digite o protocolo <strong class="mono"><?= e($c['protocol']) ?></strong> para confirmar</span><input name="confirmar" autocomplete="off" required></label>
-      <button class="b b-danger" type="submit" data-confirm="Excluir de vez o atendimento <?= e($c['protocol']) ?>? Não dá para desfazer.">Excluir atendimento</button>
-    </form>
-  </div>
-</details>
-<?php endif ?>
