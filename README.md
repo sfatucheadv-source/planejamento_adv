@@ -96,6 +96,10 @@ No painel, cada atendimento é um item próprio; a ficha mostra os outros atendi
 
 A migração 11 zerou os atendimentos da base (com cópia do banco e dos arquivos em `backup-antes-de-zerar-atendimentos/` na pasta de dados); usuários, configurações e modelos ficaram. Teste: `php tests/limpeza.php`.
 
+### O que veio nos documentos não é perguntado
+
+O que a IA lê dos documentos entra na ficha como informação recebida e vai para a conversa na seção "JÁ SABEMOS": a IA não pergunta nem pede confirmação disso, não recapitula o que a pessoa contou e só pergunta os dados mínimos que ainda faltam (até dois por mensagem, do mesmo assunto). O sistema também deduz a titularidade: se o contrato lido está no nome de quem conversa (ou a pessoa ainda não disse outro nome), ela é a titular. Teste: `php tests/deducao.php`.
+
 ### Agenda de Sidney (Google Agenda com Meet)
 
 O chat não tem botão para falar com Sidney: o cliente precisa chegar qualificado. Quando ele pede para falar com Sidney, com o advogado ou com uma pessoa (o sistema reconhece o pedido pelas palavras, e a IA também sinaliza), o assistente pede, nas duas primeiras vezes, as informações e os documentos que faltam. No 3º pedido, `app/inicial/agenda.php` marca uma conversa de 30 minutos no primeiro horário livre: dias úteis, dentro do expediente, no mínimo 90 minutos a partir de agora e 60 minutos depois do fim de qualquer compromisso; sem janela no dia, vale a mais próxima. Tudo ajustável em **Configurações › Agenda (Google)**.
@@ -183,6 +187,7 @@ php tests/conversas.php             # conversas do cliente, novidades e avisos p
 php tests/negociacao.php            # proposta em abas: simulador do Asaas, guia de preço e avaliação pela IA
 php tests/limpeza.php               # migração que zerou os atendimentos (cópia de segurança)
 php tests/agenda.php                # agenda de Sidney: regra do horário, 3 pedidos, Google simulado
+php tests/deducao.php               # o que veio nos documentos não é perguntado de novo
 ```
 
 ## Publicar na Hostinger

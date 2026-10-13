@@ -220,7 +220,7 @@ function ia_doc_fields(string $kind): array
 {
     return match ($kind) {
         'contrato' => ['banco', 'credor_cnpj', 'contrato_numero', 'contrato_data', 'modalidade', 'valor_veiculo', 'entrada', 'capital', 'prazo', 'parcela', 'taxa_mensal', 'taxa_anual', 'cet',
-                       'nome_completo', 'cpf', 'estado_civil', 'profissao', 'nacionalidade', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf',
+                       'titular_nome', 'nome_completo', 'cpf', 'estado_civil', 'profissao', 'nacionalidade', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf',
                        'veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'veiculo_placa', 'veiculo_renavam'],
         'veiculo' => ['veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'veiculo_placa', 'veiculo_renavam', 'banco'],
         'identidade' => ['nome_completo', 'cpf', 'identificacao', 'nacionalidade', 'estado_civil'],
@@ -345,6 +345,7 @@ function ia_extract_document(int $caseId, int $docId): ?array
         . (!$legible ? 'Documento pouco legível. ' : '') . (!$typeOk ? 'Pode não ser o documento esperado. ' : '')
         . ($note !== '' ? 'Observação: ' . mb_substr($note, 0, 300) : ''));
     if ($filled || $divergent) {
+        agent_infer_fields($caseId);
         foreach (['aviso_data', 'processo_existente', 'gratuidade'] as $k) {
             if (in_array($k, $filled, true)) {
                 bot_after_answer($caseId, $k);
