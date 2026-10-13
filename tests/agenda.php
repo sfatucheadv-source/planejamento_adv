@@ -172,5 +172,42 @@ set_setting('google_access_expires', '0');
 ok($err !== null && !google_connected(), 'acesso revogado no Google: painel pede nova conexão');
 unset($GLOBALS['google_http']);
 
+echo "\nA6. Depois do resumo confirmado: documentos e escolha entre dois horários\n";
+$GLOBALS['FAKE_NOW'] = '2026-10-15 10:00';
+set_setting('google_refresh_token', null);
+$dd = create_initial_case(['nome' => 'Diana Teste', 'telefone' => '(41) 94444-4444', 'email' => 'diana@t.local', 'adaptacao' => ''], 'site');
+$did = (int) $dd['id'];
+foreach (['contrato', 'identidade', 'residencia'] as $k) {
+    if (!scalar('SELECT 1 FROM documents WHERE case_id = ? AND kind = ?', [$did, $k])) {
+        insert('documents', ['case_id' => $did, 'kind' => $k, 'label' => DOC_CATALOG[$k]['label'], 'status' => 'falta', 'essential' => 1, 'requested_at' => now_str()]);
+    }
+}
+q("UPDATE documents SET status = 'dispensado' WHERE case_id = ? AND kind NOT IN ('contrato', 'identidade', 'residencia')", [$did]);
+q("UPDATE documents SET status = 'recebido' WHERE case_id = ? AND kind = 'contrato'", [$did]);
+ok(!meeting_ready($did), 'antes de confirmar o resumo, não oferece horário');
+bump_case($did, ['intake_done_at' => now_str()]);
+ok(!meeting_ready($did) && !docs_all_resolved($did), 'resumo confirmado, mas documento sem resposta: ainda não oferece');
+set_case_data($did, 'doc_later', ['identidade' => now_str()]);
+q("UPDATE documents SET status = 'nao_possui' WHERE case_id = ? AND kind = 'residencia'", [$did]);
+$st = array_column(array_map(fn($x) => ['k' => $x['doc']['kind'], 's' => $x['st']], docs_client_list($did)), 's', 'k');
+ok($st === ['contrato' => 'ok', 'identidade' => 'procurar', 'residencia' => 'procurar'], 'situação simplificada: recebido ou vai procurar');
+ok(meeting_ready($did), 'todos anexados ou com compromisso de procurar: pode escolher o horário');
+[$op] = agenda_options();
+ok(array_map(fn($o) => $o->format('Y-m-d H:i'), $op) === ['2026-10-15 11:30', '2026-10-16 09:00'], 'duas opções: hoje (mais rápido) e o dia útil seguinte');
+$GLOBALS['FAKE_NOW'] = '2026-10-16 17:00';
+[$op] = agenda_options();
+ok(array_map(fn($o) => $o->format('Y-m-d H:i'), $op) === ['2026-10-19 09:00', '2026-10-20 09:00'], 'sexta no fim do dia: segunda e terça');
+$GLOBALS['FAKE_NOW'] = '2026-10-15 10:00';
+insert('case_meetings', ['case_id' => $bid, 'status' => 'confirmada', 'channel' => 'phone', 'starts_at' => '2026-10-15 14:00:00', 'duration_min' => 30, 'confirmed_at' => now_str(), 'created_at' => now_str()]);
+ok(!agenda_slot_ok(at('2026-10-15 10:30')) && !agenda_slot_ok(at('2026-10-15 19:00')) && !agenda_slot_ok(at('2026-10-15 14:45')) && agenda_slot_ok(at('2026-10-15 11:30')) && agenda_slot_ok(at('2026-10-15 15:30')), 'horário escolhido é conferido de novo (antecedência, expediente e 1 hora depois de outra reunião)');
+q("DELETE FROM case_meetings WHERE case_id = ? AND starts_at = '2026-10-15 14:00:00'", [$bid]);
+$m = agenda_book(find_case($did), 'coleta', at('2026-10-16 09:00'));
+ok($m && $m['origin'] === 'coleta' && $m['starts_at'] === '2026-10-16 09:00:00', 'cliente escolhe a segunda opção: conversa marcada nesse horário');
+$last = (string) scalar("SELECT body FROM chat_messages WHERE case_id = ? AND author = 'bot' ORDER BY id DESC LIMIT 1", [$did]);
+ok(str_contains($last, 'Conversa confirmada') && str_contains($last, 'documento de identificação pessoal'), 'cliente recebe o horário e o lembrete do que vai procurar');
+ok(!meeting_ready($did), 'com a conversa marcada, não oferece de novo');
+[$p1, $itens, $p2] = meeting_pitch($did);
+ok(count($itens) === 4 && str_contains($p2, 'sem compromisso'), 'texto de engajamento: o que acontece na conversa');
+
 echo "\n" . ($fails ? "FALHAS: $fails" : 'TUDO OK') . " · $passes verificações aprovadas\n";
 exit($fails ? 1 : 0);

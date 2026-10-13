@@ -23,7 +23,11 @@ $sug = $c['intake_done_at'] ? [] : (array) case_data($c, 'agent_suggestions', []
     </details>
     <?php endif ?>
   <?php else: ?>
-    <form method="post" action="<?= e(url('cliente/conversa/concluir')) ?>" class="cv-progress cv-btns" id="pergunta"><?= csrf_field() ?><span class="small">Tudo o que Sidney precisa já está aqui.</span><button class="btn btn-gold btn-small" type="submit">Está tudo certo, pode enviar para Sidney</button></form>
+    <div class="cv-pronto" id="pergunta">
+      <span class="cv-pronto-t"><span aria-hidden="true">✓</span> <strong>100%</strong> · Tudo o que Sidney precisa já está aqui.</span>
+      <button class="btn btn-gold btn-small" type="button" data-resumo-abrir>Revisar e enviar</button>
+    </div>
+    <?php partial('cv_resumo', ['c' => $c]) ?>
   <?php endif ?>
 <?php endif ?>
 <div class="cv-chips" aria-label="Respostas sugeridas"><?php foreach ($sug as $s): ?><button class="cv-chip" type="submit" form="fim" name="message" value="<?= e($s) ?>" formnovalidate><?= e($s) ?></button><?php endforeach ?></div>

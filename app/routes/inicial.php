@@ -203,10 +203,29 @@ $router->post('/cliente/conversa/responder', function () {
 
 $router->post('/cliente/conversa/documento/{id}', function (string $id) {
     $c = require_portal();
-    $err = bot_doc_answer($c, (int) $id, (string) input('choice'), uploaded_files('arquivo'), (string) input('k'));
-    flash($err ? 'error' : 'ok', $err ?: 'Salvo.');
+    $choice = (string) input('choice');
+    if ($choice === 'desfazer') {
+        // Desmarcou "vou procurar": o documento volta a faltar.
+        $d = one('SELECT * FROM documents WHERE id = ? AND case_id = ?', [(int) $id, $c['id']]);
+        if ($d) {
+            $later = (array) case_data($c, 'doc_later', []);
+            unset($later[$d['kind']]);
+            set_case_data((int) $c['id'], 'doc_later', $later);
+            if ($d['status'] === 'nao_possui') {
+                q("UPDATE documents SET status = 'falta' WHERE id = ?", [$d['id']]);
+            }
+        }
+        $err = null;
+    } else {
+        $err = bot_doc_answer($c, (int) $id, $choice, uploaded_files('arquivo'), (string) input('k'));
+    }
     $back = (string) input('volta') === 'documentos' ? 'documentos' : 'conversa';
-    portal_back($back, $back === 'conversa' ? 'pergunta' : 'doc-' . (int) $id);
+    if (!$err && $back === 'documentos' && meeting_ready((int) $c['id'])) {
+        flash('ok', 'Documentos resolvidos! Agora escolha o horário da sua conversa com Sidney.');
+        portal_back('reuniao', 'h-reu');
+    }
+    flash($err ? 'error' : 'ok', $err ?: 'Salvo.');
+    portal_back($back, $back === 'conversa' ? 'pergunta' : 'docs');
 });
 
 $router->post('/cliente/conversa/corrigir', function () {
@@ -322,17 +341,60 @@ $router->post('/cliente/conversa/concluir', function () {
     portal_back('conversa', 'fim');
 });
 
-// Alterna entre a conversa com a IA e as perguntas com botões.
-$router->post('/cliente/conversa/modo', function () {
+// Resumo do caso (pop-up): o cliente corrige o que precisar e envia para Sidney.
+$router->post('/cliente/conversa/resumo', function () {
     $c = require_portal();
     $id = (int) $c['id'];
-    if (input('modo') === 'botoes') {
-        set_case_data($id, 'agent_off', 'cliente');
-        add_event($id, 'ia', 'Cliente preferiu responder pelas perguntas com botões');
-    } elseif (agent_enabled()) {
-        set_case_data($id, 'agent_off', null);
-        set_case_data($id, 'agent_started', now_str());
-        chat_post($id, 'bot', 'Certo, seguimos conversando por aqui. Pode escrever com suas palavras ou mandar fotos e PDFs.');
+    $errors = case_summary_save($id, (array) ($_POST['f'] ?? []));
+    if ($errors) {
+        flash('error', 'Confira: ' . implode(' · ', $errors));
+        portal_back('conversa', 'resumo');
+    }
+    if (input('op') !== 'enviar') {
+        flash('ok', 'Correções salvas. Confira o resumo e envie para Sidney.');
+        portal_back('conversa', 'resumo');
+    }
+    if (agent_finish($id)) {
+        chat_post($id, 'client', 'Conferi o resumo: está tudo certo, pode enviar para Sidney.');
+    } elseif (!find_case($id)['intake_done_at']) {
+        flash('error', 'Ainda falta alguma informação ou documento. Veja a lista acima da conversa.');
+        portal_back('conversa', 'fim');
+    }
+    // Próxima etapa: documentos; com todos resolvidos, a escolha do horário com Sidney.
+    if (meeting_ready($id)) {
+        flash('ok', 'Resumo enviado para Sidney. Agora escolha o horário da sua conversa com ele.');
+        portal_back('reuniao', 'h-reu');
+    }
+    flash('ok', 'Resumo enviado para Sidney. Agora, os documentos: anexe o que tiver e marque o que vai procurar.');
+    portal_back('documentos', 'docs');
+});
+
+// O cliente escolhe uma das duas opções de horário; confere de novo se continua livre.
+$router->post('/cliente/reuniao/marcar', function () {
+    $c = require_portal();
+    $id = (int) $c['id'];
+    $t = dt(str_replace('T', ' ', (string) input('horario')));
+    if (current_meeting($id)) {
+        portal_back('reuniao', 'h-reu');
+    }
+    if (!meeting_ready($id)) {
+        flash('error', 'Antes de marcar, confira o resumo e os documentos.');
+        portal_back('documentos', 'docs');
+    }
+    if (!$t || !agenda_slot_ok($t)) {
+        flash('error', 'Esse horário acabou de ser ocupado. Veja as novas opções abaixo.');
+        portal_back('reuniao', 'h-reu');
+    }
+    $m = agenda_book(find_case($id), 'coleta', $t);
+    flash($m ? 'ok' : 'error', $m ? 'Conversa confirmada para ' . fmt_when(dt($m['starts_at'])) . '.' : 'Não foi possível marcar agora. Sidney vai entrar em contato para combinar.');
+    portal_back('reuniao', 'h-reu');
+});
+
+// Endereço antigo (opção "perguntas com botões" removida): só volta para a conversa.
+$router->post('/cliente/conversa/modo', function () {
+    $c = require_portal();
+    if (case_data($c, 'agent_off')) {
+        set_case_data((int) $c['id'], 'agent_off', null);
     }
     portal_back('conversa', 'fim');
 });

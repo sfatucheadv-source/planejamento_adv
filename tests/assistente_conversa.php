@@ -268,11 +268,17 @@ foreach (['veiculo_marca' => 'Fiat', 'veiculo_modelo' => 'Argo', 'veiculo_placa'
 }
 ok(agent_missing_fields($id) === [] && agent_missing_docs($id) === [], 'variáveis e documentos mínimos reunidos');
 $cli->get('/cliente?area=conversa');
-ok(str_contains($cli->html, 'Está tudo certo, pode enviar para Sidney'), 'cliente vê o botão para encerrar');
+ok(str_contains($cli->html, 'Revisar e enviar') && str_contains($cli->html, 'data-resumo="' . $id . '"') && str_contains($cli->html, 'Confira o resumo do seu caso'), 'coleta completa: resumo do caso em pop-up');
+ok(str_contains($cli->html, 'entendeu assim') && str_contains($cli->html, 'Fiat Argo') && str_contains($cli->html, 'Seus dados') && str_contains($cli->html, 'Contrato e financiamento') && str_contains($cli->html, 'Ana, entendemos'), 'resumo mostra o que o assistente entendeu e os dados por seção');
+ok(str_contains($cli->html, 'Corrigir dados') && str_contains($cli->html, 'Quero explicar mais alguma coisa'), 'cliente pode corrigir ou seguir conversando');
+ok(!str_contains($cli->html, 'Prefiro responder com perguntas e botões'), 'sem a opção de perguntas com botões');
+$cli->post('/cliente/conversa/resumo', ['op' => 'salvar', 'f' => ['profissao' => 'Motorista de aplicativo', 'veiculo_placa' => '']]);
+case_fields($id, true);
+ok(fv($id, 'profissao') === 'Motorista de aplicativo' && fv($id, 'veiculo_placa') === 'ABC1D23' && !c($id)['intake_done_at'], 'correção salva no resumo (campo apagado não apaga a ficha); ainda não enviou');
 say($cli, 'Sim, pode confirmar');
 ok((bool) c($id)['intake_done_at'] && last_bot($id) === 'Coleta concluída, obrigado!' && str_contains((string) c($id)['next_action'], 'Conferir a coleta'), 'confirmação encerra a coleta com a mensagem do painel e avisa Sidney');
 
-echo "\nA7. Urgência, queda para os botões e alternância\n";
+echo "\nA7. Urgência e falha da IA sem mudar a tela\n";
 $cli2 = new Browser($base);
 $id2 = start_client($cli2, 'Bruno Costa', '(41) 97777-3333');
 say($cli2, 'Meu carro foi apreendido ontem');
@@ -281,11 +287,13 @@ $cli2->get('/cliente?area=conversa');
 ok(!str_contains($cli2->html, 'Joana') && !str_contains($cli2->html, 'Banco Aymoré') && !str_contains($cli2->html, 'abusivos'), 'conversa de outro cliente não aparece para este');
 say($cli2, 'vou quebrar a IA');
 $cli2->get('/cliente?area=conversa');
-ok(case_data(c($id2), 'agent_off') === 'falha' && preg_match('#id="pergunta".*?name="q" value=#s', $cli2->html) && str_contains($cli2->html, 'Voltar a conversar livremente'), 'falha da IA: conversa segue com as perguntas de botões, de onde parou');
-$cli2->post('/cliente/conversa/modo', ['modo' => 'ia']);
-ok(!case_data(c($id2), 'agent_off') && str_contains($cli2->html, 'data-chat-form'), 'cliente volta a conversar com a IA');
-$cli2->post('/cliente/conversa/modo', ['modo' => 'botoes']);
-ok(case_data(c($id2), 'agent_off') === 'cliente' && preg_match('#id="pergunta".*?name="q" value=#s', $cli2->html), 'cliente pode preferir os botões');
+ok(!case_data(c($id2), 'agent_off') && str_contains($cli2->html, 'data-chat-form') && !preg_match('#name="q" value=#', $cli2->html) && str_contains(last_bot($id2), 'instabilidade'), 'falha da IA: a tela do chat não muda; pede para mandar de novo');
+say($cli2, 'vou quebrar a IA');
+$cli2->get('/cliente?area=conversa');
+ok(!case_data(c($id2), 'agent_off') && str_contains($cli2->html, 'data-chat-form'), 'nem com falhas seguidas o chat vira perguntas com botões');
+set_case_data($id2, 'agent_off', 'cliente');
+$cli2->get('/cliente?area=conversa');
+ok(str_contains($cli2->html, 'data-chat-form'), 'atendimento que tinha escolhido os botões volta para a conversa');
 
 echo "\nA8. Chat de atendimento: formulário, sugestões, envio sem recarregar e áudio\n";
 $home = new Browser($base);

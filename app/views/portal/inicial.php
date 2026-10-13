@@ -22,6 +22,8 @@ if ($completed) {
     $main = ['reuniao', $c['decision'] === 'aceitou' && $c['contract_state'] !== 'formalizado' ? 'Ver os documentos para assinar' : 'Ver a proposta e responder'];
 } elseif ($meeting) {
     $main = ['reuniao', 'Ver a reunião'];
+} elseif (meeting_ready((int) $c['id'])) {
+    $main = ['reuniao', 'Escolher o horário da conversa'];
 } elseif ($q) {
     $main = ['conversa', $q['block'] === 'B02' && !$c['intake_done_at'] && !array_filter($chat, fn($m) => $m['author'] === 'client' && $m['question']) ? 'Começar a conversa' : 'Continuar de onde parei'];
 } elseif ($openDocs) {
@@ -139,7 +141,6 @@ $choiceButtons = function (array $q) {
           </div>
           <p class="cv-hint muted small">Escreva do seu jeito, toque numa sugestão, grave um áudio ou anexe fotos e PDFs. Sidney confere tudo.</p>
         </form>
-        <form method="post" action="<?= e(url('cliente/conversa/modo')) ?>" class="cv-modo"><?= csrf_field() ?><button class="link-btn" type="submit" name="modo" value="botoes">Prefiro responder com perguntas e botões</button></form>
       <?php else: ?>
       <?php if ($q): ?>
           <div class="cv-q" id="pergunta">
@@ -233,43 +234,55 @@ $choiceButtons = function (array $q) {
             <button class="btn <?= $c['chat_mode'] === 'human' ? 'btn-gold' : 'btn-ghost' ?>" type="submit">Enviar mensagem</button>
           </div>
         </form>
-        <?php if (agent_enabled() && $c['chat_mode'] === 'bot' && !$completed && case_data($c, 'agent_off')): ?>
-          <form method="post" action="<?= e(url('cliente/conversa/modo')) ?>" class="cv-modo"><?= csrf_field() ?><button class="link-btn" type="submit" name="modo" value="ia">Voltar a conversar livremente com o assistente</button></form>
-        <?php endif ?>
       <?php endif ?>
       </div>
     </section>
 
-<?php elseif ($area === 'documentos'): ?>
-    <section class="panel" aria-labelledby="h-docs">
-      <h2 id="h-docs">Seus documentos</h2>
-      <p class="muted">“Recebido” quer dizer que chegou; Sidney ainda confere se está completo e legível. Se não tiver algum item, avise: o atendimento continua.</p>
-      <div class="doc-rows">
-        <?php foreach ($docs as $d): [$label, $sub, $tone] = client_doc_state($d); $cat = DOC_CATALOG[$d['kind']] ?? null; $isOpen = in_array($d['status'], DOC_OPEN, true); ?>
-          <div class="doc-row" id="doc-<?= (int) $d['id'] ?>">
-            <div class="doc-row-head"><strong><?= e($d['label']) ?></strong> <span class="badge badge-<?= e($tone) ?>"><?= e($label) ?></span><?= $sub ? ' <small class="muted">' . e($sub) . '</small>' : '' ?></div>
-            <?php if ($cat && $isOpen): ?><p class="muted small"><?= e($cat['why']) ?> <?= e($cat['how']) ?></p><?php endif ?>
-            <?php foreach ($filesByDoc[(int) $d['id']] ?? [] as $f): ?><a class="files-mini" href="<?= e(url('arquivo/' . $f['id'])) ?>" target="_blank" rel="noopener"><?= e($f['original_name']) ?></a> <small class="muted"><?= e(fmt_date($f['uploaded_at'])) ?></small><br><?php endforeach ?>
-            <?php if ($isOpen && !$completed): ?>
-              <form method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" class="cv-doc-form" data-save<?= llm_enabled() ? ' data-reading="Enviando e lendo o documento. Pode levar até um minuto."' : '' ?>>
+<?php elseif ($area === 'documentos'): $lista = docs_client_list((int) $c['id']); $okN = count(array_filter($lista, fn($x) => $x['st'] === 'ok')); $resolvidos = count(array_filter($lista, fn($x) => in_array($x['st'], ['ok', 'procurar'], true))); ?>
+    <section class="panel docs-panel" aria-labelledby="h-docs" id="docs">
+      <div class="docs-head">
+        <h2 id="h-docs">Seus documentos</h2>
+        <span class="docs-conta"><strong><?= $okN ?></strong> de <?= count($lista) ?> enviados</span>
+      </div>
+      <?php if ($meeting): ?>
+        <div class="docs-proxima"><span aria-hidden="true">📅</span><div><strong>Próxima etapa: conversa com Sidney <?= e(fmt_when(dt($meeting['starts_at']))) ?></strong> <span class="muted">· <?= e(MEETING_CHANNELS[$meeting['channel']]['short']) ?></span><?= $meeting['url'] ? '<br><a href="' . e($meeting['url']) . '" target="_blank" rel="noopener">Link da reunião</a>' : '' ?></div></div>
+      <?php elseif (meeting_ready((int) $c['id'])): ?>
+        <div class="docs-proxima"><span aria-hidden="true">📅</span><div><strong>Documentos resolvidos.</strong> Próxima etapa: <a href="<?= e(url('cliente', ['area' => 'reuniao'])) ?>#h-reu">escolher o horário da conversa com Sidney</a>.</div></div>
+      <?php elseif ($c['intake_done_at'] && !$completed): ?>
+        <p class="docs-dica">Anexe o que tiver. O que não tiver agora, marque <strong>Vou procurar</strong>: com todos resolvidos, você já escolhe o horário da conversa com Sidney.</p>
+      <?php else: ?>
+        <p class="docs-dica">Anexe o que tiver. O que não tiver agora, marque <strong>Vou procurar</strong> e envie quando encontrar.</p>
+      <?php endif ?>
+      <ul class="docs-lista">
+        <?php foreach ($lista as ['doc' => $d, 'st' => $st]): $cat = DOC_CATALOG[$d['kind']] ?? null; $arqs = $filesByDoc[(int) $d['id']] ?? []; ?>
+          <li class="docs-item is-<?= e($st) ?>" id="doc-<?= (int) $d['id'] ?>">
+            <span class="docs-ico" aria-hidden="true"><?= $st === 'ok' ? '✓' : ($st === 'procurar' ? '⏳' : '•') ?></span>
+            <div class="docs-nome">
+              <strong><?= e($d['label']) ?></strong>
+              <small><?= match ($st) {
+                  'ok' => 'Recebido · ' . e(client_doc_state($d)[1]) . ($arqs ? ' · ' . e(mb_strimwidth((string) end($arqs)['original_name'], 0, 28, '…')) : ''),
+                  'procurar' => 'Pendente · você vai procurar',
+                  'reenviar' => 'Envie de novo' . ($d['reject_reason'] ? ': ' . e($d['reject_reason']) : ''),
+                  default => $cat ? e($cat['how']) : 'Falta',
+              } ?></small>
+            </div>
+            <?php if ($st !== 'ok' && !$completed): ?>
+              <form method="post" action="<?= e(url('cliente/conversa/documento/' . $d['id'])) ?>" enctype="multipart/form-data" class="docs-acoes" data-auto-envio data-save<?= llm_enabled() ? ' data-reading="Enviando e lendo o documento…"' : '' ?>>
                 <?= csrf_field() ?><input type="hidden" name="k" value="<?= e(bin2hex(random_bytes(8))) ?>"><input type="hidden" name="volta" value="documentos">
-                <input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" multiple aria-label="Arquivo de <?= e($d['label']) ?>" data-preview>
-                <div class="cv-preview" data-preview-box></div>
-                <div class="cv-btns">
-                  <button class="btn btn-gold btn-small" type="submit" name="choice" value="enviar">Enviar</button>
-                  <?php if ($d['status'] !== 'nao_possui'): ?><button class="btn btn-ghost btn-small" type="submit" name="choice" value="nao_tenho" formnovalidate>Não tenho</button><?php endif ?>
-                </div>
+                <label class="btn btn-gold btn-small docs-anexar">Anexar<input type="file" name="arquivo[]" accept="application/pdf,image/jpeg,image/png" multiple aria-label="Anexar <?= e($d['label']) ?>"></label>
+                <button class="btn btn-ghost btn-small docs-enviar" type="submit" name="choice" value="enviar">Enviar</button>
+                <input type="hidden" name="choice" value="" data-choice>
+                <label class="docs-procurar"><input type="checkbox" data-auto-check="<?= $st === 'procurar' ? 'desfazer' : 'depois' ?>" <?= $st === 'procurar' ? 'checked' : '' ?>> Vou procurar</label>
+                <button class="btn btn-ghost btn-small docs-enviar" type="submit" name="choice" value="<?= $st === 'procurar' ? 'desfazer' : 'depois' ?>" formnovalidate><?= $st === 'procurar' ? 'Desmarcar' : 'Vou procurar' ?></button>
               </form>
             <?php endif ?>
-          </div>
+          </li>
         <?php endforeach ?>
-      </div>
+      </ul>
       <?php $openItems = array_filter($pendings, fn($p) => $p['src'] === 'item'); if ($openItems): ?>
-        <h3>Outras pendências</h3>
-        <ul><?php foreach ($openItems as $p): ?><li><?= e($p['description']) ?></li><?php endforeach ?></ul>
-        <p class="muted small">Responda pela <a href="<?= e(url('cliente', ['area' => 'conversa'])) ?>#fim">conversa</a>.</p>
+        <p class="small"><strong>Outras pendências:</strong> <?= e(implode('; ', array_column($openItems, 'description'))) ?>. Responda pela <a href="<?= e(url('cliente', ['area' => 'conversa'])) ?>#fim">conversa</a>.</p>
       <?php endif ?>
-      <p class="muted small">Formatos aceitos: PDF, JPG ou PNG, até <?= (int) config('upload_max_mb') ?> MB por arquivo. Se seu celular salvar em outro formato, tire um print da foto ou mande pelo WhatsApp que Sidney registra para você.</p>
+      <p class="muted small docs-rodape">PDF, JPG ou PNG, até <?= (int) config('upload_max_mb') ?> MB. “Recebido” quer dizer que chegou; Sidney confere se está legível.</p>
     </section>
 
 <?php else: ?>
@@ -286,8 +299,33 @@ $choiceButtons = function (array $q) {
             <?php if ($meeting['note']): ?><p class="muted"><?= e($meeting['note']) ?></p><?php endif ?>
           <?php elseif ($held): ?>
             <p>Conversa realizada em <?= e(fmt_datetime($held['held_at'])) ?>.</p>
+          <?php elseif (meeting_ready((int) $c['id'])): [$opcoes] = agenda_options(); ?>
+            <p class="reu-chamada"><strong>Escolha o melhor horário</strong> para a sua conversa com Sidney:</p>
+            <?php if ($opcoes): ?>
+              <form method="post" action="<?= e(url('cliente/reuniao/marcar')) ?>" class="reu-opcoes" data-save>
+                <?= csrf_field() ?>
+                <?php foreach ($opcoes as $i => $o): ?>
+                  <button class="reu-opcao<?= $i === 0 ? ' is-primeira' : '' ?>" type="submit" name="horario" value="<?= e($o->format('Y-m-d H:i')) ?>">
+                    <span class="reu-dia"><?= e(ucfirst(fmt_when($o))) ?></span>
+                    <span class="reu-data"><?= e(SEMANA[(int) $o->format('w')] . ', ' . $o->format('d/m')) ?> · <?= agenda_int('agenda_duracao') ?> min</span>
+                    <?php if ($i === 0): ?><span class="reu-tag">Mais rápido</span><?php endif ?>
+                  </button>
+                <?php endforeach ?>
+              </form>
+              <p class="muted small">Horário de Brasília. <?= google_connected() ? 'O link do Google Meet aparece aqui e vai para o seu e-mail assim que você escolher.' : 'Sidney liga para o seu telefone no horário escolhido.' ?></p>
+            <?php else: ?>
+              <p class="muted">Não há horário livre nos próximos dias. Sidney vai entrar em contato para combinar.</p>
+            <?php endif ?>
           <?php else: ?>
             <p class="muted">A reunião ainda não foi confirmada. <?= isset($fields['reuniao_canal']) ? 'Sua preferência: ' . e(field_display('reuniao_canal', $fields['reuniao_canal'])) . '. ' : '' ?>Sidney confirma o horário depois de analisar seu caso.</p>
+          <?php endif ?>
+          <?php if (!$held && ($meeting || meeting_ready((int) $c['id']))): [$p1, $itens, $p2] = meeting_pitch((int) $c['id']); ?>
+            <div class="reu-pitch">
+              <h3>Como vai ser a conversa</h3>
+              <p><?= e($p1) ?></p>
+              <ul><?php foreach ($itens as $it): ?><li><?= e($it) ?></li><?php endforeach ?></ul>
+              <p><?= e($p2) ?></p>
+            </div>
           <?php endif ?>
           <?php if ($held && $held['summary']): ?>
             <h3>Resumo da conversa</h3>

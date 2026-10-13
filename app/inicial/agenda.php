@@ -327,6 +327,59 @@ function agenda_busy(DateTimeImmutable $from, DateTimeImmutable $to): array
     return [$busy, $err];
 }
 
+/**
+ * Duas opções para o cliente escolher: o primeiro horário livre (de preferência
+ * hoje, pela regra da antecedência) e o primeiro horário livre do dia útil
+ * seguinte a ele. [[início, início], erro do Google].
+ */
+function agenda_options(): array
+{
+    $from = now();
+    [$busy, $err] = agenda_busy($from, $from->modify('+' . (max(1, agenda_int('agenda_dias')) + 2) . ' days'));
+    $a = agenda_find_slot($from, $busy);
+    if (!$a) {
+        return [[], $err];
+    }
+    $out = [$a];
+    $d = $a->setTime(0, 0)->modify('+1 day');
+    while (!is_business_day($d)) {
+        $d = $d->modify('+1 day');
+    }
+    // No dia seguinte, a antecedência já está cumprida: parte da abertura.
+    $b = agenda_find_slot($d->modify('-' . agenda_int('agenda_antecedencia') . ' minutes'), $busy);
+    if ($b && $b > $a) {
+        $out[] = $b;
+    }
+    return [$out, $err];
+}
+
+/** O horário escolhido ainda está livre e dentro das regras? */
+function agenda_slot_ok(DateTimeImmutable $t): bool
+{
+    [$opts] = agenda_options();
+    foreach ($opts as $o) {
+        if ($o == $t) {
+            return true;
+        }
+    }
+    // Fora das duas opções (ex.: a lista mudou): vale se a regra aceitar exatamente esse início.
+    $from = now();
+    [$busy] = agenda_busy($from, $t->modify('+1 day'));
+    $dur = max(10, agenda_int('agenda_duracao'));
+    $gap = agenda_int('agenda_intervalo');
+    [$hi, $hf] = agenda_hours();
+    $min = (int) $t->format('G') * 60 + (int) $t->format('i');
+    if (!is_business_day($t) || $min < $hi || $min + $dur > $hf || $t < $from->modify('+' . agenda_int('agenda_antecedencia') . ' minutes')) {
+        return false;
+    }
+    foreach ($busy as [$bs, $be]) {
+        if ($bs < $t->modify("+$dur minutes") && $be->modify("+$gap minutes") > $t) {
+            return false;
+        }
+    }
+    return true;
+}
+
 /** Próximo horário que o assistente marcaria agora. [início ou null, erro do Google]. */
 function agenda_next_slot(): array
 {
@@ -340,29 +393,52 @@ function agenda_when(DateTimeImmutable $t): string
     return fmt_when($t);
 }
 
+/** Textos de cada motivo de agendamento: pedido insistente ou coleta concluída. */
+function agenda_reason(string $origin): array
+{
+    return $origin === 'coleta' ? [
+        'why' => 'Coleta concluída e documentos resolvidos: o cliente escolheu o horário para Sidney apresentar a análise.',
+        'note' => 'Horário escolhido por você depois de enviar as informações e os documentos.',
+        'event' => 'Cliente escolheu o horário da conversa com Sidney',
+        'next' => 'Conversa com o cliente (análise do caso)',
+        'none' => 'Tudo certo com seus dados e documentos. Não encontrei um horário livre na agenda de Sidney nos próximos dias; ele vai entrar em contato para combinar a conversa.',
+        'intro' => 'Conversa confirmada: %d minutos com Sidney %s, %s',
+    ] : [
+        'why' => 'Conversa marcada pelo assistente: o cliente pediu ' . HUMAN_ASKS_TO_SCHEDULE . ' vezes para falar com Sidney.',
+        'note' => 'Marcada pelo assistente porque você pediu para falar com Sidney.',
+        'event' => 'Conversa com Sidney marcada pelo assistente',
+        'next' => 'Conversa com o cliente (pediu para falar com Sidney)',
+        'none' => 'Registrei o seu pedido para falar com Sidney. Não encontrei um horário livre na agenda dele nos próximos dias; ele vai entrar em contato para combinar.',
+        'intro' => 'Combinado: marquei uma conversa de %d minutos com Sidney %s, %s',
+    ];
+}
+
 /**
  * Marca a conversa de 30 minutos com Sidney e avisa o cliente no chat.
+ * $origin: "pedido" (cliente insistiu em falar com Sidney) ou "coleta"
+ * (informações confirmadas e documentos resolvidos: próxima etapa).
  * Retorna a reunião (já existente ou nova) ou null se não houver horário.
  */
-function agenda_book(array $c): ?array
+function agenda_book(array $c, string $origin = 'pedido', ?DateTimeImmutable $at = null): ?array
 {
     $id = (int) $c['id'];
     if ($m = current_meeting($id)) {
         return $m;
     }
+    $R = agenda_reason($origin);
     $dur = max(10, agenda_int('agenda_duracao'));
-    [$start, $gerr] = agenda_next_slot();
+    [$start, $gerr] = $at ? [$at, null] : agenda_next_slot();
     if ($gerr) {
         add_event($id, 'reuniao', 'Google Agenda indisponível ao marcar a conversa', $gerr . ' O horário foi calculado só com as reuniões do sistema.');
     }
     if (!$start) {
-        chat_post($id, 'bot', 'Registrei o seu pedido para falar com Sidney. Não encontrei um horário livre na agenda dele nos próximos dias; ele vai entrar em contato para combinar.');
-        add_event($id, 'reuniao', 'Cliente pediu para falar com Sidney: sem horário livre na agenda', null, true);
-        set_next($id, 'Combinar horário de conversa com o cliente (pediu para falar com Sidney)', in_business_days(1));
+        chat_post($id, 'bot', $R['none']);
+        add_event($id, 'reuniao', $R['event'] . ': sem horário livre na agenda', null, true);
+        set_next($id, 'Combinar horário: ' . mb_strtolower($R['next']), in_business_days(1));
         return null;
     }
     $c = find_case($id);
-    $desc = 'Conversa marcada pelo assistente: o cliente pediu ' . HUMAN_ASKS_TO_SCHEDULE . ' vezes para falar com Sidney.'
+    $desc = $R['why']
         . "\nProtocolo " . $c['protocol'] . ' · ' . client_case_title($c)
         . "\nTelefone: " . ($c['client_phone'] ? format_phone((string) $c['client_phone']) : 'não informado')
         . "\nFicha: " . public_link('painel/atendimento/' . $id);
@@ -379,8 +455,8 @@ function agenda_book(array $c): ?array
     $mid = insert('case_meetings', [
         'case_id' => $id, 'status' => 'confirmada', 'channel' => $channel, 'starts_at' => $start->format('Y-m-d H:i:s'),
         'duration_min' => $dur, 'url' => $link, 'phone' => $channel === 'phone' ? $phone : null,
-        'note' => 'Marcada pelo assistente porque você pediu para falar com Sidney.', 'confirmed_at' => now_str(),
-        'confirmed_by' => null, 'created_at' => now_str(), 'google_event_id' => $ev['id'] ?? null, 'origin' => 'assistente',
+        'note' => $R['note'], 'confirmed_at' => now_str(),
+        'confirmed_by' => null, 'created_at' => now_str(), 'google_event_id' => $ev['id'] ?? null, 'origin' => $origin === 'coleta' ? 'coleta' : 'assistente',
     ]);
     if ($channel === 'site_chat') {
         bump_case($id, ['chat_mode' => 'human']);
@@ -391,13 +467,78 @@ function agenda_book(array $c): ?array
         'phone' => 'por ligação: Sidney vai ligar para ' . format_phone($phone) . '.',
         default => 'aqui mesmo, neste chat.',
     };
-    $falta = agent_guide_missing($id);
-    chat_post($id, 'bot', 'Combinado: marquei uma conversa de ' . $dur . ' minutos com Sidney ' . $when . ', ' . $how
-        . ($falta ? "\nAté lá, se puder, mande por aqui: " . implode(', ', array_slice($falta, 0, 4)) . '. Assim Sidney já chega preparado.' : ''));
-    add_event($id, 'reuniao', 'Conversa com Sidney marcada pelo assistente', 'Cliente insistiu ' . HUMAN_ASKS_TO_SCHEDULE . ' vezes para falar com Sidney. '
+    $falta = $origin === 'coleta' ? docs_pending_labels($id) : agent_guide_missing($id);
+    chat_post($id, 'bot', sprintf($R['intro'], $dur, $when, $how)
+        . ($falta ? "\nAté lá, se encontrar, mande por aqui: " . implode(', ', array_slice($falta, 0, 4)) . '. Assim Sidney já chega preparado.' : ''));
+    add_event($id, 'reuniao', $R['event'], $R['why'] . ' '
         . MEETING_CHANNELS[$channel]['short'] . ' ' . fmt_datetime($start->format('Y-m-d H:i:s')) . ($ev ? ' · Google Agenda' : ' · só no sistema') . '.', true);
-    set_next($id, 'Conversa com o cliente (pediu para falar com Sidney)', $start->format('Y-m-d H:i:s'));
+    set_next($id, $R['next'], $start->format('Y-m-d H:i:s'));
     return one('SELECT * FROM case_meetings WHERE id = ?', [$mid]);
+}
+
+/* ---------- Documentos depois da coleta: anexar ou se comprometer a procurar ---------- */
+
+/** Documentos do cliente com a situação simplificada: recebido, vai procurar ou falta. */
+function docs_client_list(int $id): array
+{
+    $c = find_case($id);
+    $later = (array) case_data($c, 'doc_later', []);
+    $out = [];
+    foreach (all("SELECT * FROM documents WHERE case_id = ? AND status <> 'dispensado' ORDER BY essential DESC, id", [$id]) as $d) {
+        $st = match (true) {
+            in_array($d['status'], ['recebido', 'conferido'], true) => 'ok',
+            $d['status'] === 'pendencia' => 'reenviar',
+            $d['status'] === 'nao_possui' || isset($later[$d['kind']]) => 'procurar',
+            default => 'falta',
+        };
+        $out[] = ['doc' => $d, 'st' => $st];
+    }
+    return $out;
+}
+
+/** Nomes dos documentos que o cliente ainda vai procurar ou reenviar. */
+function docs_pending_labels(int $id): array
+{
+    return array_map(fn($x) => mb_strtolower($x['doc']['label']), array_values(array_filter(docs_client_list($id), fn($x) => $x['st'] !== 'ok')));
+}
+
+/** Todos os documentos foram anexados ou têm o compromisso de procurar? */
+function docs_all_resolved(int $id): bool
+{
+    foreach (docs_client_list($id) as $x) {
+        if (in_array($x['st'], ['falta', 'reenviar'], true)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/**
+ * Depois de confirmar o resumo: com cada documento anexado ou com o
+ * compromisso de procurar, o cliente já pode escolher o horário da conversa.
+ */
+function meeting_ready(int $id): bool
+{
+    $c = find_case($id);
+    return (bool) $c['intake_done_at'] && $c['initial_status'] !== 'completed' && !current_meeting($id) && docs_all_resolved($id);
+}
+
+/** Texto de engajamento da reunião, com os dados do caso. */
+function meeting_pitch(int $id): array
+{
+    $banco = fv($id, 'banco');
+    $veic = trim((string) fv($id, 'veiculo_marca') . ' ' . (string) fv($id, 'veiculo_modelo'));
+    $prio = fv($id, 'objetivo_prioridade');
+    return [
+        'Sidney já está estudando o seu contrato' . ($banco ? ' com ' . $banco : '') . ($veic !== '' ? ' do ' . $veic : '') . '. Na conversa, você recebe a análise pronta, sem juridiquês:',
+        [
+            'o que encontramos no contrato: juros, tarifas e seguros que podem estar acima do permitido;',
+            'os caminhos possíveis para ' . ($prio && isset(PRIORITY_OPTIONS[$prio]) ? mb_strtolower(PRIORITY_OPTIONS[$prio]['label']) : 'resolver a sua situação') . ', com prós e contras de cada um;',
+            'quanto custa, como funciona e o que acontece em cada etapa;',
+            'espaço para tirar todas as suas dúvidas.',
+        ],
+        'São ' . agenda_int('agenda_duracao') . ' minutos, ' . (google_connected() ? 'por vídeo no Google Meet' : 'por ligação') . ', sem compromisso de contratar. Quanto antes conversarmos, mais opções você tem.',
+    ];
 }
 
 /* ---------- Pedidos para falar com Sidney ---------- */

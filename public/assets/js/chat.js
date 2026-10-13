@@ -177,6 +177,7 @@
           bar.innerHTML = j.bar;
           var g = bar.querySelector('[data-guia]');
           if (g && aberto) g.open = true;
+          if (window.cvResumoConferir) { window.cvResumoConferir(); }
         }
         scroll();
       })
@@ -332,4 +333,69 @@
   };
   setInterval(tick, 15000);
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { tick(); } });
+})();
+
+/* Resumo do caso (pop-up): abre sozinho na primeira vez que a coleta chega a
+   100% (ou com #resumo no endereço); o cliente confere, corrige e envia. */
+(function () {
+  'use strict';
+  function dlg() { return document.querySelector('dialog[data-resumo]'); }
+  function chave(d) { return 'resumo-visto-' + d.getAttribute('data-resumo'); }
+  function abrir() {
+    var d = dlg();
+    if (!d || d.open) { return; }
+    if (d.showModal) { d.showModal(); } else { d.setAttribute('open', ''); }
+    try { sessionStorage.setItem(chave(d), '1'); } catch (e) {}
+  }
+  function fechar() {
+    var d = dlg();
+    if (!d) { return; }
+    if (d.close) { d.close(); } else { d.removeAttribute('open'); }
+  }
+  function conferir() {
+    var d = dlg();
+    if (!d) { return; }
+    var visto = false;
+    try { visto = sessionStorage.getItem(chave(d)) === '1'; } catch (e) {}
+    if (location.hash === '#resumo' || !visto) { abrir(); }
+  }
+  window.cvResumoConferir = conferir;
+  document.addEventListener('click', function (ev) {
+    var t = ev.target;
+    if (t.closest('[data-resumo-abrir]')) { abrir(); return; }
+    if (t.closest('[data-resumo-fechar]')) { fechar(); return; }
+    if (t.closest('[data-resumo-editar]')) {
+      var f = t.closest('form');
+      f.classList.add('is-editing');
+      var first = f.querySelector('.cv-resumo-in input, .cv-resumo-in select, .cv-resumo-in textarea');
+      if (first) { first.focus(); }
+      return;
+    }
+    if (t.closest('[data-resumo-conversar]')) {
+      fechar();
+      var input = document.querySelector('[data-chat-input]');
+      if (input) { input.placeholder = 'Conte o que acha importante Sidney saber…'; input.focus(); }
+    }
+  });
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', conferir); } else { conferir(); }
+})();
+
+/* Aba de documentos: anexar envia na hora; "Vou procurar" marca e desmarca. */
+(function () {
+  'use strict';
+  document.documentElement.classList.add('js');
+  function enviar(form, choice) {
+    var h = form.querySelector('[data-choice]');
+    if (h) { h.value = choice; }
+    var btns = form.querySelectorAll('button[name=choice]');
+    Array.prototype.forEach.call(btns, function (b) { b.disabled = true; });
+    form.classList.add('is-enviando');
+    form.submit();
+  }
+  document.addEventListener('change', function (ev) {
+    var form = ev.target.closest && ev.target.closest('form[data-auto-envio]');
+    if (!form) { return; }
+    if (ev.target.type === 'file' && ev.target.files && ev.target.files.length) { enviar(form, 'enviar'); }
+    if (ev.target.hasAttribute('data-auto-check')) { enviar(form, ev.target.getAttribute('data-auto-check')); }
+  });
 })();

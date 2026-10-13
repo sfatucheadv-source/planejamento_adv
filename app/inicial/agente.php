@@ -154,7 +154,7 @@ function agent_enabled(): bool
 function agent_active(array $c): bool
 {
     return agent_enabled() && ($c['chat_mode'] ?? '') === 'bot' && is_initial($c) && ($c['initial_status'] ?? '') !== 'completed'
-        && !case_data($c, 'agent_off');
+        && case_data($c, 'agent_off') !== 'retomada'; // o chat não troca mais para as perguntas com botões
 }
 
 /** Campos que a IA pode registrar: os do cliente (nunca os de Sidney). */
@@ -307,7 +307,7 @@ function agent_system_prompt(): string
         . "- Siga a lista \"DADOS MÍNIMOS QUE FALTAM\" na ordem, mas aproveite o que a pessoa contar fora de ordem.\n"
         . "- Peça os documentos mínimos que faltam; explique em uma frase para que servem. Com o documento, você não precisa perguntar o que já estiver nele.\n"
         . "- Quando a pessoa não souber ou preferir informar depois, registre e siga em frente, sem insistir.\n"
-        . "- Quando não faltar nada, faça um resumo curto do que foi registrado e pergunte se está correto. Só marque \"concluido\": true quando a pessoa confirmar.\n"
+        . "- Quando não faltar nada, não escreva resumo: diga em uma frase que o resumo do caso abriu na tela para ela conferir, corrigir se precisar e enviar para Sidney. Se ela confirmar pela conversa que está tudo certo, marque \"concluido\": true.\n"
         . "- Observe com discrição as condições econômicas da pessoa e a capacidade de contratar o escritório (renda, ocupação, comprometimento com a parcela, bens, como fala de dinheiro). "
         . "Registre em \"capacidade\" o nível \"alta\" (tem condições de contratar), \"media\" ou \"baixa\", com uma observação de uma frase baseada só no que ela disse. "
         . "É uma anotação interna para Sidney: nunca pergunte diretamente sobre isso só para medir, nunca comente com a pessoa e não use gênero, origem ou aparência. Sem sinais suficientes, use null.\n"
@@ -368,7 +368,7 @@ function agent_context(int $id, string $event): string
         . "\n\nOUTROS DADOS (não pergunte; registre só se a pessoa disser):\n" . ia_field_spec(array_keys($others))
         . "\n\nDOCUMENTOS (use o tipo antes dos dois-pontos):\n" . ($docs ? implode("\n", $docs) : '- nenhum')
         . "\nDocumentos mínimos que faltam: " . ($missDocs ? implode(', ', array_column($missDocs, 'kind')) : 'nenhum')
-        . "\n\nSITUAÇÃO DA COLETA: " . (!$missing && !$missDocs ? 'tudo o que é mínimo já foi reunido; faça o resumo e peça a confirmação.' : 'em andamento.')
+        . "\n\nSITUAÇÃO DA COLETA: " . (!$missing && !$missDocs ? 'tudo o que é mínimo já foi reunido; o resumo para conferir já está na tela da pessoa (não escreva resumo).' : 'em andamento.')
         . "\n\nCONVERSA RECENTE:\n" . implode("\n", array_map(fn($m) => ($who[$m['author']] ?? 'Assistente') . ': ' . mb_substr(str_replace("\n", ' ', $m['body']), 0, 500), $recent))
         . "\n\nAGORA:\n" . $event;
 }
@@ -399,16 +399,20 @@ function agent_turn(array $c, string $event): ?string
     $res = llm_chat([
         ['role' => 'system', 'content' => agent_system_prompt()],
         ['role' => 'user', 'content' => agent_context($id, $event)],
-    ], $id, 'agente', 900, 60);
+    ], $id, 'agente', 1400, 60);
     $json = $res['ok'] ? llm_json($res['content']) : null;
     $reply = trim((string) ($json['resposta'] ?? ''));
     if (!$json || $reply === '') {
-        set_case_data($id, 'agent_off', 'falha');
+        // A falha não muda a tela: o chat continua igual e a mensagem fica registrada.
+        set_case_data($id, 'agent_fails', (int) case_data(find_case($id), 'agent_fails', 0) + 1);
         set_case_data($id, 'agent_suggestions', []);
-        add_event($id, 'ia', 'Assistente com IA indisponível: conversa seguiu com perguntas', $res['error'] ?? 'Resposta fora do formato esperado.');
-        chat_post($id, 'bot', 'Desculpe, tive uma instabilidade agora. Para não atrasar seu atendimento, sigo com perguntas rápidas logo abaixo.');
+        add_event($id, 'ia', 'Falha do assistente com IA', $res['error'] ?? 'Resposta fora do formato esperado.');
+        chat_post($id, 'bot', !agent_missing_fields($id) && !agent_missing_docs($id)
+            ? 'Já tenho tudo o que Sidney precisa. Confira o resumo do seu caso no botão “Revisar e enviar”, logo acima da mensagem.'
+            : 'Desculpe, tive uma instabilidade agora e sua mensagem ficou registrada. Pode me mandar de novo, por favor?');
         return null;
     }
+    set_case_data($id, 'agent_fails', 0);
     agent_apply($id, $json);
     if (!empty($json['duvida_tecnica'])) {
         $q = trim((string) ($json['duvida'] ?? '')) ?: mb_substr($event, 0, 300);
@@ -717,7 +721,7 @@ function agent_resume(array $c): void
     }
     set_case_data($id, 'agent_started', now_str());
     $c2 = $c;
-    $c2['data'] = json_encode(['agent_off' => 1] + (case_data($c) ?: []));
+    $c2['data'] = json_encode(['agent_off' => 'retomada'] + (case_data($c) ?: []));
     $q = bot_current($c2);
     if ($q && ($q['ask'] ?? '') !== '') {
         chat_post($id, 'bot', 'Vamos continuar? Pode me responder com suas palavras ou mandar fotos e PDFs aqui. ' . $q['ask']);
@@ -802,3 +806,108 @@ function agent_test(string $message): array
     $json = $res['ok'] ? llm_json($res['content']) : null;
     return ['ok' => (bool) $json, 'json' => $json, 'error' => $res['error'] ?? ($json ? null : 'Resposta fora do formato esperado.')];
 }
+
+/* ---------- Resumo do caso para o cliente conferir (pop-up ao chegar a 100%) ---------- */
+
+/** Seções do resumo: título => campos, na ordem em que aparecem. */
+const CASE_SUMMARY_SECTIONS = [
+    'Seus dados' => ['nome_completo', 'cpf', 'identificacao', 'nacionalidade', 'estado_civil', 'profissao', 'telefone', 'email'],
+    'Endereço' => ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'],
+    'Veículo' => ['veiculo_marca', 'veiculo_modelo', 'veiculo_ano', 'veiculo_placa', 'veiculo_renavam'],
+    'Contrato e financiamento' => ['relacao_contrato', 'titular_nome', 'banco', 'contrato_numero', 'contrato_data', 'valor_veiculo', 'entrada', 'capital', 'prazo', 'parcela', 'parcelas_pagas', 'taxa_mensal', 'taxa_anual', 'cet', 'saldo_cobrado'],
+    'Situação' => ['objetivo_prioridade', 'situacao_contrato', 'atraso', 'atraso_qtd', 'aviso', 'aviso_data', 'processo_existente', 'outro_advogado'],
+    'Justiça gratuita e conversa com Sidney' => ['gratuidade', 'renda_atividade', 'renda_valor', 'reuniao_canal', 'reuniao_disponibilidade'],
+];
+
+/** [título => [[chave, rótulo, valor exibido, linha da ficha]]], só com o que foi informado ou é mínimo. */
+function case_summary(int $id): array
+{
+    $fields = case_fields($id);
+    $required = array_flip(agent_required_fields());
+    $out = [];
+    foreach (CASE_SUMMARY_SECTIONS as $title => $keys) {
+        foreach ($keys as $k) {
+            $def = field_def($k);
+            if (!$def || !agent_field_applies($id, $k) || (!isset($fields[$k]) && !isset($required[$k]))) {
+                continue;
+            }
+            $out[$title][] = [$k, $def['label'], field_display($k, $fields[$k] ?? null), $fields[$k] ?? null];
+        }
+    }
+    return $out;
+}
+
+/** O que o assistente entendeu, em poucas frases, a partir da ficha. */
+function case_story(int $id): string
+{
+    $d = fn(string $k) => ($r = case_fields($id)[$k] ?? null) && $r['state'] === 'informado' ? field_display($k, $r) : '';
+    $nome = (string) strtok(trim((string) (fv($id, 'nome') ?: fv($id, 'nome_completo'))), ' ');
+    $veiculo = trim($d('veiculo_marca') . ' ' . $d('veiculo_modelo') . ($d('veiculo_ano') ? ' ' . $d('veiculo_ano') : '') . ($d('veiculo_placa') ? ' (placa ' . $d('veiculo_placa') . ')' : ''));
+    $s = ($nome !== '' ? $nome . ', entendemos' : 'Entendemos') . ' que você tem um financiamento' . ($veiculo !== '' ? ' do ' . $veiculo : '')
+        . ($d('banco') ? ' com ' . $d('banco') : '') . ($d('contrato_data') ? ', contratado em ' . $d('contrato_data') : '') . '.';
+    $p = [];
+    if ($d('parcela')) {
+        $p[] = 'parcela de ' . $d('parcela') . ($d('prazo') ? ' em ' . $d('prazo') . ' vezes' : '');
+    }
+    if ($d('parcelas_pagas') !== '') {
+        $p[] = $d('parcelas_pagas') . ' parcela(s) paga(s)';
+    }
+    $at = fv($id, 'atraso');
+    if ($at === 'sim') {
+        $p[] = ($d('atraso_qtd') ? $d('atraso_qtd') . ' parcela(s)' : 'parcelas') . ' em atraso';
+    } elseif ($at === 'nao') {
+        $p[] = 'as parcelas em dia';
+    }
+    if ($p) {
+        $s .= ' ' . mb_strtoupper(mb_substr(implode(', ', $p), 0, 1)) . mb_substr(implode(', ', $p), 1) . '.';
+    }
+    $aviso = fv($id, 'aviso');
+    if ($aviso && $aviso !== 'nenhum') {
+        $s .= ' Situação que pede atenção: ' . mb_strtolower($d('aviso')) . '.';
+    }
+    if ($d('objetivo_prioridade')) {
+        $s .= ' Sua prioridade: ' . mb_strtolower($d('objetivo_prioridade')) . '.';
+    }
+    $txt = trim((string) fv($id, 'objetivo_texto'));
+    if ($txt !== '') {
+        $s .= "\nNas suas palavras: “" . mb_strimwidth(preg_replace('/\s+/u', ' ', $txt), 0, 280, '…') . '”';
+    }
+    return $s;
+}
+
+/**
+ * Grava as correções feitas pelo cliente no resumo. Só muda o que foi
+ * alterado; campo apagado não apaga a ficha. Retorna os erros por campo.
+ */
+function case_summary_save(int $id, array $in): array
+{
+    $errors = [];
+    $allowed = [];
+    foreach (CASE_SUMMARY_SECTIONS as $keys) {
+        $allowed += array_flip($keys);
+    }
+    $changed = [];
+    foreach ($in as $k => $v) {
+        $k = (string) $k;
+        if (!isset($allowed[$k]) || !is_string($v)) {
+            continue;
+        }
+        $v = trim($v);
+        $cur = case_fields($id)[$k] ?? null;
+        if ($v === '' || $v === field_input_value($k, $cur)) {
+            continue;
+        }
+        if ($err = set_field($id, $k, $v, 'informado', 'cliente')) {
+            $errors[$k] = field_def($k)['label'] . ': ' . $err;
+        } else {
+            $changed[] = field_def($k)['label'];
+        }
+    }
+    if ($changed) {
+        agent_infer_fields($id);
+        add_event($id, 'coleta', 'Cliente corrigiu dados no resumo', implode(', ', $changed) . '.', false, 'cliente');
+        mark_client_activity($id);
+    }
+    return $errors;
+}
+

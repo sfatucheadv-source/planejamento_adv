@@ -325,7 +325,7 @@ foreach (array_keys(default_templates()) as $k) {
 op($sid, $id, ['op' => 'kit_publicar', 'kind' => 'proposta', 'vid' => $pv['id']]);
 ok(scalar('SELECT status FROM case_artifact_versions WHERE id = ?', [$pv['id']]) === 'publicado', 'proposta publicada antes da reunião');
 $cli->get('/cliente?area=reuniao');
-ok(str_contains($cli->html, 'Proposta de atendimento') && str_contains($cli->html, 'ainda não foi confirmada'), 'T13: cliente vê a proposta e que a reunião ainda não foi confirmada');
+ok(str_contains($cli->html, 'Proposta de atendimento') && str_contains($cli->html, 'Escolha o melhor horário') && str_contains($cli->html, 'Como vai ser a conversa'), 'T13: cliente vê a proposta e, sem reunião marcada, as opções de horário');
 $cli->get('/cliente/documento-kit/' . $pv['id']);
 ok($cli->status === 200 && str_contains($cli->html, 'Negociação extrajudicial') && str_contains($cli->html, '· v' . $pv['version'] . '</title>') && str_contains($cli->html, 'paginar.js') && str_contains($cli->html, 'Baixar .docx'), 'S13: documento em texto selecionável, no timbrado, com versão identificada');
 
