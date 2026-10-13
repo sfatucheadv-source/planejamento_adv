@@ -93,9 +93,9 @@ if (str_contains($system, 'extrai dados')) {
     }
     $content = json_encode(['transcricao' => strlen($audio) > 2000 ? 'Meu contrato é do Banco Aymoré e tenho duas parcelas atrasadas' : ''], JSON_UNESCAPED_UNICODE);
 } elseif (str_contains($system, 'avalia o preço de honorários')) {
-    // Avaliação de preço: sugere a referência + 10%; com a nota "teste-abaixo", tenta furar o piso.
+    // Avaliação de preço: sugere o preço padrão + 10%; com a nota "teste-abaixo", tenta furar o piso.
     $ctx = json_decode($text, true) ?: [];
-    $ref = (float) ($ctx['guia']['preco_referencia'] ?? 0);
+    $ref = (float) ($ctx['guia']['preco_padrao'] ?? 0);
     $abaixo = str_contains((string) ($ctx['guia']['notas_de_sidney'] ?? ''), 'teste-abaixo');
     $content = json_encode([
         'perfil_consumo' => 'Financiou em prazo longo e valoriza parcelas que caibam no mês.',

@@ -36,9 +36,6 @@ if ($lastMail && !$lastMail['ok']) {
 if ((int) $tpl['total'] > (int) $tpl['ok']) {
     $alerts[] = ['warn', ((int) $tpl['total'] - (int) $tpl['ok']) . ' modelo(s) de documento aguardando a sua aprovação.', 'painel/modelos-documentos', 'Revisar modelos'];
 }
-if (!oab_table_filled()) {
-    $alerts[] = ['warn', 'Preencha os valores da tabela da OAB: eles são a referência do guia de preço das propostas.', 'painel/configuracoes/precos', 'Preencher tabela'];
-}
 if (!google_connected()) {
     $alerts[] = ['info', 'Google não conectado: as reuniões ficam só no sistema (sem Meet) e os atendimentos não vão para o Drive.', 'painel/configuracoes/agenda', 'Conectar'];
 }
@@ -92,8 +89,8 @@ $tiles = [
         'painel/configuracoes/asaas', 'Configurar'],
     ['Integrações', 'calendar', 'Google (Agenda e Drive)', google_connected() ? (drive_enabled() ? 'ok' : 'warn') : 'info', google_connected() ? 'Conectado' . (setting('google_account_email') ? ' · ' . setting('google_account_email') : '') : 'Não conectado',
         ['Conversas de ' . agenda_int('agenda_duracao') . ' min · expediente ' . implode(' às ', array_map('agenda_hhmm', agenda_hours())), drive_enabled() ? 'Drive: ' . drive_path() : 'Drive não liberado'], 'painel/configuracoes/agenda', 'Configurar'],
-    ['Integrações', 'coin', 'Preços e negociação', oab_table_filled() ? 'ok' : 'warn', oab_table_filled() ? count(array_filter(oab_table(), fn($i) => (int) ($i['valor'] ?? 0) > 0)) . ' serviço(s) com valor da OAB' : 'Tabela da OAB sem valores',
-        ['Indicação: +' . fmt_pct(indicacao_pct()), 'Taxas do Asaas: ' . (asaas_fees_custom() ? 'personalizadas' : 'padrão de referência')], 'painel/configuracoes/precos', 'Configurar'],
+    ['Integrações', 'coin', 'Preços e negociação', 'ok', fmt_pct(pricing()['pct_veiculo']) . ' do veículo · mín. ' . brl(pricing()['minimo']),
+        ['Êxito: ' . fmt_pct(pricing()['exito']) . ' da economia', 'Taxas do Asaas: ' . (asaas_fees_custom() ? 'personalizadas' : 'padrão de referência')], 'painel/configuracoes/precos', 'Configurar'],
     ['Documentos', 'braces', 'Dados do escritório', 'info', 'Variáveis dos documentos', ['Endereço, telefone, PIX, foro e campos personalizados'], 'painel/variaveis', 'Editar dados'],
     ['Documentos', 'doc', 'Modelos de documentos', (int) $tpl['total'] > (int) $tpl['ok'] ? 'warn' : 'ok', (int) $tpl['ok'] . ' de ' . (int) $tpl['total'] . ' aprovados',
         ['Procuração, contrato, declaração e demais'], 'painel/modelos-documentos', 'Revisar modelos'],

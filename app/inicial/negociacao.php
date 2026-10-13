@@ -60,57 +60,71 @@ function asaas_card_pct(int $n, array $f): float
 
 /* ---------- Simulador de vendas ---------- */
 
+const SIM_PARCELAS = [2, 3, 4, 5, 6, 8, 10, 12];
+
 /**
  * Simula o valor em cada forma de pagamento. Valores em centavos.
- * $opt: repasse (taxa do cartão paga pelo cliente), desconto (% à vista no PIX e boleto),
- * parcelas_proprio (parcelamento próprio por boleto, com juros de 1% a.m.).
+ * PIX direto na chave do escritório não tem taxa do Asaas. Parcelado no
+ * escritório: parcelas fixas com juros de 1% a.m. (tabela Price). Cartão:
+ * taxa repassada ao cliente, parcela mínima de R$ 500,00.
+ * $opt: desconto (% à vista).
  */
 function sales_sim(int $value, array $opt, array $d): array
 {
     $f = asaas_fees();
-    $repasse = !empty($opt['repasse']);
     $desc = max(0.0, min(30.0, (float) ($opt['desconto'] ?? 0))) / 100;
+    $min = pricing()['cartao_min_parcela'];
     $rows = [];
     if ($value <= 0) {
         return $rows;
     }
     $avista = (int) round($value * (1 - $desc));
-    $pixFee = (int) round($f['pix_fixo'] * 100 + $avista * $f['pix_pct'] / 100);
-    $rows[] = ['key' => 'pix', 'grupo' => 'avista', 'label' => 'PIX à vista' . ($desc ? ' (' . fmt_pct($desc * 100) . ' de desconto)' : ''), 'n' => 1,
-        'cliente' => $avista, 'parcela' => $avista, 'liquido' => $avista - $pixFee, 'taxas' => $pixFee, 'recebe' => 'na hora', 'antecipado' => null];
+    $tagDesc = $desc ? ' (' . fmt_pct($desc * 100) . ' de desconto)' : '';
+    $rows[] = ['key' => 'pix', 'grupo' => 'pix', 'sub' => 'avista', 'label' => 'PIX à vista na chave' . $tagDesc, 'n' => 1,
+        'cliente' => $avista, 'parcela' => $avista, 'liquido' => $avista, 'taxas' => 0, 'recebe' => 'na hora, sem taxa', 'antecipado' => null];
     $bolFee = (int) round($f['boleto_fixo'] * 100);
-    $rows[] = ['key' => 'boleto', 'grupo' => 'avista', 'label' => 'Boleto à vista' . ($desc ? ' (' . fmt_pct($desc * 100) . ' de desconto)' : ''), 'n' => 1,
+    $pixFee = (int) round($f['pix_fixo'] * 100);
+    $rows[] = ['key' => 'boleto', 'grupo' => 'boleto', 'sub' => 'avista', 'label' => 'Boleto à vista' . $tagDesc, 'n' => 1,
         'cliente' => $avista, 'parcela' => $avista, 'liquido' => $avista - $bolFee, 'taxas' => $bolFee, 'recebe' => '1 dia útil após o pagamento', 'antecipado' => null];
-
+    foreach (SIM_PARCELAS as $n) {
+        $tab = price_table($value, $n);
+        $tot = array_sum(array_column($tab, 'valor'));
+        $par = $tab[0]['valor'];
+        $rows[] = ['key' => 'pixparc_' . $n, 'grupo' => 'pix', 'sub' => 'parcelado', 'label' => 'PIX parcelado no escritório em ' . $n . 'x', 'n' => $n,
+            'cliente' => $tot, 'parcela' => $par, 'liquido' => $tot, 'taxas' => 0, 'recebe' => 'mês a mês, sem taxa (risco de atraso é seu)', 'antecipado' => null, 'risco' => true];
+        $rows[] = ['key' => 'pixrec_' . $n, 'grupo' => 'pix', 'sub' => 'recorrente', 'label' => 'PIX recorrente no Asaas em ' . $n . 'x', 'n' => $n,
+            'cliente' => $tot, 'parcela' => $par, 'liquido' => $tot - $n * $pixFee, 'taxas' => $n * $pixFee, 'recebe' => 'cobrança automática mensal', 'antecipado' => null, 'risco' => true];
+        $rows[] = ['key' => 'boletoparc_' . $n, 'grupo' => 'boleto', 'sub' => 'parcelado', 'label' => 'Boleto parcelado em ' . $n . 'x', 'n' => $n,
+            'cliente' => $tot, 'parcela' => $par, 'liquido' => $tot - $n * $bolFee, 'taxas' => $n * $bolFee, 'recebe' => 'mês a mês', 'antecipado' => null, 'risco' => true];
+    }
     $fixed = (int) round($f['cartao_fixo'] * 100);
     for ($n = 1; $n <= $f['cartao_max']; $n++) {
         $pct = asaas_card_pct($n, $f);
-        // Com repasse, o cliente paga o suficiente para o escritório receber o valor cheio.
-        $gross = $repasse ? (int) ceil(($value + $fixed) / (1 - $pct)) : $value;
+        // A taxa é repassada: o cliente paga o suficiente para o escritório receber o valor cheio.
+        $gross = (int) ceil(($value + $fixed) / (1 - $pct));
+        if ($n > 1 && intdiv($gross, $n) < $min) {
+            break;
+        }
         $fee = (int) round($gross * $pct) + $fixed;
         $net = $gross - $fee;
         $antecipCost = (int) round($net * $f['antecipacao'] / 100 * ($n + 1) / 2);
-        $rows[] = ['key' => 'cartao_' . $n, 'grupo' => 'cartao', 'label' => $n === 1 ? 'Cartão à vista' : 'Cartão em ' . $n . 'x', 'n' => $n,
+        $rows[] = ['key' => 'cartao_' . $n, 'grupo' => 'cartao', 'sub' => 'cartao', 'label' => $n === 1 ? 'Cartão à vista' : 'Cartão em ' . $n . 'x', 'n' => $n,
             'cliente' => $gross, 'parcela' => (int) round($gross / $n), 'liquido' => $net, 'taxas' => $fee,
             'recebe' => $n === 1 ? 'em 32 dias' : $n . ' repasses mensais (o 1º em 32 dias)', 'antecipado' => $net - $antecipCost, 'pct' => $pct * 100];
     }
-
-    $np = max(2, min(60, (int) ($opt['parcelas_proprio'] ?? 0) ?: 6));
-    $tmp = $d;
-    $tmp['fixos'] = ['ativo' => true, 'valor' => $value, 'descricao' => ''];
-    $tmp['atividades'] = [];
-    $tmp['pagamento']['condicao'] = 'parcelado';
-    $tmp['pagamento']['modalidade'] = 'proprio';
-    $tmp['pagamento']['parcelas'] = $np;
-    $sched = proposal_schedule($tmp);
-    $tot = proposal_totals($tmp);
-    $clientTotal = $tot['entrada'] + array_sum(array_column($sched, 'valor'));
-    $boletos = count($sched) + ($tot['entrada'] ? 1 : 0);
-    $rows[] = ['key' => 'proprio', 'grupo' => 'proprio', 'label' => 'Parcelado próprio em ' . count($sched) . 'x' . ($tot['entrada'] ? ' + entrada' : '') . ' (boleto ou PIX, 1% a.m.)', 'n' => count($sched),
-        'cliente' => $clientTotal, 'parcela' => $sched ? (int) $sched[0]['valor'] : 0, 'parcela_ultima' => $sched ? (int) end($sched)['valor'] : 0,
-        'liquido' => $clientTotal - $boletos * $bolFee, 'taxas' => $boletos * $bolFee, 'recebe' => 'conforme o cliente paga, mês a mês', 'antecipado' => null,
-        'risco' => true];
     return $rows;
+}
+
+/** Valor de partida do simulador: padrão, sugestão da IA ou o que está na proposta. [centavos, rótulo]. */
+function sales_sim_base(string $base, array $d, ?int $caseId): array
+{
+    if ($caseId && $base === 'padrao') {
+        return [pricing_standard($caseId)['valor'], 'precificação padrão'];
+    }
+    if ($caseId && $base === 'ia' && ($ia = pricing_ia($caseId))) {
+        return [$ia, 'sugestão da IA'];
+    }
+    return [proposal_totals($d)['agora'], 'valor da proposta'];
 }
 
 function fmt_pct(float $v): string
@@ -119,16 +133,27 @@ function fmt_pct(float $v): string
 }
 
 /** Opções do simulador vindas do formulário (não fazem parte da proposta). */
-function sales_sim_options(array $in, array $d): array
+function sales_sim_options(array $in, array $d, ?int $caseId = null): array
 {
     $p = $d['pagamento'];
+    $cur = sales_sim_current_key($d);
+    $meioCur = str_starts_with($cur, 'cartao') ? 'cartao' : (str_starts_with($cur, 'boleto') ? 'boleto' : 'pix');
+    // Sem escolha: o modo da proposta; sem valor na proposta, a precificação padrão.
+    $base = in_array($in['sim_base'] ?? '', ['padrao', 'ia', 'proposta'], true) ? (string) $in['sim_base']
+        : (in_array($d['precificacao']['modo'] ?? '', ['padrao', 'ia'], true) ? $d['precificacao']['modo'] : ($caseId && !proposal_totals($d)['agora'] ? 'padrao' : 'proposta'));
     $valor = money_cents((string) ($in['sim_valor'] ?? ''));
+    [$auto, $rot] = sales_sim_base($base, $d, $caseId);
     return [
-        'valor' => $valor ?: proposal_totals($d)['total'],
+        'valor' => $valor ?: $auto,
         'valor_manual' => (bool) $valor,
-        'repasse' => !empty($in['sim_repasse']) || (!array_key_exists('sim_valor', $in) && $p['modalidade'] === 'cartao'),
+        'base' => $base,
+        'base_rotulo' => $valor ? 'valor digitado' : $rot,
+        'meio' => in_array($in['sim_meio'] ?? '', ['pix', 'boleto', 'cartao'], true) ? (string) $in['sim_meio'] : $meioCur,
+        'pix' => in_array($in['sim_pix'] ?? '', ['avista', 'parcelado', 'recorrente'], true) ? (string) $in['sim_pix']
+            : (str_starts_with($cur, 'pixrec') ? 'recorrente' : (str_starts_with($cur, 'pixparc') ? 'parcelado' : 'avista')),
+        'repasse' => true,
         'desconto' => (float) str_replace(',', '.', (string) ($in['sim_desconto'] ?? '0')),
-        'parcelas_proprio' => (int) ($in['sim_parcelas'] ?? 0) ?: ($p['modalidade'] === 'proprio' && $p['condicao'] === 'parcelado' ? (int) $p['parcelas'] : 6),
+        'parcelas_proprio' => (int) ($p['parcelas'] ?? 6),
     ];
 }
 
@@ -137,9 +162,13 @@ function sales_sim_current_key(array $d): string
 {
     $p = $d['pagamento'];
     if ($p['condicao'] === 'avista') {
-        return in_array('pix', $p['formas'], true) || !in_array('boleto', $p['formas'], true) ? 'pix' : 'boleto';
+        return in_array('boleto', $p['formas'], true) && !in_array('pix', $p['formas'], true) ? 'boleto' : 'pix';
     }
-    return $p['modalidade'] === 'cartao' ? 'cartao_' . max(1, (int) $p['cartao_parcelas']) : 'proprio';
+    if ($p['modalidade'] === 'cartao') {
+        return 'cartao_' . max(1, (int) $p['cartao_parcelas']);
+    }
+    $n = max(2, (int) $p['parcelas']);
+    return match ($p['meio'] ?? 'pix') { 'boleto' => 'boletoparc_' . $n, 'pix_recorrente' => 'pixrec_' . $n, default => 'pixparc_' . $n };
 }
 
 /**
@@ -238,21 +267,11 @@ function proposal_guide_save(int $caseId, array $g, ?int $userId): void
         [$caseId, json_encode($g, JSON_UNESCAPED_UNICODE), now_str(), $userId]);
 }
 
-/** Piso da OAB, preço de referência (com o acréscimo da indicação) e os itens usados. */
-function guide_prices(array $g): array
+/** Referências de preço do caso: a precificação padrão (5% do veículo, mínimo por processo). */
+function guide_prices(array $g, ?int $caseId = null): array
 {
-    $itens = array_values(array_filter(oab_table(), fn($i) => in_array($i['key'], $g['servicos'], true)));
-    $soma = array_sum(array_map(fn($i) => (int) ($i['valor'] ?? 0), $itens));
-    $base = $g['base_manual'] ?: ($soma ?: null);
-    $pct = $g['indicacao'] ? indicacao_pct() : 0.0;
-    return [
-        'itens' => $itens,
-        'sem_valor' => array_values(array_filter($itens, fn($i) => !(int) ($i['valor'] ?? 0))),
-        'base' => $base,
-        'manual' => (bool) $g['base_manual'],
-        'pct' => $pct,
-        'referencia' => $base ? (int) round($base * (1 + $pct / 100)) : null,
-    ];
+    $std = $caseId ? pricing_standard($caseId) : null;
+    return ['itens' => [], 'sem_valor' => [], 'base' => $std['valor'] ?? null, 'manual' => false, 'pct' => 0.0, 'referencia' => $std['valor'] ?? null, 'padrao' => $std];
 }
 
 /* ---------- Avaliação pela IA ---------- */
@@ -278,7 +297,8 @@ function negotiation_context(array $c, array $d, array $g): array
     }
     $msgs = array_reverse(all("SELECT body FROM chat_messages WHERE case_id = ? AND author = 'client' ORDER BY id DESC LIMIT 25", [$id]));
     $docs = array_column(all("SELECT label, status FROM documents WHERE case_id = ?", [$id]), 'status', 'label');
-    $prices = guide_prices($g);
+    $prices = guide_prices($g, $id);
+    $std = $prices['padrao'];
     $t = proposal_totals($d);
     $f = asaas_fees();
     return [
@@ -293,11 +313,9 @@ function negotiation_context(array $c, array $d, array $g): array
             'capacidade_contratacao' => case_data($c, 'capacidade'),
         ],
         'guia' => [
-            'piso_oab' => $prices['base'] ? $prices['base'] / 100 : null,
-            'servicos' => array_map(fn($i) => $i['label'] . ((int) ($i['valor'] ?? 0) ? ' (R$ ' . number_format(((int) $i['valor']) / 100, 2, ',', '.') . ')' : ''), $prices['itens']),
-            'indicacao' => $g['indicacao'],
-            'acrescimo_indicacao_pct' => indicacao_pct(),
-            'preco_referencia' => $prices['referencia'] ? $prices['referencia'] / 100 : null,
+            'preco_padrao' => $std ? $std['valor'] / 100 : null,
+            'regra_padrao' => $std ? fmt_pct($std['pct']) . ' do valor do veículo, mínimo de R$ ' . number_format($std['minimo'] / 100, 2, ',', '.') . ' por processo, mais ' . fmt_pct($std['exito']) . ' de êxito sobre a economia total' : null,
+            'calculo' => $std['nota'] ?? null,
             'notas_de_sidney' => $g['notas'],
         ],
         'proposta_atual' => [
@@ -306,7 +324,9 @@ function negotiation_context(array $c, array $d, array $g): array
             'condicao' => $d['pagamento']['condicao'] === 'avista' ? 'à vista' : ($d['pagamento']['modalidade'] === 'cartao' ? 'cartão em ' . $d['pagamento']['cartao_parcelas'] . 'x' : 'parcelado próprio em ' . $d['pagamento']['parcelas'] . 'x'),
         ],
         'custos_de_recebimento' => [
-            'cartao_ate_6x_pct' => $f['cartao_2_6'], 'cartao_7_a_12x_pct' => $f['cartao_7_12'], 'parcelado_proprio' => 'juros simples de 1% a.m. + INPC, boleto ou PIX, risco de inadimplência do escritório',
+            'pix_a_vista' => 'direto na chave, sem taxa', 'cartao_ate_6x_pct' => $f['cartao_2_6'], 'cartao_7_a_12x_pct' => $f['cartao_7_12'], 'cartao' => 'taxa repassada ao cliente, parcela mínima de R$ 500',
+            'parcelado_proprio' => 'parcelas fixas com juros de 1% a.m., boleto ou PIX, risco de inadimplência do escritório',
+            'facilidades' => 'desconto em % e parte (ou tudo) para receber ao final do processo, corrigida pelo INPC + 1% a.m., devida mesmo sem êxito',
         ],
     ];
 }
@@ -316,7 +336,7 @@ function negotiation_system_prompt(): string
     return implode("\n", [
         'Você avalia o preço de honorários para Sidney Fatuche, advogado, numa negociação de financiamento de veículo. É um guia interno só para ele; o cliente nunca vê.',
         'Como pensar:',
-        '1. Referências de Sidney: o valor da tabela de honorários da OAB (piso_oab) para quem vem sem indicação e esse valor com o acréscimo informado (acrescimo_indicacao_pct) para quem vem por indicação. São pontos de partida, não limites: você pode sugerir acima ou abaixo deles se o perfil indicar. Se não houver valor da OAB, estime a partir do caso e diga isso.',
+        '1. Referência de Sidney: a precificação padrão (preco_padrao: 5% do valor do veículo, com mínimo de R$ 3.500 por processo, mais 10% de êxito sobre a economia total). É ponto de partida, não limite: sugira acima ou abaixo se o perfil indicar, e diga se cabe desconto ou deixar parte para o final do processo.',
         '2. Leia o padrão de comportamento de consumo do cliente: renda e comprometimento com a parcela do financiamento, valor do veículo e do contrato, prazo que costuma aceitar, histórico de atrasos, urgência (aviso, busca e apreensão, processo), o que quer resolver primeiro e como se expressa nas mensagens.',
         '3. Diga se é possível e necessário aplicar um valor maior ou menor para alinhar a proposta aos hábitos de consumo dele, e qual forma e prazo de pagamento ele tende a aceitar (à vista com desconto, cartão parcelado, entrada mais parcelas).',
         'Não use gênero, estado civil, origem, religião, raça ou qualquer critério discriminatório. Não invente dados: se faltar informação, diga o que falta e reduza a confiança. Considere o custo de receber: o cartão tem taxa e o parcelamento próprio tem risco de inadimplência.',
@@ -331,7 +351,7 @@ function negotiation_evaluate(array $c, array $d, array $g, ?int $userId): array
     if (!llm_enabled()) {
         return [false, 'A IA está desligada ou sem chave (Configurações › Inteligência artificial).'];
     }
-    $prices = guide_prices($g);
+    $prices = guide_prices($g, (int) $c['id']);
     $ctx = negotiation_context($c, $d, $g);
     $res = llm_chat([
         ['role' => 'system', 'content' => negotiation_system_prompt()],
@@ -343,7 +363,7 @@ function negotiation_evaluate(array $c, array $d, array $g, ?int $userId): array
     }
     $j = negotiation_normalize($j, $prices);
     if (!$j['preco_sugerido']) {
-        return [false, 'A IA não chegou a um valor. Informe o valor da OAB no guia ou complete a ficha e tente de novo.'];
+        return [false, 'A IA não chegou a um valor. Complete a ficha (valor do veículo) e tente de novo.'];
     }
     insert('proposal_evaluations', [
         'case_id' => $c['id'], 'user_id' => $userId, 'kind' => 'preco', 'input' => json_encode($ctx, JSON_UNESCAPED_UNICODE), 'result' => json_encode($j, JSON_UNESCAPED_UNICODE),

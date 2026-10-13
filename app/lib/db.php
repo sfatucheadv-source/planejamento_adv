@@ -649,6 +649,11 @@ SQL;
 CREATE INDEX IF NOT EXISTS idx_versions_case_kind ON case_artifact_versions(case_id, kind, version);
 SQL;
 
+    // Versão 17 — parcelamento próprio em parcelas fixas (juros de 1% a.m., Calculadora do Cidadão).
+    $migrations[17] = <<<SQL
+CREATE INDEX IF NOT EXISTS idx_proposals_updated ON proposals(updated_at);
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -673,6 +678,18 @@ SQL;
                 if (!in_array('archived_at', $cols, true)) {
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_at TEXT');
                     $pdo->exec('ALTER TABLE cases ADD COLUMN archived_by INTEGER REFERENCES users(id)');
+                }
+            }
+            if ($v === 17) {
+                $st = $pdo->prepare('SELECT body FROM doc_templates WHERE key = ?');
+                $st->execute(['honorarios']);
+                $cur = $st->fetchColumn();
+                if ($cur !== false) {
+                    $body = (string) preg_replace('/\*\*Parágrafo #\.\*\* O parcelamento concedido diretamente pela CONTRATADA sofrerá[^\n]*/u',
+                        '**Parágrafo #.** O parcelamento concedido diretamente pela CONTRATADA é feito em parcelas mensais, fixas e iguais, já acrescidas de juros de 1% (um por cento) ao mês, calculadas pelo sistema de prestações fixas adotado pela Calculadora do Cidadão do Banco Central. A parcela paga em atraso será atualizada pelo INPC/IBGE até a data do pagamento.', (string) $cur);
+                    if ($body !== $cur) {
+                        $pdo->prepare('UPDATE doc_templates SET body = ?, updated_at = ? WHERE key = ?')->execute([$body, date('Y-m-d H:i:s'), 'honorarios']);
+                    }
                 }
             }
             if ($v === 16) {

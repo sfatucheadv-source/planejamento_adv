@@ -375,6 +375,15 @@
       .catch(function () {});
   }
 
+  // Dica da precificação padrão só com o modo "padrão" marcado.
+  function modoPrecif() {
+    var m = form.querySelector('input[name="precificacao_modo"]:checked');
+    form.classList.toggle('is-padrao', !!m && m.value === 'padrao');
+    form.classList.toggle('is-ia', !!m && m.value === 'ia');
+  }
+  modoPrecif();
+  form.addEventListener('change', function (ev) { if (ev.target.name === 'precificacao_modo') modoPrecif(); });
+
   function later() { clearTimeout(timer); timer = setTimeout(refresh, 350); }
 
   form.addEventListener('input', function (ev) {
@@ -396,11 +405,13 @@
     if (radio) radio.checked = true;
     if (o.tipo !== 'avista' && o.parcelas) setVal('parcelas', o.parcelas);
     if (o.entrada !== undefined) setVal('entrada', o.entrada);
-    if (o.forma) { var cb = form.querySelector('input[name="formas[]"][value="' + o.forma + '"]'); if (cb) cb.checked = true; }
+    if (o.meio) setVal('meio', o.meio);
+    if (o.modo) { var m = form.querySelector('input[name="precificacao_modo"][value="' + o.modo + '"]'); if (m && !m.disabled) m.checked = true; }
     if (o.tipo === 'proprio') {
       var pv = form.querySelector('[name="primeiro_vencimento"]');
       if (pv && !pv.value) { var dt = new Date(); dt.setDate(dt.getDate() + 30); pv.value = dt.toISOString().slice(0, 10); }
     }
+    modoPrecif();
     refresh();
     if (nav) abrir('simulacao');
     var alvo = document.getElementById('pagamento');
@@ -408,9 +419,10 @@
   }
   document.addEventListener('click', function (ev) {
     var u = ev.target.closest('[data-usar-tipo]');
-    if (u) { aplicarCondicao({ tipo: u.getAttribute('data-usar-tipo'), parcelas: u.getAttribute('data-usar-parcelas'), forma: u.getAttribute('data-usar-forma') }); return; }
+    if (u) { var base = form.querySelector('input[name="sim_base"]:checked');
+      aplicarCondicao({ tipo: u.getAttribute('data-usar-tipo'), parcelas: u.getAttribute('data-usar-parcelas'), meio: u.getAttribute('data-usar-meio'), modo: base && base.value !== 'proposta' ? base.value : null }); return; }
     var ia = ev.target.closest('[data-aplicar-ia]');
-    if (ia) { aplicarCondicao({ valor: ia.getAttribute('data-valor'), tipo: ia.getAttribute('data-tipo'), parcelas: ia.getAttribute('data-parcelas'), entrada: ia.getAttribute('data-entrada'), forma: ia.getAttribute('data-forma') }); return; }
+    if (ia) { aplicarCondicao({ valor: ia.getAttribute('data-valor'), modo: 'ia', tipo: ia.getAttribute('data-tipo'), parcelas: ia.getAttribute('data-parcelas'), entrada: ia.getAttribute('data-entrada'), meio: ia.getAttribute('data-meio') }); return; }
     var as = ev.target.closest('[data-asaas-sim]');
     if (as) {
       var res = form.querySelector('[data-asaas-res]');

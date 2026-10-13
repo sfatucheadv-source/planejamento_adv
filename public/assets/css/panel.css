@@ -557,6 +557,25 @@ details.box.prop-mais[open] > summary h2::before { content: "− "; }
 .prop-form:has([name=pagamento_tipo][value=avista]:checked) .prop-if-parcelado,
 .prop-form:not(:has([name=pagamento_tipo][value=proprio]:checked)) .prop-if-proprio { display: none; }
 .prop-if-desloc { margin: 6px 0 0 24px; }
+.prop-form:not(.is-padrao) .prop-if-padrao { display: none; }
+.prop-form.is-padrao [name=fixos_valor], .prop-form.is-ia [name=fixos_valor] { background: var(--line-soft, #F2F4F5); color: var(--muted); }
+.prop-precif { margin-bottom: 12px; }
+.sim-sug { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 8px 0 14px; }
+.sim-sug-card { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+.sim-sug-card span { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.sim-sug-card strong { font-size: 19px; color: var(--petrol); }
+.sim-sug-card small { color: var(--muted); font-size: 12.5px; }
+.sim-sug-card .b { align-self: flex-start; margin-top: 6px; }
+.sim-sug-card.is-cur { border-color: var(--teal); box-shadow: inset 0 0 0 1px var(--teal); background: var(--teal-soft); }
+.sim-modos { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.sim-modo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.sim-modo .lbl { min-width: 52px; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.sim-chip { display: inline-flex; align-items: center; cursor: pointer; }
+.sim-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.sim-chip { padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px; font-size: 13.5px; background: var(--card); }
+.sim-chip:has(input:checked) { border-color: var(--teal); background: var(--teal-soft); color: var(--petrol); font-weight: 600; }
+.sim-chip:has(input:focus-visible) { outline: 2px solid var(--teal); outline-offset: 2px; }
+@media (max-width: 760px) { .sim-sug { grid-template-columns: minmax(0, 1fr); } }
 .prop-totais { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px 16px; margin: 0 0 10px; }
 .prop-totais dt { font-size: 12.5px; color: var(--muted); }
 .prop-totais dd { margin: 0; }
@@ -958,3 +977,31 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .fx-par-ed[open] { margin-top: 6px; }
 .fx-par-acoes { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; }
 .fx-cmd { margin-top: 10px; }
+
+/* Honorários na aba Reunião (só o operador vê) */
+.hon-reu > summary .hint { font-weight: 400; margin-left: 6px; }
+.hon-form .prop-tipos { margin-bottom: 4px; }
+.hon-facil { display: grid; grid-template-columns: minmax(0, 220px) auto; align-items: end; gap: 6px 14px; }
+.hon-facil .hint { grid-column: 1 / -1; margin: 0; }
+.hon-facil .chk { padding-bottom: 10px; }
+.hon-entrada { max-width: 220px; }
+.hon-form:has([name=pagamento_tipo][value=avista]:checked) .hon-entrada,
+.hon-form:has([name=tudo_final]:checked) .hon-entrada,
+.hon-form:has([name=tudo_final]:checked) .hon-pag + .row3 { display: none; }
+.hon-form:has([name=tudo_final]:checked) .hon-pag { opacity: .5; }
+.hon-res { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 6px 0; }
+.hon-res > div { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); min-width: 0; }
+.hon-res span { font-size: 11.5px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.hon-res strong { font-size: 18px; color: var(--petrol); }
+.hon-res small { font-size: 12px; color: var(--muted); }
+.hon-parc { margin: 0; }
+.hon-clausulas { border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; background: var(--card); }
+.hon-clausulas > summary { cursor: pointer; font-weight: 600; color: var(--petrol); }
+.hon-cl { margin-top: 12px; }
+.hon-cl h4 { margin: 0 0 6px; font-size: 14px; }
+.hon-ctx { font-size: 13px; color: var(--muted); }
+.hon-ctx p { margin: 0 0 4px; }
+.hon-mark { padding: 8px 10px; margin: 6px 0; border-left: 3px solid var(--teal); background: var(--teal-soft); border-radius: 6px; font-size: 13.5px; }
+.hon-mark p { margin: 0 0 6px; }
+.hon-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 760px) { .hon-res { grid-template-columns: repeat(2, minmax(0, 1fr)); } .hon-facil { grid-template-columns: 1fr; } }

@@ -101,7 +101,7 @@ ok(str_contains($h->html, '### ') === false && str_contains($h->html, 'da remune
 
 echo "\nP3. Validação\n";
 $h->post('/painel/propostas/' . $id, ['fixos_valor' => '', 'exito_ativo' => '1', 'exito_percentual' => '150', 'formas' => [], 'pagamento_tipo' => 'proprio']);
-ok(str_contains($h->html, 'Nada foi salvo') && str_contains($h->html, 'percentual de êxito') && str_contains($h->html, 'forma de pagamento') && str_contains($h->html, 'primeira parcela'), 'erros apontados e nada salvo');
+ok(str_contains($h->html, 'Nada foi salvo') && str_contains($h->html, 'percentual de êxito') && str_contains($h->html, 'primeira parcela'), 'erros apontados e nada salvo');
 ok(!proposal_get($id), 'proposta inválida não é gravada');
 
 echo "\nP4. Proposta completa: fixos, atividade, êxito, parcelamento próprio\n";
@@ -117,9 +117,9 @@ ok($pr && str_contains($h->html, 'Proposta salva'), 'proposta salva');
 $t = proposal_totals($pr['data']);
 ok($t['total'] === 300000 && $t['entrada'] === 60000 && $t['saldo'] === 240000, 'total R$ 3.000,00, entrada R$ 600,00, saldo R$ 2.400,00');
 $s = proposal_schedule($pr['data']);
-ok(array_column($s, 'valor') === [80800, 81600, 82400] && array_column($s, 'vencimento') === ['2026-11-15', '2026-12-15', '2027-01-15'], 'parcelas com juros simples de 1% a.m.: R$ 808, 816, 824, mensais');
-ok(str_contains($h->html, 'R$ 824,00') && str_contains($h->html, 'Total com juros') && str_contains($h->html, 'R$ 3.048,00'), 'simulação mostra o quadro de parcelas e o total com juros');
-ok(str_contains($h->html, '1ª parcela: R$ 808,00, vencimento em 15/11/2026') && str_contains($h->html, 'juros simples de 1% (um por cento) ao mês e de atualização monetária'), 'prévia: texto da cláusula e parágrafo do parcelamento próprio');
+ok(array_column($s, 'valor') === [81605, 81605, 81605] && array_sum(array_column($s, 'principal')) === 240000 && array_column($s, 'vencimento') === ['2026-11-15', '2026-12-15', '2027-01-15'], 'parcelas fixas e iguais com juros de 1% a.m. (Calculadora do Cidadão): 3x R$ 816,05, mensais');
+ok(str_contains($h->html, '3x de R$ 816,05 fixas') && str_contains($h->html, 'Total com juros') && str_contains($h->html, 'R$ 3.048,15'), 'simulação mostra o quadro de parcelas e o total com juros');
+ok(str_contains($h->html, '1ª parcela: R$ 816,05, vencimento em 15/11/2026') && str_contains($h->html, 'Calculadora do Cidadão do Banco Central'), 'prévia: texto da cláusula e parágrafo do parcelamento próprio');
 
 echo "\nP4b. Prévia ao vivo e ajuste da cláusula\n";
 preg_match('/name="_csrf" value="([^"]+)"/', $h->html, $mm);
@@ -128,7 +128,7 @@ $h->post('/painel/propostas/' . $id . '/previa', array_merge($full, ['_csrf' => 
 $j = json_decode($h->html, true) ?: [];
 ok(isset($j['simulacao']) && str_contains($j['simulacao'], '4ª') && str_contains($j['auto']['pagamento'] ?? '', 'em 4 (quatro) parcelas mensais'), 'prévia ao vivo refaz a simulação e o texto com 4 parcelas');
 ok(str_contains($j['clausulas']['pagamento']['antes'] ?? '', 'do pagamento') && str_contains($j['clausulas']['pagamento']['depois'] ?? '', 'INPC/IBGE'), 'prévia ao vivo devolve a cláusula do contrato em volta do texto');
-ok(proposal_schedule(proposal_get($id)['data'])[2]['valor'] === 82400, 'a prévia não grava nada');
+ok(proposal_schedule(proposal_get($id)['data'])[2]['valor'] === 81605 && count(proposal_schedule(proposal_get($id)['data'])) === 3, 'a prévia não grava nada');
 $h->post('/painel/propostas/' . $id . '/previa', ['_csrf' => $csrf, 'pagamento_tipo' => 'cartao', 'fixos_valor' => '1.000,00', 'formas' => ['boleto'], 'parcelas' => '10']);
 $j = json_decode($h->html, true) ?: [];
 ok(str_contains($j['auto']['pagamento'] ?? '', 'boleto bancário ou cartão de crédito') && str_contains($j['auto']['pagamento'] ?? '', 'em até 10 (dez) parcelas no cartão') && str_contains($j['clausulas']['pagamento']['depois'] ?? '', 'operadora'), 'cartão escolhido: a prévia já inclui o cartão e o parágrafo da operadora');
@@ -160,9 +160,9 @@ $ct = kit_latest($id, 'honorarios')['content'];
 file_put_contents("$out/contrato-proprio.txt", $ct);
 ok(str_contains($ct, '- Honorários fixos: R$ 2.400,00 (dois mil e quatrocentos reais), valor fechado, referente a análise, notificação e ação revisional em primeiro grau.'), 'contrato: honorários fixos por extenso');
 ok(str_contains($ct, '- Honorários contratuais por atividade — Audiência de conciliação: R$ 600,00 (seiscentos reais).') && str_contains($ct, '- Honorários de êxito: 20% (vinte por cento) sobre o benefício econômico obtido'), 'contrato: atividade e êxito');
-ok(str_contains($ct, 'Formas de pagamento aceitas: PIX, boleto bancário ou cartão de crédito.') && str_contains($ct, '- 1ª parcela: R$ 808,00, vencimento em 15/11/2026'), 'contrato: formas e quadro de parcelas');
+ok(str_contains($ct, 'Formas de pagamento aceitas: PIX, boleto bancário ou cartão de crédito.') && str_contains($ct, '- 1ª parcela: R$ 816,05, vencimento em 15/11/2026'), 'contrato: formas e quadro de parcelas');
 ok(str_contains($ct, 'O CONTRATANTE poderá antecipar parcelas, com abatimento proporcional dos juros.'), 'contrato: traz o ajuste feito na prévia');
-ok(str_contains($ct, 'juros simples de 1% (um por cento) ao mês e de atualização monetária pelo INPC/IBGE') && !str_contains($ct, 'operadora ou pela instituição emissora'), 'contrato: cláusula do parcelamento próprio incluída, a do cartão excluída');
+ok(str_contains($ct, 'sistema de prestações fixas adotado pela Calculadora do Cidadão') && str_contains($ct, 'atualizada pelo INPC/IBGE') && !str_contains($ct, 'operadora ou pela instituição emissora'), 'contrato: cláusula do parcelamento próprio incluída, a do cartão excluída');
 ok(str_contains($ct, '- Emolumentos de cartório — certidão de ônus do veículo: estimativa de R$ 85,00.') && str_contains($ct, '- Custas judiciais — custas iniciais: valor a apurar.'), 'contrato: valores cobrados à parte');
 ok(str_contains($ct, 'serão reembolsadas pelo CONTRATANTE mediante apresentação dos comprovantes') && !str_contains($ct, 'estão incluídos nos honorários e não serão repassados') && str_contains($ct, 'Despesas antecipadas pela CONTRATADA serão reembolsadas'), 'contrato: deslocamento e despesas sempre reembolsados, mesmo pedindo o contrário');
 preg_match_all('/^### Cláusula (.+?) — /mu', $ct, $cl);
@@ -171,8 +171,10 @@ ok(str_contains($ct, 'Quando expressamente previstos na Cláusula Quarta') && st
 ok(!(json_decode(kit_latest($id, 'honorarios')['missing'], true) ?: []) || true, 'contrato gerado');
 
 echo "\nP5. Outra negociação: sem êxito, cartão, sem PIX, deslocamento por km\n";
-$alt = array_merge($full, ['exito_ativo' => '', 'formas' => ['boleto', 'credito'], 'pagamento_tipo' => 'cartao', 'parcelas' => '6', 'entrada' => '',
+$alt = array_merge($full, ['exito_ativo' => '', 'formas' => ['boleto', 'credito'], 'pagamento_tipo' => 'cartao', 'parcelas' => '4', 'entrada' => '',
     'deslocamento' => 'sim', 'deslocamento_criterio' => 'km', 'deslocamento_km' => '1,50', 'despesas' => 'nao', 'atividade_descricao' => [''], 'atividade_valor' => [''], 'custo_tipo' => [''], 'custo_descricao' => [''], 'custo_valor' => ['']]);
+$h->post('/painel/propostas/' . $id, array_merge($alt, ['parcelas' => '6']));
+ok(str_contains($h->html, 'parcela mínima é de R$ 500,00') && proposal_get($id)['data']['pagamento']['modalidade'] !== 'cartao', 'cartão: parcela abaixo de R$ 500 é recusada (no máximo 4x de R$ 2.400)');
 $h->post('/painel/propostas/' . $id, $alt);
 ok(kit_is_stale($id, 'honorarios'), 'mudar a proposta marca o contrato como desatualizado');
 kit_generate(find_case($id), 'honorarios');
@@ -180,7 +182,7 @@ $ct2 = kit_latest($id, 'honorarios')['content'];
 file_put_contents("$out/contrato-cartao.txt", $ct2);
 preg_match_all('/^### Cláusula (.+?) — (.+)$/mu', $ct2, $cl2);
 ok(count($cl2[1]) === 20 && !str_contains($ct2, 'dos honorários de êxito') && $cl2[1][5] === 'sexta' && str_starts_with($cl2[2][5], 'dos honorários sucumbenciais'), 'sem êxito: duas cláusulas a menos e a numeração continua sem salto');
-ok(str_contains($ct2, 'em até 6 (seis) parcelas no cartão de crédito, acrescidas da taxa de parcelamento') && str_contains($ct2, 'operadora ou pela instituição emissora') && !str_contains($ct2, 'INPC/IBGE'), 'cartão: cláusula da taxa da operadora incluída, a do parcelamento próprio excluída');
+ok(str_contains($ct2, 'em até 4 (quatro) parcelas no cartão de crédito, acrescidas da taxa de parcelamento') && str_contains($ct2, 'operadora ou pela instituição emissora') && !str_contains($ct2, 'INPC/IBGE'), 'cartão: cláusula da taxa da operadora incluída, a do parcelamento próprio excluída');
 ok(!str_contains($ct2, 'Quando utilizado PIX') && str_contains($ct2, 'boleto bancário ou cartão de crédito'), 'sem PIX: parágrafo da chave PIX excluído');
 ok(str_contains($ct2, 'mediante apresentação dos comprovantes') && !str_contains($ct2, 'por quilômetro rodado') && !str_contains($ct2, 'Não serão repassadas ao CONTRATANTE despesas ordinárias'), 'deslocamento e despesas reembolsados mediante comprovação (sem km nem “não repassar”)');
 ok(!str_contains($ct2, 'Honorários contratuais por atividade') && !str_contains($ct2, 'distribuição dos honorários por etapas'), 'sem atividades: parágrafo das etapas excluído');
@@ -280,23 +282,23 @@ bump_case($id, ['decision' => 'aceitou', 'contract_state' => 'formalizado', 'con
 $c = find_case($id);
 ok(asaas_blockers($c, proposal_get($id)) === [], 'contrato assinado e igual à proposta: liberado');
 $plan = asaas_plan(proposal_get($id)['data']);
-ok(array_column($plan, 'valor') === [60000, 80800, 81600, 82400] && array_column($plan, 'vencimento') === ['2030-01-10', '2030-02-10', '2030-03-10', '2030-04-10'], 'plano: entrada e 3 parcelas com os valores e vencimentos do contrato');
+ok(array_column($plan, 'valor') === [60000, 81605, 81605, 81605] && array_column($plan, 'vencimento') === ['2030-01-10', '2030-02-10', '2030-03-10', '2030-04-10'], 'plano: entrada e 3 parcelas com os valores e vencimentos do contrato');
 $h->get('/painel/propostas/' . $id);
-ok(str_contains($h->html, 'Criar cobranças no Asaas') && str_contains($h->html, 'R$ 808,00'), 'tela oferece o envio com o plano');
+ok(str_contains($h->html, 'Criar cobranças no Asaas') && str_contains($h->html, 'R$ 816,05'), 'tela oferece o envio com o plano');
 // As chamadas à API simulada rodam neste processo; o servidor de teste serve as telas e o webhook.
 $errSend = asaas_send(find_case($id), ['billing_type' => 'UNDEFINED']);
 $rows = asaas_charges($id);
 ok($errSend === null && count($rows) === 4, 'quatro cobranças criadas');
-ok(array_column($rows, 'value_cents') === [60000, 80800, 81600, 82400] && $rows[0]['customer_id'] === 'cus_000001' && find_case($id)['asaas_customer_id'] === 'cus_000001', 'valores no Asaas iguais aos do contrato; cliente cadastrado e guardado');
+ok(array_column($rows, 'value_cents') === [60000, 81605, 81605, 81605] && $rows[0]['customer_id'] === 'cus_000001' && find_case($id)['asaas_customer_id'] === 'cus_000001', 'valores no Asaas iguais aos do contrato; cliente cadastrado e guardado');
 $sent = array_values(array_filter($calls, fn($x) => $x[0] === 'POST' && str_ends_with($x[1], '/payments')));
-ok(($sent[1][2]['value'] ?? null) === 808.0 && $sent[1][2]['dueDate'] === '2030-02-10' && $sent[1][2]['billingType'] === 'UNDEFINED' && $sent[1][2]['fine'] === ['value' => 2.0, 'type' => 'PERCENTAGE'] && $sent[1][2]['interest'] === ['value' => 1.0], 'cobrança com valor, vencimento, multa de 2% e juros de 1% a.m. da cláusula de atraso');
+ok(($sent[1][2]['value'] ?? null) === 816.05 && $sent[1][2]['dueDate'] === '2030-02-10' && $sent[1][2]['billingType'] === 'UNDEFINED' && $sent[1][2]['fine'] === ['value' => 2.0, 'type' => 'PERCENTAGE'] && $sent[1][2]['interest'] === ['value' => 1.0], 'cobrança com valor, vencimento, multa de 2% e juros de 1% a.m. da cláusula de atraso');
 $cust = array_values(array_filter($calls, fn($x) => $x[0] === 'POST' && str_ends_with($x[1], '/customers')))[0][2] ?? [];
 ok(($cust['cpfCnpj'] ?? '') === '52998224725' && ($cust['name'] ?? '') === 'Bruno Teste Souza' && ($cust['postalCode'] ?? '') === '80010000', 'cliente enviado com CPF, nome e endereço da ficha');
 $h->post('/painel/propostas/' . $id . '/asaas', ['op' => 'enviar']);
 ok(str_contains($h->html, 'já estão no Asaas') && count(asaas_charges($id)) === 4, 'não envia duas vezes');
 ok(asaas_refresh(find_case($id)) === null && asaas_charges($id)[0]['status'] === 'RECEIVED', 'atualizar situação: entrada recebida');
 $h->get('/painel/propostas/' . $id);
-ok(str_contains($h->html, 'Recebido <strong>R$ 600,00</strong> de R$ 3.048,00') && str_contains($h->html, 'https://sandbox.asaas.com/i/2'), 'tela mostra o recebido e o link de cada fatura');
+ok(str_contains($h->html, 'Recebido <strong>R$ 600,00</strong> de R$ 3.048,15') && str_contains($h->html, 'https://sandbox.asaas.com/i/2'), 'tela mostra o recebido e o link de cada fatura');
 // Webhook
 $tok = asaas_webhook_token();
 $hook = function (string $token, array $payload) use ($base) {
@@ -324,7 +326,7 @@ q("UPDATE case_artifact_versions SET status = 'revisado', signed_file_id = ? WHE
 q("DELETE FROM asaas_charges WHERE case_id = ?", [$id]);
 $err = asaas_send(find_case($id), ['acrescimo_cartao' => '5']);
 $last = end($calls)[2];
-ok($err === null && ($last['installmentCount'] ?? 0) === 6 && ($last['totalValue'] ?? 0) === 2520.0 && $last['billingType'] === 'CREDIT_CARD', 'cartão: uma cobrança em 6x com o acréscimo da operadora (R$ 2.400 + 5% = R$ 2.520)');
+ok($err === null && ($last['installmentCount'] ?? 0) === 4 && ($last['totalValue'] ?? 0) === 2520.0 && $last['billingType'] === 'CREDIT_CARD', 'cartão: uma cobrança em 4x com o acréscimo da operadora (R$ 2.400 + 5% = R$ 2.520)');
 unset($GLOBALS['asaas_http']);
 
 echo "\n" . ($fails ? "FALHAS: $fails" : 'TUDO OK') . " · $passes verificações aprovadas\n";

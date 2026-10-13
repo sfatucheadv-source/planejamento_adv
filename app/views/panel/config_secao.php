@@ -7,7 +7,7 @@ $intro = [
     'email' => 'Como saem os e-mails que avisam o cliente de novidade na conversa.',
     'asaas' => 'Conta do Asaas para criar as cobranças do contrato assinado.',
     'agenda' => 'Agenda: conversas com Sidney marcadas no Google Agenda, com Meet. Drive: uma pasta por atendimento com os arquivos e o resumo do caso (.md).',
-    'precos' => 'Tabela da OAB (referência dos honorários), acréscimo para quem vem por indicação e taxas do Asaas usadas no simulador de vendas da proposta.',
+    'precos' => 'Precificação padrão dos honorários (percentual do veículo, mínimo por processo e êxito) e taxas do Asaas usadas no simulador de vendas da proposta.',
 ][$secao];
 ?>
 <nav class="cfg-crumbs" aria-label="Caminho"><a href="<?= e(url('painel/configuracoes')) ?>">‹ Painel de controles</a></nav>
@@ -127,23 +127,16 @@ $intro = [
   </div>
   <p class="hint">Só dias úteis, sem feriados nacionais e do Paraná. Sem nada marcado, a conversa fica para daqui a <?= agenda_int('agenda_antecedencia') ?> minutos; depois de um compromisso, <?= agenda_int('agenda_intervalo') ?> minutos após o fim dele. Sem janela no dia, vale o próximo horário livre.</p>
   <p class="small"><strong>Se um cliente pedisse agora:</strong> <?= $prox ? e(fmt_when($prox)) . ' (' . e(fmt_datetime($prox->format('Y-m-d H:i:s'))) . ')' : 'sem horário livre nos próximos ' . agenda_int('agenda_dias') . ' dias' ?>.<?= $gerr ? ' <span class="err-line">Google: ' . e($gerr) . '</span>' : '' ?></p>
-<?php elseif ($secao === 'precos'): $oab = oab_table(); $oab = array_merge($oab, array_fill(0, 3, ['key' => '', 'label' => '', 'valor' => null, 'nota' => ''])); $fees = asaas_fees(); ?>
-  <h3>Tabela de honorários da OAB (referência)</h3>
-  <p class="hint">Os valores mínimos da tabela da OAB/PR para os serviços que você oferece. Na proposta, você marca os serviços do caso e o painel soma o valor de referência. Consulte a tabela vigente em <a href="https://honorarios.oabpr.org.br/" target="_blank" rel="noopener">honorarios.oabpr.org.br</a>. Para incluir um serviço, use uma linha em branco; para tirar, apague o nome.</p>
-  <div class="cfg-oab">
-    <div class="cfg-oab-head"><span>Serviço</span><span>Valor mínimo (R$)</span><span>Item da tabela / observação</span></div>
-    <?php foreach ($oab as $i => $it): ?>
-      <div class="cfg-oab-row">
-        <input type="hidden" name="oab_key[]" value="<?= e((string) $it['key']) ?>">
-        <input name="oab_label[]" maxlength="160" value="<?= e((string) $it['label']) ?>" placeholder="Novo serviço" aria-label="Serviço">
-        <input name="oab_valor[]" inputmode="decimal" value="<?= e(cents_input($it['valor'] ?? null)) ?>" placeholder="0,00" aria-label="Valor mínimo">
-        <input name="oab_nota[]" maxlength="160" value="<?= e((string) ($it['nota'] ?? '')) ?>" placeholder="ex.: item 5.2" aria-label="Observação">
-      </div>
-    <?php endforeach ?>
+<?php elseif ($secao === 'precos'): $pr = pricing(); $fees = asaas_fees(); ?>
+  <h3>Precificação padrão</h3>
+  <p class="hint">A regra que já vem pronta na proposta e na aba Reunião do atendimento: um percentual do valor do veículo, com valor mínimo por processo, mais o êxito sobre a economia total do cliente. Na negociação você dá desconto em cima dela.</p>
+  <div class="var-grid">
+    <label class="fld"><span>Percentual do valor do veículo (%)</span><input name="pct_veiculo" inputmode="decimal" value="<?= e(str_replace('.', ',', (string) $pr['pct_veiculo'])) ?>"></label>
+    <label class="fld"><span>Valor mínimo por processo (R$)</span><input name="minimo" inputmode="decimal" value="<?= e(cents_input($pr['minimo'])) ?>"></label>
+    <label class="fld"><span>Êxito sobre a economia total (%)</span><input name="exito" inputmode="decimal" value="<?= e(str_replace('.', ',', (string) $pr['exito'])) ?>"></label>
+    <label class="fld"><span>Parcela mínima no cartão (R$)</span><input name="cartao_min_parcela" inputmode="decimal" value="<?= e(cents_input($pr['cartao_min_parcela'])) ?>"></label>
   </div>
-  <h3>Indicação</h3>
-  <label class="fld cfg-short"><span>Acréscimo para quem vem por indicação (%)</span><input name="indicacao_pct" inputmode="decimal" value="<?= e(str_replace('.', ',', (string) indicacao_pct())) ?>"></label>
-  <p class="hint">Quem chega indicado já conhece os seus resultados: a referência de preço é o valor da OAB com este acréscimo.</p>
+  <p class="hint">Parcelado no escritório: parcelas fixas com juros de 1% ao mês (mesma conta da Calculadora do Cidadão do Banco Central). No cartão, a taxa da operação é repassada ao cliente.</p>
   <h3>Taxas do Asaas <small class="muted"><?= asaas_fees_custom() ? '(personalizadas)' : '(padrão de referência)' ?></small></h3>
   <p class="hint">Usadas no simulador de vendas da proposta. Confira as da sua conta no Asaas, em Minha conta › Taxas, e ajuste aqui. Na proposta, o botão “Conferir no Asaas” consulta o simulador oficial da sua conta.</p>
   <div class="var-grid">

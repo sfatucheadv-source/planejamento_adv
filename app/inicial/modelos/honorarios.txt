@@ -91,7 +91,7 @@ Os pagamentos observarão a forma, os vencimentos, o parcelamento e os demais cr
 **Parágrafo #.** Os pagamentos serão realizados em favor da CONTRATADA, pelos meios oficialmente indicados.
 
 @se proposta.parcelamento_proprio
-**Parágrafo #.** O parcelamento concedido diretamente pela CONTRATADA sofrerá a incidência de juros simples de 1% (um por cento) ao mês e de atualização monetária pelo INPC/IBGE, calculados da data da contratação até a data de cada pagamento.
+**Parágrafo #.** O parcelamento concedido diretamente pela CONTRATADA é feito em parcelas mensais, fixas e iguais, já acrescidas de juros de 1% (um por cento) ao mês, calculadas pelo sistema de prestações fixas adotado pela Calculadora do Cidadão do Banco Central. A parcela paga em atraso será atualizada pelo INPC/IBGE até a data do pagamento.
 @fimse
 
 @se proposta.parcelamento_cartao

@@ -35,7 +35,46 @@ const COST_TYPES = [
     'outro'         => 'Outros custos',
 ];
 
-const PROPOSAL_INTEREST = 0.01; // juros simples de 1% ao mês no parcelamento próprio
+const PROPOSAL_INTEREST = 0.01; // juros de 1% ao mês no parcelamento próprio (parcelas fixas)
+
+/** Precificação padrão de Sidney (ajustável em Configurações › Preços e negociação). */
+const PRICING_DEFAULTS = ['pct_veiculo' => 5.0, 'minimo' => 350000, 'exito' => 10.0, 'cartao_min_parcela' => 50000];
+
+function pricing(): array
+{
+    $s = json_decode((string) setting('precificacao', '{}'), true) ?: [];
+    $out = PRICING_DEFAULTS;
+    foreach ($out as $k => $def) {
+        if (isset($s[$k]) && is_numeric($s[$k])) {
+            $out[$k] = is_int($def) ? (int) $s[$k] : (float) $s[$k];
+        }
+    }
+    return $out;
+}
+
+/**
+ * Honorários pela regra padrão: 5% do valor do veículo, com mínimo de
+ * R$ 3.500,00 por processo, mais 10% de êxito sobre a economia total.
+ */
+function pricing_standard(int $caseId): array
+{
+    $pr = pricing();
+    $veic = fv($caseId, 'valor_veiculo') !== null ? (int) fv($caseId, 'valor_veiculo') : null;
+    $calc = $veic ? (int) round($veic * $pr['pct_veiculo'] / 100) : 0;
+    $valor = max($calc, (int) $pr['minimo']);
+    return [
+        'valor' => $valor, 'veiculo' => $veic, 'calculado' => $calc, 'minimo' => (int) $pr['minimo'], 'pct' => $pr['pct_veiculo'], 'exito' => $pr['exito'],
+        'nota' => $veic ? fmt_pct($pr['pct_veiculo']) . ' de ' . brl($veic) . ' (valor do veículo) = ' . brl($calc) . ($calc < $pr['minimo'] ? '; vale o mínimo de ' . brl((int) $pr['minimo']) : '')
+            : 'Valor do veículo não informado: vale o mínimo de ' . brl((int) $pr['minimo']),
+    ];
+}
+
+/** Preço sugerido na última avaliação da IA (centavos), se houver. */
+function pricing_ia(int $caseId): ?int
+{
+    $ev = negotiation_history($caseId, 1)[0] ?? null;
+    return $ev ? ((int) ($ev['result']['preco_sugerido'] ?? 0) ?: null) : null;
+}
 
 /** Base de cálculo sugerida para o êxito (Sidney ajusta na proposta). */
 const PROPOSAL_EXITO_BASE = 'o benefício econômico efetivamente obtido: valores restituídos ou compensados e redução definitiva do saldo devedor';
@@ -57,7 +96,9 @@ function proposal_defaults(): array
         'deslocamento' => ['repassa' => true, 'criterio' => 'comprovacao', 'valor_km' => null],
         'despesas' => ['repassa' => true],
         'pagamento' => ['formas' => ['pix'], 'condicao' => 'avista', 'vencimento' => null, 'entrada' => null, 'entrada_vencimento' => null,
-            'parcelas' => 2, 'primeiro_vencimento' => null, 'modalidade' => 'proprio', 'cartao_parcelas' => 2, 'observacoes' => ''],
+            'parcelas' => 2, 'primeiro_vencimento' => null, 'modalidade' => 'proprio', 'meio' => 'pix', 'cartao_parcelas' => 2, 'observacoes' => ''],
+        // Como o valor foi definido e as facilidades: desconto e parte para receber ao final do processo.
+        'precificacao' => ['modo' => 'manual', 'desconto' => '', 'final_pct' => ''],
         'validade' => null,
         // Texto ajustado à mão (null = texto automático, refeito a cada mudança)
         'texto' => ['honorarios' => null, 'pagamento' => null],
@@ -198,14 +239,53 @@ function ordinal_masculino(int $n): string
 
 /* ---------- Totais e parcelas ---------- */
 
+/** Percentual digitado ("10", "12,5") limitado a 0–100. */
+function pct_value(mixed $raw): float
+{
+    $v = parse_money(str_replace('%', '', (string) $raw));
+    return $v === null ? 0.0 : max(0.0, min(100.0, (float) $v));
+}
+
+/**
+ * Totais: bruto (fixos + atividades), desconto, total contratado, parte a
+ * receber ao final do processo e parte paga agora (entrada + saldo).
+ */
 function proposal_totals(array $d): array
 {
     $fixos = $d['fixos']['ativo'] ? (int) ($d['fixos']['valor'] ?? 0) : 0;
     $ativ = array_sum(array_map(fn($a) => (int) ($a['valor'] ?? 0), $d['atividades']));
-    $total = $fixos + $ativ;
+    $bruto = $fixos + $ativ;
+    $pc = $d['precificacao'] ?? [];
+    $desc = (int) round($bruto * pct_value($pc['desconto'] ?? '') / 100);
+    $total = $bruto - $desc;
+    $final = (int) round($total * pct_value($pc['final_pct'] ?? '') / 100);
+    $agora = $total - $final;
     $p = $d['pagamento'];
-    $entrada = $p['condicao'] === 'parcelado' ? min((int) ($p['entrada'] ?? 0), $total) : 0;
-    return ['fixos' => $fixos, 'atividades' => $ativ, 'total' => $total, 'entrada' => $entrada, 'saldo' => $total - $entrada];
+    $entrada = $p['condicao'] === 'parcelado' ? min((int) ($p['entrada'] ?? 0), $agora) : 0;
+    return ['fixos' => $fixos, 'atividades' => $ativ, 'bruto' => $bruto, 'desconto' => $desc, 'total' => $total,
+        'final' => $final, 'agora' => $agora, 'entrada' => $entrada, 'saldo' => $agora - $entrada];
+}
+
+/**
+ * Parcelas fixas e iguais com juros de 1% ao mês: sistema de prestações
+ * fixas (tabela Price), o mesmo da Calculadora do Cidadão do Banco Central.
+ * [['n','principal','juros','valor','saldo']] em centavos.
+ */
+function price_table(int $saldo, int $n, float $rate = PROPOSAL_INTEREST): array
+{
+    if ($saldo <= 0 || $n < 1) {
+        return [];
+    }
+    $pmt = $rate > 0 ? (int) round($saldo * $rate / (1 - (1 + $rate) ** -$n)) : (int) ceil($saldo / $n);
+    $bal = $saldo;
+    $out = [];
+    for ($k = 1; $k <= $n; $k++) {
+        // Parcelas de valor idêntico: o centavo do arredondamento fica nos juros da última.
+        $principal = $k === $n ? $bal : $pmt - (int) round($bal * $rate);
+        $bal -= $principal;
+        $out[] = ['n' => $k, 'principal' => $principal, 'juros' => $pmt - $principal, 'valor' => $pmt, 'saldo' => max(0, $bal)];
+    }
+    return $out;
 }
 
 function add_months(string $ymd, int $months): string
@@ -218,10 +298,9 @@ function add_months(string $ymd, int $months): string
 }
 
 /**
- * Parcelamento próprio: o saldo é dividido em parcelas iguais e cada uma
- * recebe juros simples de 1% por mês contado da contratação até o seu
- * vencimento (1ª parcela = 1 mês, 2ª = 2 meses…). A atualização pelo INPC
- * é aplicada na data de cada pagamento e não entra no quadro.
+ * Parcelas da parte paga agora. Parcelamento próprio: fixas e iguais, com
+ * juros de 1% ao mês (tabela Price). Cartão: divisão simples, com a taxa da
+ * operadora somada pelo cliente.
  */
 function proposal_schedule(array $d): array
 {
@@ -231,16 +310,97 @@ function proposal_schedule(array $d): array
         return [];
     }
     $n = max(1, (int) ($p['modalidade'] === 'cartao' ? $p['cartao_parcelas'] : $p['parcelas']));
-    $base = intdiv($t['saldo'], $n);
-    $rest = $t['saldo'] - $base * $n;
-    $out = [];
-    for ($k = 1; $k <= $n; $k++) {
-        $principal = $base + ($k === $n ? $rest : 0);
-        $juros = $p['modalidade'] === 'proprio' ? (int) round($principal * PROPOSAL_INTEREST * $k) : 0;
-        $out[] = ['n' => $k, 'principal' => $principal, 'juros' => $juros, 'valor' => $principal + $juros,
-            'vencimento' => $p['primeiro_vencimento'] ? add_months($p['primeiro_vencimento'], $k - 1) : null];
+    if ($p['modalidade'] === 'proprio') {
+        $rows = price_table($t['saldo'], $n);
+    } else {
+        $base = intdiv($t['saldo'], $n);
+        $rest = $t['saldo'] - $base * $n;
+        $rows = [];
+        for ($k = 1; $k <= $n; $k++) {
+            $principal = $base + ($k === $n ? $rest : 0);
+            $rows[] = ['n' => $k, 'principal' => $principal, 'juros' => 0, 'valor' => $principal];
+        }
     }
-    return $out;
+    foreach ($rows as &$r) {
+        $r['vencimento'] = $p['primeiro_vencimento'] ? add_months($p['primeiro_vencimento'], $r['n'] - 1) : null;
+    }
+    return $rows;
+}
+
+/**
+ * Proposta gravada de volta no formato do formulário: base para a aba Reunião
+ * ajustar só os honorários e o pagamento, mantendo custos, atividades e textos.
+ */
+function proposal_input_from(array $d): array
+{
+    $p = $d['pagamento'];
+    $in = [
+        'precificacao_modo' => $d['precificacao']['modo'] ?? 'manual',
+        'desconto' => $d['precificacao']['desconto'] ?? '',
+        'final_pct' => $d['precificacao']['final_pct'] ?? '',
+        'fixos_valor' => cents_input($d['fixos']['valor']),
+        'fixos_descricao' => $d['fixos']['descricao'],
+        'exito_ativo' => $d['exito']['ativo'] ? '1' : '',
+        'exito_percentual' => $d['exito']['percentual'],
+        'exito_base' => $d['exito']['base'],
+        'pagamento_tipo' => $p['condicao'] === 'avista' ? 'avista' : ($p['modalidade'] === 'cartao' ? 'cartao' : 'proprio'),
+        'meio' => $p['meio'] ?? 'pix',
+        'formas' => $p['formas'],
+        'vencimento' => (string) $p['vencimento'],
+        'entrada' => cents_input($p['entrada']),
+        'entrada_vencimento' => (string) $p['entrada_vencimento'],
+        'parcelas' => (string) ($p['modalidade'] === 'cartao' ? $p['cartao_parcelas'] : $p['parcelas']),
+        'primeiro_vencimento' => (string) $p['primeiro_vencimento'],
+        'pagamento_observacoes' => $p['observacoes'],
+    ];
+    foreach ($d['atividades'] as $i => $a) {
+        $in['atividade_descricao'][$i] = $a['descricao'];
+        $in['atividade_valor'][$i] = cents_input($a['valor']);
+    }
+    foreach ($d['custos'] as $i => $c) {
+        $in['custo_tipo'][$i] = $c['tipo'];
+        $in['custo_descricao'][$i] = $c['descricao'];
+        $in['custo_valor'][$i] = cents_input($c['valor']);
+    }
+    foreach (array_keys(PROPOSAL_TEXTS) as $k) {
+        if ($d['texto'][$k] !== null) {
+            $in['texto_' . $k] = $in['texto_' . $k . '_base'] = $d['texto'][$k];
+            $in['texto_' . $k . '_manual'] = '1';
+            $in['texto_' . $k . '_ref'] = (string) ($d['texto_ref'][$k] ?? '');
+        }
+    }
+    return $in;
+}
+
+/**
+ * Condições da aba Reunião: a proposta gravada (ou a precificação padrão,
+ * sem proposta) com o que foi ajustado na tela. Retorna [dados, erros].
+ */
+function meeting_fees(int $caseId, array $posted = []): array
+{
+    $pr = proposal_get($caseId);
+    $base = $pr ? proposal_input_from($pr['data']) : [
+        'precificacao_modo' => 'padrao',
+        'exito_ativo' => '1',
+        'exito_percentual' => rtrim(rtrim(number_format(pricing()['exito'], 2, ',', ''), '0'), ','),
+        'pagamento_tipo' => 'avista',
+        'meio' => 'pix',
+    ];
+    $in = array_replace($base, $posted);
+    if (array_key_exists('exito_percentual', $posted)) {
+        $in['exito_ativo'] = pct_value($posted['exito_percentual']) > 0 ? '1' : '';
+    }
+    if (array_key_exists('pagamento_tipo', $posted) && empty($posted['tudo_final'])) {
+        unset($in['tudo_final']);
+    }
+    if (($in['pagamento_tipo'] ?? '') === 'proprio' && trim((string) ($in['primeiro_vencimento'] ?? '')) === '') {
+        $in['primeiro_vencimento'] = (new DateTimeImmutable('today'))->modify('+30 days')->format('Y-m-d');
+    }
+    // Sem o formulário de formas, a forma decorre do meio escolhido.
+    if (array_key_exists('pagamento_tipo', $posted)) {
+        unset($in['formas']);
+    }
+    return proposal_from_input($in, $caseId);
 }
 
 /* ---------- Gravação ---------- */
@@ -252,11 +412,31 @@ function proposal_schedule(array $d): array
  * manual quando diferem do texto que a tela mostrou (texto_*_base) ou quando
  * já eram manuais: assim, mudar um valor sem tocar no texto refaz a cláusula.
  */
-function proposal_from_input(array $in): array
+function proposal_from_input(array $in, ?int $caseId = null): array
 {
     $d = proposal_defaults();
     $err = [];
     $txt = fn($v, int $max = 500) => trim(mb_substr(str_replace("\r\n", "\n", (string) $v), 0, $max));
+
+    // Valor dos honorários: padrão (5% do veículo, mínimo por processo), sugestão da IA ou digitado.
+    $modo = in_array($in['precificacao_modo'] ?? '', ['padrao', 'ia', 'manual'], true) ? (string) $in['precificacao_modo'] : 'manual';
+    $d['precificacao']['modo'] = $modo;
+    $d['precificacao']['desconto'] = $txt($in['desconto'] ?? '', 6);
+    $d['precificacao']['final_pct'] = !empty($in['tudo_final']) ? '100' : $txt($in['final_pct'] ?? '', 6);
+    if ($caseId && $modo === 'padrao') {
+        $std = pricing_standard($caseId);
+        $in['fixos_valor'] = cents_input($std['valor']);
+        if (!array_key_exists('exito_percentual', $in) || trim((string) $in['exito_percentual']) === '') {
+            $in['exito_ativo'] = '1';
+            $in['exito_percentual'] = rtrim(rtrim(number_format($std['exito'], 2, ',', ''), '0'), ',');
+        }
+    } elseif ($caseId && $modo === 'ia') {
+        if ($ia = pricing_ia($caseId)) {
+            $in['fixos_valor'] = cents_input($ia);
+        } else {
+            $err[] = 'Não há sugestão da IA: peça a avaliação ou use a precificação padrão.';
+        }
+    }
 
     $d['fixos']['valor'] = money_cents($in['fixos_valor'] ?? '');
     $d['fixos']['ativo'] = (bool) $d['fixos']['valor'];
@@ -299,15 +479,21 @@ function proposal_from_input(array $in): array
     $d['despesas']['repassa'] = true;
 
     $p = &$d['pagamento'];
-    $p['formas'] = array_values(array_intersect(array_keys(PAYMENT_METHODS), (array) ($in['formas'] ?? [])));
     $tipo = (string) ($in['pagamento_tipo'] ?? 'avista');
     $p['condicao'] = in_array($tipo, ['proprio', 'cartao'], true) ? 'parcelado' : 'avista';
     $p['modalidade'] = $tipo === 'cartao' ? 'cartao' : 'proprio';
+    $p['meio'] = in_array($in['meio'] ?? '', ['pix', 'boleto', 'pix_recorrente'], true) ? (string) $in['meio'] : 'pix';
+    // Formas aceitas: as marcadas ou, sem marcação, a que decorre da condição escolhida.
+    $p['formas'] = array_values(array_intersect(array_keys(PAYMENT_METHODS), (array) ($in['formas'] ?? [])));
+    if (!$p['formas']) {
+        $p['formas'] = match (true) {
+            $tipo === 'cartao' => ['credito'],
+            $tipo === 'proprio' && $p['meio'] === 'boleto' => ['boleto'],
+            default => ['pix'],
+        };
+    }
     if ($tipo === 'cartao' && !in_array('credito', $p['formas'], true)) {
         $p['formas'][] = 'credito';
-    }
-    if (!$p['formas']) {
-        $err[] = 'Escolha ao menos uma forma de pagamento.';
     }
     $p['vencimento'] = parse_br_date((string) ($in['vencimento'] ?? '')) ?: null;
     $p['entrada'] = money_cents($in['entrada'] ?? '');
@@ -322,11 +508,22 @@ function proposal_from_input(array $in): array
     $d['validade'] = null; // a validade não é exposta ao cliente
 
     $t = proposal_totals($d);
+    if ($t['total'] > 0 && $t['agora'] === 0) {
+        $d['pagamento']['condicao'] = 'avista'; // tudo para o final do processo: nada a parcelar agora
+    }
     if ($t['total'] === 0 && !$d['exito']['ativo']) {
         $err[] = 'Informe ao menos um honorário: valor fixo, por atividade ou êxito.';
     }
     if ($d['pagamento']['condicao'] === 'parcelado' && $t['saldo'] <= 0) {
-        $err[] = 'Não há saldo a parcelar: confira os honorários e a entrada.';
+        $err[] = 'Não há saldo a parcelar: confira os honorários, a entrada e a parte para o final.';
+    }
+    $min = pricing()['cartao_min_parcela'];
+    if ($d['pagamento']['condicao'] === 'parcelado' && $d['pagamento']['modalidade'] === 'cartao' && $t['saldo'] > 0
+        && intdiv($t['saldo'], max(1, (int) $d['pagamento']['cartao_parcelas'])) < $min) {
+        $err[] = 'No cartão, a parcela mínima é de ' . brl($min) . ': no máximo ' . max(1, intdiv($t['saldo'], $min)) . ' parcela(s).';
+    }
+    if (pct_value($d['precificacao']['desconto']) > 50) {
+        $err[] = 'Desconto acima de 50%: confira.';
     }
 
     $auto = proposal_auto_texts($d);
@@ -399,45 +596,75 @@ function proposal_vars(int $caseId): array
     return proposal_vars_data($pr['data']);
 }
 
+/** Texto da condição especial: parte dos honorários paga ao final do processo (INPC + 1% a.m., devida em qualquer resultado). */
+function proposal_deferred_text(array $d): ?string
+{
+    $t = proposal_totals($d);
+    if ($t['final'] <= 0) {
+        return null;
+    }
+    $pct = pct_value($d['precificacao']['final_pct'] ?? '');
+    return ($pct >= 100 ? 'A totalidade dos honorários contratuais, no valor de ' . brl_extenso($t['final']) . ','
+            : 'Do valor dos honorários contratuais, a parcela de ' . brl_extenso($t['final']) . ', correspondente a ' . percent_extenso(str_replace('.', ',', (string) $pct)) . ' do total,')
+        . ' será paga ao final do processo, assim entendido o seu encerramento por decisão transitada em julgado, acordo ou desistência, '
+        . 'corrigida monetariamente pelo INPC/IBGE, mês a mês, desde a data de assinatura deste contrato, e acrescida de juros de 1% (um por cento) ao mês. '
+        . 'Esse valor é devido independentemente do resultado do processo, ainda que não haja êxito, e será pago em até 10 (dez) dias do encerramento.';
+}
+
 /** Textos automáticos das cláusulas de remuneração e de pagamento. */
 function proposal_auto_texts(array $d): array
 {
     $t = proposal_totals($d);
     $p = $d['pagamento'];
+    $descPct = pct_value($d['precificacao']['desconto'] ?? '');
 
     $hon = [];
     if ($d['fixos']['ativo']) {
-        $hon[] = '- Honorários fixos: ' . brl_extenso($t['fixos']) . ', valor fechado' . ($d['fixos']['descricao'] !== '' ? ', referente a ' . rtrim($d['fixos']['descricao'], '.') : '') . '.';
+        $hon[] = '- Honorários fixos: ' . brl_extenso($t['fixos'] - ($d['atividades'] ? 0 : $t['desconto'])) . ', valor fechado' . ($d['fixos']['descricao'] !== '' ? ', referente a ' . rtrim($d['fixos']['descricao'], '.') : '')
+            . ($t['desconto'] && !$d['atividades'] ? ', já com desconto de ' . percent_extenso(str_replace('.', ',', (string) $descPct)) : '') . '.';
     }
     foreach ($d['atividades'] as $a) {
         $hon[] = '- Honorários contratuais por atividade — ' . rtrim($a['descricao'], '.') . ': ' . brl_extenso((int) $a['valor']) . '.';
     }
+    if ($t['desconto'] && $d['atividades']) {
+        $hon[] = '- Desconto concedido: ' . percent_extenso(str_replace('.', ',', (string) $descPct)) . ', no valor de ' . brl_extenso($t['desconto']) . '.';
+    }
     if ($d['exito']['ativo']) {
         $hon[] = '- Honorários de êxito: ' . percent_extenso($d['exito']['percentual']) . ' sobre ' . rtrim(lcfirst_pt($d['exito']['base']), '.') . '.';
     }
-    if ($t['total'] && ($d['fixos']['ativo'] ? 1 : 0) + count($d['atividades']) > 1) {
+    if ($t['total'] && (($d['fixos']['ativo'] ? 1 : 0) + count($d['atividades']) > 1 || ($t['desconto'] && $d['atividades']))) {
         $hon[] = '- Total dos honorários, sem o êxito: ' . brl_extenso($t['total']) . '.';
     }
 
     $formas = array_map(fn($f) => PAYMENT_METHODS[$f], $p['formas']);
     $lista = count($formas) > 1 ? implode(', ', array_slice($formas, 0, -1)) . ' ou ' . end($formas) : ($formas[0] ?? '');
-    $pag = ['Formas de pagamento aceitas: ' . $lista . '.'];
-    if ($p['condicao'] === 'avista') {
-        $pag[] = 'Pagamento à vista' . ($t['total'] ? ', no valor de ' . brl_extenso($t['total']) : '') . ($p['vencimento'] ? ', com vencimento em ' . fmt_date($p['vencimento']) : '') . '.';
+    $pag = [];
+    if ($t['agora'] > 0) {
+        $pag[] = 'Formas de pagamento aceitas: ' . $lista . '.';
+    }
+    $meio = ['pix' => 'por PIX', 'boleto' => 'por boleto bancário', 'pix_recorrente' => 'por PIX recorrente (cobrança mensal automática)'][$p['meio'] ?? 'pix'] ?? 'por PIX';
+    if ($t['agora'] <= 0) {
+        // tudo para o final: só a condição especial
+    } elseif ($p['condicao'] === 'avista') {
+        $pag[] = 'Pagamento à vista' . (in_array('pix', $p['formas'], true) && count($p['formas']) === 1 ? ', por PIX,' : '') . ' no valor de ' . brl_extenso($t['agora']) . ($p['vencimento'] ? ', com vencimento em ' . fmt_date($p['vencimento']) : '') . '.';
     } else {
         $sched = proposal_schedule($d);
         $n = count($sched);
         $ent = $t['entrada'] ? 'Entrada de ' . brl_extenso($t['entrada']) . ($p['entrada_vencimento'] ? ', com vencimento em ' . fmt_date($p['entrada_vencimento']) : '') . ', e saldo' : 'Valor';
         if ($p['modalidade'] === 'proprio') {
-            $pag[] = $ent . ' de ' . brl_extenso($t['saldo']) . ' em ' . $n . ' (' . numero_extenso($n) . ') parcela' . ($n > 1 ? 's mensais' : '') . ', com juros simples de 1% (um por cento) ao mês e atualização monetária pelo INPC/IBGE na data de cada pagamento, conforme o quadro abaixo:';
+            $pag[] = $ent . ' de ' . brl_extenso($t['saldo']) . ' em ' . $n . ' (' . numero_extenso($n) . ') parcela' . ($n > 1 ? 's mensais, fixas e iguais,' : '') . ' de ' . brl_extenso($sched[0]['valor'] ?? 0) . ', ' . $meio
+                . ', já acrescidas de juros de 1% (um por cento) ao mês pelo sistema de prestações fixas da Calculadora do Cidadão do Banco Central, conforme o quadro abaixo:';
             $rows = [];
             foreach ($sched as $s) {
-                $rows[] = '- ' . $s['n'] . 'ª parcela: ' . brl($s['valor']) . ($s['vencimento'] ? ', vencimento em ' . fmt_date($s['vencimento']) : '') . ' (' . brl($s['principal']) . ' + ' . brl($s['juros']) . ' de juros).';
+                $rows[] = '- ' . $s['n'] . 'ª parcela: ' . brl($s['valor']) . ($s['vencimento'] ? ', vencimento em ' . fmt_date($s['vencimento']) : '') . '.';
             }
             $pag[] = implode("\n", $rows);
         } else {
-            $pag[] = $ent . ' de ' . brl_extenso($t['saldo']) . ' em até ' . $n . ' (' . numero_extenso($n) . ') parcelas no cartão de crédito, acrescidas da taxa de parcelamento cobrada pela operadora do cartão.';
+            $pag[] = $ent . ' de ' . brl_extenso($t['saldo']) . ' em até ' . $n . ' (' . numero_extenso($n) . ') parcelas no cartão de crédito, acrescidas da taxa de parcelamento cobrada pela operadora do cartão, com parcela mínima de ' . brl_extenso(pricing()['cartao_min_parcela']) . '.';
         }
+    }
+    if ($def = proposal_deferred_text($d)) {
+        $pag[] = '**Condição especial:** ' . $def;
     }
     if ($p['observacoes'] !== '') {
         $pag[] = $p['observacoes'];
@@ -484,6 +711,8 @@ function proposal_vars_data(array $d): array
         'proposta.parcelado' => $flag($p['condicao'] === 'parcelado'),
         'proposta.parcelamento_proprio' => $flag($p['condicao'] === 'parcelado' && $p['modalidade'] === 'proprio'),
         'proposta.parcelamento_cartao' => $flag($p['condicao'] === 'parcelado' && $p['modalidade'] === 'cartao'),
+        'proposta.tem_diferido' => $flag($t['final'] > 0),
+        'proposta.diferido' => proposal_deferred_text($d),
         'proposta.pix' => $flag(in_array('pix', $p['formas'], true)),
         'proposta.repassa_deslocamento' => $flag($d['deslocamento']['repassa']),
         'proposta.nao_repassa_deslocamento' => $flag(!$d['deslocamento']['repassa']),
@@ -512,7 +741,9 @@ const PROPOSAL_VAR_LABELS = [
     'proposta.tem_exito' => 'Condição: há honorários de êxito',
     'proposta.tem_custos' => 'Condição: há valores cobrados à parte',
     'proposta.parcelado' => 'Condição: pagamento parcelado',
-    'proposta.parcelamento_proprio' => 'Condição: parcelamento próprio (juros 1% a.m. + INPC)',
+    'proposta.parcelamento_proprio' => 'Condição: parcelamento próprio (parcelas fixas, juros de 1% a.m.)',
+    'proposta.tem_diferido' => 'Condição: parte dos honorários paga ao final do processo',
+    'proposta.diferido' => 'Texto da parte paga ao final do processo (INPC + 1% a.m.)',
     'proposta.parcelamento_cartao' => 'Condição: parcelamento no cartão (taxa da operadora pelo cliente)',
     'proposta.pix' => 'Condição: PIX entre as formas de pagamento',
     'proposta.repassa_deslocamento' => 'Condição: repassa deslocamento',
@@ -532,7 +763,8 @@ function proposal_effects(array $d): array
         ['Parágrafo da distribuição por etapas (honorários por atividade)', (bool) $d['atividades']],
         ['Cláusulas dos honorários de êxito e da sua exigibilidade', $d['exito']['ativo']],
         ['Observação de honorários na procuração', $d['exito']['ativo']],
-        ['Parágrafo do parcelamento próprio (juros simples de 1% a.m. e INPC)', $parc && $p['modalidade'] === 'proprio'],
+        ['Parágrafo do parcelamento próprio (parcelas fixas, juros de 1% a.m.)', $parc && $p['modalidade'] === 'proprio'],
+        ['Condição especial: parte dos honorários ao final do processo (INPC + 1% a.m.)', proposal_totals($d)['final'] > 0],
         ['Parágrafo do parcelamento no cartão (taxa da operadora pelo cliente)', $parc && $p['modalidade'] === 'cartao'],
         ['Parágrafo da chave PIX', in_array('pix', $p['formas'], true)],
         ['Lista de valores cobrados à parte', (bool) $d['custos']],

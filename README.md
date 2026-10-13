@@ -130,11 +130,15 @@ Com o Google conectado (app OAuth próprio do escritório, criado no Google Clou
 
 ### Proposta em três abas
 
-A página da proposta tem três abas num só formulário, com os indicadores no topo (valor da OAB, referência, proposta atual, quanto o cliente paga, quanto você recebe e sugestão da IA):
+A página da proposta tem três abas num só formulário, com os indicadores no topo (preço padrão, proposta da IA, honorários, parte ao final do processo, quanto o cliente paga agora e quanto você recebe):
 
-1. **Produto e honorários:** serviços da tabela da OAB, indicação (+30%, configurável; é referência, não trava), honorários fixos, por atividade e de êxito, valores cobrados à parte e a **avaliação da IA** (preço, faixa, forma e prazo, sem CPF, nome, contato, placa, gênero ou estado civil; “Aplicar à proposta” preenche os campos). Deslocamento e despesas antecipadas são sempre reembolsados mediante comprovação.
-2. **Simulação:** forma de pagamento, quadro de parcelas, **simulador de vendas** (PIX, boleto, cartão e parcelado próprio, com taxas do Asaas, repasse, desconto e antecipação; “Usar” leva a condição para a proposta; “Conferir no Asaas” usa `POST /payments/simulate`) e a cobrança no Asaas depois do contrato assinado.
+**Precificação padrão** (*Configurações › Preços e negociação*): 5% do valor do veículo, mínimo de R$ 3.500,00 por processo, mais 10% de êxito sobre a economia total; parcela mínima de R$ 500,00 no cartão. Ela já vem pronta e você dá desconto em cima.
+
+1. **Honorários:** valor fixo, por atividade e de êxito, **facilitação** (desconto em % e a parte, ou tudo, para receber ao final do processo, corrigida mês a mês pelo INPC com juros de 1% a.m. e devida mesmo sem êxito, que entra no contrato como *Condição especial*), valores cobrados à parte e a **avaliação da IA** (preço, faixa, forma e prazo, sem CPF, nome, contato, placa, gênero ou estado civil). Deslocamento e despesas antecipadas são sempre reembolsados mediante comprovação.
+2. **Simulação:** no topo, as **sugestões de recebimento** e um seletor de modo (valor: padrão, IA ou proposta; meio: PIX à vista, parcelado no escritório ou recorrente no Asaas, boleto parcelado ou cartão). PIX direto na chave não tem taxa; no cartão a taxa do Asaas é repassada ao cliente e o simulador para na parcela mínima. Em *Forma de pagamento* você escolhe se o valor vem da precificação padrão, da proposta da IA ou é digitado. O parcelamento do escritório tem **parcelas fixas e iguais com juros de 1% a.m.** (sistema de prestações fixas, o da Calculadora do Cidadão do Banco Central). Abaixo, o quadro de parcelas e a cobrança no Asaas depois do contrato assinado.
 3. **Contrato:** as cláusulas como saem no contrato, com **editor de texto** do trecho da proposta: negrito, itálico, sublinhado, marca-texto, fonte (Lora, Poppins, Arial, Times New Roman), tamanho, parágrafo em destaque e lista. A formatação é gravada como `{|b i u m f=poppins t=14|}trecho{|/|}` e sai igual no HTML timbrado e no .docx.
+
+**Honorários na reunião:** na aba *Reunião* do atendimento, um quadro que só você vê já traz o padrão (ou a proposta salva) com êxito, desconto, parte ao final (ou tudo ao final) e a forma de pagamento (PIX à vista, parcelado no escritório ou cartão). *Recalcular* não grava nada; *Cliente aceitou: registrar no contrato* grava na proposta e gera uma nova minuta do contrato para revisar e publicar no Kit. No fim do quadro, retrátil, ficam as cláusulas de honorários e pagamento do contrato, com os trechos em destaque e o texto para ajustar.
 
 Teste: `php tests/negociacao.php`.
 
@@ -202,7 +206,7 @@ php tests/documentos.php            # documentos no timbrado (.docx e HTML pagin
 php tests/propostas.php             # propostas, parcelamento e cláusulas condicionais
 php tests/assistente_conversa.php   # conversa conduzida pela IA
 php tests/conversas.php             # conversas do cliente, novidades e avisos por e-mail
-php tests/negociacao.php            # proposta em abas: simulador do Asaas, guia de preço e avaliação pela IA
+php tests/negociacao.php            # precificação padrão, facilitação, simulador, honorários na reunião e avaliação pela IA
 php tests/limpeza.php               # migração que zerou os atendimentos (cópia de segurança)
 php tests/agenda.php                # agenda de Sidney: regra do horário, 3 pedidos, Google simulado
 php tests/deducao.php               # o que veio nos documentos não é perguntado de novo

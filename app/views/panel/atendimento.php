@@ -547,6 +547,8 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
     </details>
   <?php endif ?>
 
+  <?= render('panel/_reuniao_honorarios', ['id' => $id, 'c' => $c, 'form' => $form]) ?>
+
   <?php if ($meetings): ?>
     <h3>Histórico de reuniões</h3>
     <ul class="small at-hist">

@@ -171,6 +171,12 @@ function asaas_billing_type(array $d): string
     if ($p['condicao'] === 'parcelado' && $p['modalidade'] === 'cartao') {
         return 'CREDIT_CARD';
     }
+    if ($p['condicao'] === 'parcelado' && in_array($p['meio'] ?? '', ['pix', 'pix_recorrente'], true)) {
+        return 'PIX';
+    }
+    if ($p['condicao'] === 'parcelado' && ($p['meio'] ?? '') === 'boleto') {
+        return 'BOLETO';
+    }
     $map = ['pix' => 'PIX', 'boleto' => 'BOLETO', 'credito' => 'CREDIT_CARD'];
     $types = array_values(array_unique(array_filter(array_map(fn($f) => $map[$f] ?? null, $p['formas']))));
     return count($types) === 1 && count($p['formas']) === 1 ? $types[0] : 'UNDEFINED';
@@ -185,11 +191,11 @@ function asaas_plan(array $d): array
 {
     $t = proposal_totals($d);
     $p = $d['pagamento'];
-    if ($t['total'] <= 0) {
-        return [];
+    if ($t['agora'] <= 0) {
+        return []; // tudo para o final do processo: cobrado no encerramento, corrigido
     }
     if ($p['condicao'] === 'avista') {
-        return [['ref' => 'avista', 'rotulo' => 'Pagamento à vista', 'valor' => $t['total'], 'vencimento' => $p['vencimento'], 'parcelas' => 1]];
+        return [['ref' => 'avista', 'rotulo' => 'Pagamento à vista', 'valor' => $t['agora'], 'vencimento' => $p['vencimento'], 'parcelas' => 1]];
     }
     $out = [];
     if ($t['entrada']) {

@@ -527,6 +527,34 @@ function initial_panel_action(array $c, string $op): string
             $msg(initial_command($c, 'contrato', $in), 'Situação do contrato atualizada.');
             return 'kit';
 
+        case 'honorarios_reuniao':
+            // Honorários negociados na reunião: só o operador vê; com o aceite, vão para a proposta e o contrato.
+            $keys = ['precificacao_modo', 'fixos_valor', 'exito_percentual', 'desconto', 'final_pct', 'tudo_final', 'pagamento_tipo', 'meio',
+                'parcelas', 'primeiro_vencimento', 'entrada', 'texto_honorarios', 'texto_honorarios_base', 'texto_honorarios_manual', 'texto_honorarios_ref',
+                'texto_pagamento', 'texto_pagamento_base', 'texto_pagamento_manual', 'texto_pagamento_ref'];
+            $posted = array_intersect_key($_POST, array_flip($keys));
+            $acao = (string) input('acao');
+            if ($acao === 'limpar') {
+                unset($_SESSION['hon_reu'][$id]);
+                flash('ok', 'Valores da reunião voltaram aos da proposta.');
+                return 'honorarios';
+            }
+            [$d, $errors] = meeting_fees($id, $posted);
+            if ($acao !== 'registrar' || $errors) {
+                $_SESSION['hon_reu'][$id] = $posted;
+                if ($errors) {
+                    flash('error', implode(' ', $errors));
+                }
+                return 'honorarios';
+            }
+            proposal_save($id, $d, (int) current_user()['id']);
+            unset($_SESSION['hon_reu'][$id]);
+            audit('honorarios_reuniao', $id, brl(proposal_totals($d)['total']));
+            $err = kit_applicable($id, 'honorarios') ? kit_generate($c, 'honorarios') : null;
+            flash($err ? 'error' : 'ok', $err ? 'Honorários registrados na proposta, mas a minuta do contrato não foi gerada: ' . $err
+                : 'Honorários registrados. O contrato ganhou uma nova minuta com estas condições: revise e publique no Kit.');
+            return 'honorarios';
+
         case 'kit_gerar':
             $msg(kit_generate($c, (string) input('kind')), 'Minuta gerada com os dados atuais.');
             return 'kit-' . input('kind');
@@ -810,7 +838,7 @@ $router->get('/painel/propostas/{id}', function (string $id) {
 $router->post('/painel/propostas/{id}', function (string $id) {
     $u = require_user();
     $c = require_case_operator((int) $id);
-    [$d, $errors] = proposal_from_input($_POST);
+    [$d, $errors] = proposal_from_input($_POST, (int) $c['id']);
     if ($errors) {
         view('panel/proposta', ['meta_title' => 'Proposta · ' . $c['protocol'], 'c' => $c, 'pr' => proposal_get((int) $c['id']), 'd' => $d, 'errors' => $errors, 'g' => proposal_guide_from_input($_POST)], 'panel');
         return;
@@ -824,11 +852,11 @@ $router->post('/painel/propostas/{id}', function (string $id) {
 // Simulação e prévia das cláusulas, refeitas a cada alteração do formulário (nada é salvo).
 $router->post('/painel/propostas/{id}/previa', function (string $id) {
     $c = require_case_operator((int) $id);
-    [$d, $errors] = proposal_from_input($_POST);
+    [$d, $errors] = proposal_from_input($_POST, (int) $c['id']);
     json_out([
         'simulacao' => render('panel/_proposta_simulacao', ['d' => $d]),
-        'vendas' => render('panel/_proposta_vendas', ['d' => $d, 'opt' => sales_sim_options($_POST, $d)]),
-        'kpis' => render('panel/_proposta_kpis', ['c' => $c, 'd' => $d, 'g' => array_key_exists('base_manual', $_POST) ? proposal_guide_from_input($_POST) : proposal_guide((int) $c['id']), 'ev' => negotiation_history((int) $c['id'], 1)[0] ?? null, 'opt' => sales_sim_options($_POST, $d)]),
+        'vendas' => render('panel/_proposta_vendas', ['d' => $d, 'opt' => sales_sim_options($_POST, $d, (int) $c['id'])]),
+        'kpis' => render('panel/_proposta_kpis', ['c' => $c, 'd' => $d]),
         'auto' => $auto = proposal_auto_texts($d),
         'auto_html' => array_map('proposal_editor_html', $auto),
         'clausulas' => proposal_clause_preview((int) $c['id'], $d),
@@ -848,7 +876,7 @@ $router->post('/painel/propostas/{id}/avaliar', function (string $id) {
     proposal_guide_save((int) $c['id'], $g, (int) $u['id']);
     $d = null;
     if (isset($_POST['pagamento_tipo'])) {
-        [$d, $errors] = proposal_from_input($_POST);
+        [$d, $errors] = proposal_from_input($_POST, (int) $c['id']);
         if (!$errors) {
             proposal_save((int) $c['id'], $d, (int) $u['id']);
         }
@@ -1251,23 +1279,22 @@ function config_save_email(): void
 
 function config_save_precos(): void
 {
-    $rows = [];
-    foreach ((array) ($_POST['oab_label'] ?? []) as $i => $label) {
-        $label = trim(mb_substr((string) $label, 0, 160));
-        if ($label === '') {
-            continue;
+    $out = [];
+    foreach (PRICING_DEFAULTS as $k => $def) {
+        $raw = str_replace('%', '', (string) input($k));
+        if (is_int($def)) {
+            $v = money_cents($raw);
+            if ($v !== null && $v >= 0) {
+                $out[$k] = $v;
+            }
+        } else {
+            $v = parse_money($raw);
+            if ($v !== null && $v >= 0 && $v <= 100) {
+                $out[$k] = round($v, 2);
+            }
         }
-        $key = preg_replace('/[^a-z0-9_]/', '', (string) ($_POST['oab_key'][$i] ?? '')) ?: 'item_' . substr(md5($label), 0, 8);
-        $rows[] = ['key' => $key, 'label' => $label, 'valor' => money_cents((string) ($_POST['oab_valor'][$i] ?? '')),
-            'nota' => trim(mb_substr((string) ($_POST['oab_nota'][$i] ?? ''), 0, 160))];
     }
-    if ($rows) {
-        set_setting('oab_tabela', json_encode($rows, JSON_UNESCAPED_UNICODE));
-    }
-    $pct = parse_money(str_replace('%', '', (string) input('indicacao_pct')));
-    if ($pct !== null && $pct >= 0 && $pct <= 200) {
-        set_setting('indicacao_pct', rtrim(rtrim(number_format($pct, 2, '.', ''), '0'), '.'));
-    }
+    set_setting('precificacao', array_diff_assoc($out, PRICING_DEFAULTS) ? json_encode($out) : null);
     if (input('fees_padrao') === '1') {
         set_setting('asaas_fees', null);
         return;
