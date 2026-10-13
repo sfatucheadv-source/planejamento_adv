@@ -15,7 +15,25 @@ $ev = $sig ? (json_decode((string) $sig['evidence'], true) ?: []) : [];
 $fuso = $ev['momento']['fuso'] ?? '-03:00';
 $events = ['assinatura_registrada' => 'Assinatura registrada e via em PDF guardada', 'via_enviada_email' => 'Via assinada enviada ao e-mail do assinante',
     'via_nao_enviada_email' => 'Tentativa de envio da via por e-mail sem sucesso', 'registro_legado' => 'Registro anterior à via em PDF: hashes do texto e do arquivo passam a ser exibidos separadamente',
-    'divergencia_arquivo' => 'Divergência detectada no arquivo guardado'];
+    'divergencia_arquivo' => 'Divergência detectada no arquivo guardado', 'pedido_criado' => 'Documento enviado para as assinaturas do escritório',
+    'pedido_substituido' => 'Pedido substituído por nova versão do documento', 'testemunha_assinou' => 'Testemunha assinou (aprovação no sistema)',
+    'advogado_assinou' => 'Advogado assinou com certificado digital'];
+$cpfMask = fn(?string $c) => strlen((string) $c) === 11 ? '•••.' . substr($c, 3, 3) . '.' . substr($c, 6, 3) . '-••' : '';
+$quando = fn(?string $t) => $t ? dt($t)->format('d/m/Y \à\s H:i:s') : '';
+// assinantes: equipe (na ordem em que assinaram) e o cliente
+$signers = [];
+foreach ($parties as $pt) {
+    if ($pt['signed_at']) {
+        $ce = json_decode((string) $pt['cert_info'], true) ?: [];
+        $pev = json_decode((string) $pt['evidence'], true) ?: [];
+        $signers[] = ['nome' => $pt['name'], 'papel' => $pt['role'] === 'testemunha' ? 'Testemunha ' . $pt['ord'] : 'Advogado, pelo escritório (contratada)', 'cpf' => $pt['cpf'], 'em' => $pt['signed_at'],
+            'meio' => $pt['role'] === 'testemunha' ? 'Aprovação no sistema com o usuário da equipe' : 'Certificado digital' . (!empty($ce['icp_brasil']) ? ' ICP-Brasil' : '') . ($ce ? ' · ' . $ce['titular'] . ' · emitido por ' . $ce['emissor'] . ' · série ' . $ce['serie'] : ''),
+            'extra' => preg_replace('/,?\s*(CPF [\d.\-]+|e-mail [^,]+|telefone [^,]+|residente em .*)$/u', '', (string) ($pev['usuario']['qualificacao'] ?? ''))];
+    }
+}
+if ($sig) {
+    $signers[] = ['nome' => $sig['signer_name'], 'papel' => 'Cliente (contratante)', 'cpf' => $sig['signer_cpf'], 'em' => $sig['signed_at'], 'meio' => 'Assinatura eletrônica com código enviado ao e-mail do cadastro', 'extra' => ''];
+}
 ?>
 <section class="page-hero">
   <div class="wrap narrow">
@@ -26,9 +44,35 @@ $events = ['assinatura_registrada' => 'Assinatura registrada e via em PDF guarda
 </section>
 <section class="section">
   <div class="wrap narrow prose verif">
-    <?php if (!$sig): ?>
+    <?php if (!$sig && $req): ?>
+      <p class="verif-estado <?= $state['cadeia'] ? '-ok' : '-erro' ?>"><strong>Documento em assinatura.</strong> O registro <?= e($req['code']) ?> existe: <?= e(SIG_REQUEST_STATES[$req['status']] ?? $req['status']) ?>. A via final e a conferência da cópia ficam disponíveis quando todos assinarem.</p>
+      <h2>Registro <?= e($req['code']) ?></h2>
+      <ul class="verif-dados">
+        <li><span>Documento</span><strong><?= e(kit_label($req['kind'])) ?></strong> · versão <?= (int) $req['version'] ?> · atendimento <?= e($req['protocol']) ?></li>
+        <li><span>SHA-256 do texto</span><code class="verif-hash"><?= e(sig_doc_hash($req)) ?></code></li>
+      </ul>
+    <?php endif ?>
+    <?php if ($signers): ?>
+      <h2>Assinantes</h2>
+      <ol class="verif-assinantes">
+        <?php foreach ($signers as $sg): ?>
+          <li><strong><?= e($sg['nome']) ?></strong> · <?= e($sg['papel']) ?><?= $sg['cpf'] ? ' · CPF ' . e($cpfMask($sg['cpf'])) : '' ?><br>
+            <span><?= e($quando($sg['em'])) ?> (horário de Brasília) · <?= e($sg['meio']) ?></span><?= $sg['extra'] ? '<br><span>' . e($sg['extra']) . '</span>' : '' ?></li>
+        <?php endforeach ?>
+      </ol>
+    <?php endif ?>
+    <?php if (!empty($state['digitais'])): ?>
+      <h2>Assinatura digital no PDF</h2>
+      <ul class="verif-dados">
+        <?php foreach ($state['digitais'] as $dg): $ci = $dg['certificado'] ?? []; ?>
+          <li><span><?= $dg['integra'] ? 'Assinatura digital íntegra' : 'Assinatura digital NÃO confere' ?></span><?= e(($ci['titular'] ?? '') . (!empty($ci['cpf']) ? ' · CPF ' . $cpfMask($ci['cpf']) : '') . ' · emitido por ' . ($ci['emissor'] ?? '?') . (!empty($ci['valido_ate']) ? ' · válido até ' . fmt_date((string) $ci['valido_ate']) : '')) ?>
+            <br><small><?= $dg['cobre_tudo'] ? 'Cobre o arquivo inteiro.' : 'Cobre o documento como o escritório assinou; o selo e a faixa do cliente foram acrescentados depois, sem alterar essa parte.' ?> A cadeia do certificado pode ser conferida no validador oficial do ITI (validar.iti.gov.br).</small></li>
+        <?php endforeach ?>
+      </ul>
+    <?php endif ?>
+    <?php if (!$sig && !$req): ?>
       <p class="verif-estado -erro"><strong>Código não encontrado.</strong> Confira se o código está igual ao impresso no selo ou na margem do documento.</p>
-    <?php else: ?>
+    <?php elseif ($sig): ?>
       <p class="verif-estado <?= $state['original'] && $state['cadeia'] ? '-ok' : '-erro' ?>">
         <?php if ($state['original'] && $state['cadeia']): ?>
           <strong>Registro de assinatura encontrado e preservado.</strong> Você abriu o registro <?= e($sig['code']) ?> pelo código do documento. Isso confirma que este registro existe no sistema do escritório — não que a cópia que você tem seja idêntica. Para isso, use “Conferir minha cópia” abaixo.
@@ -40,7 +84,6 @@ $events = ['assinatura_registrada' => 'Assinatura registrada e via em PDF guarda
       <h2>Registro <?= e($sig['code']) ?></h2>
       <ul class="verif-dados">
         <li><span>Documento</span><strong><?= e(kit_label($sig['kind'])) ?></strong> · versão <?= (int) $sig['version'] ?> · atendimento <?= e($sig['protocol']) ?></li>
-        <li><span>Signatário</span><strong><?= e($mask((string) $sig['signer_name'])) ?></strong> · assinatura eletrônica com confirmação por código no e-mail do cadastro</li>
         <li><span>Data e hora</span><?= e(dt($sig['signed_at'])->format('d/m/Y \à\s H:i:s')) ?> (horário de Brasília, UTC<?= e($fuso) ?>)</li>
         <li><span>Situação</span><?= $state['original'] ? 'Assinado · via original guardada sem alteração' : 'Assinado · via original com divergência' ?><?= $state['texto'] ? '' : ' · o texto da versão no sistema difere do aceito' ?></li>
         <?php if ($pdf): ?>
@@ -82,7 +125,7 @@ $events = ['assinatura_registrada' => 'Assinatura registrada e via em PDF guarda
         </ol>
         <p class="verif-nota">Cada entrada do histórico leva o hash da anterior; o sistema não aceita alterar nem apagar entradas. Corrente <?= $state['cadeia'] ? 'conferida agora, sem quebras' : 'com quebra — o escritório foi avisado' ?>.</p>
       <?php endif ?>
-      <p class="muted">A autoria foi confirmada pela conta do assinante na área do cliente, pelo nome e CPF e por um código enviado ao e-mail do cadastro. Os registros técnicos completos (IP, aparelho, localização e posição do selo) ficam guardados no escritório. Assinatura eletrônica nos termos da MP 2.200-2/2001, art. 10, § 2º, sem certificado ICP-Brasil.</p>
+      <p class="muted">A autoria foi confirmada pela conta do assinante na área do cliente, pelo nome e CPF e por um código enviado ao e-mail do cadastro. As testemunhas assinam com o próprio usuário da equipe no sistema do escritório; o advogado, quando assina, usa certificado digital. Os registros técnicos completos (IP, aparelho, localização e posição de cada selo) ficam guardados no escritório. Assinaturas eletrônicas nos termos da MP 2.200-2/2001, art. 10, § 2º.</p>
     <?php endif ?>
   </div>
 </section>

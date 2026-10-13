@@ -158,7 +158,7 @@ setting('__reset');
 $sidId = (int) scalar("SELECT id FROM users WHERE email = 'sidney@teste.local'");
 ok(operator_id() === $sidId, 'primeiro acesso vira o operador configurado (não “primeiro usuário com função”)');
 ok(str_contains($sid->html, 'Atendimentos') && str_contains($sid->url, '/painel/atendimentos'), 'operador entra direto na lista de atendimentos');
-ok(!str_contains($sid->html, '>Equipe<'), 'menu do operador não mostra Equipe nem “Minha fila” por função');
+ok(!str_contains($sid->html, '>Minha fila<') && str_contains($sid->html, '>Assinaturas<'), 'menu do operador sem “Minha fila” por função; com Assinaturas e Equipe (testemunhas e advogado assinam pelo painel)');
 
 echo "\nP2. Entrada pelo assistente e urgência imediata (T01, T03, T04)\n";
 $cli = new Browser($base);

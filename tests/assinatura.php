@@ -85,6 +85,8 @@ foreach (['nome_completo' => 'Bruno Teste Souza', 'cpf' => '529.982.247-25', 'ge
     'identificacao' => 'RG 123', 'cep' => '80010-000', 'logradouro' => 'Rua A', 'numero' => '1', 'bairro' => 'Centro', 'cidade' => 'Curitiba', 'uf' => 'PR', 'banco' => 'Banco Exemplo S.A.', 'contrato_numero' => '987'] as $k => $v) {
     set_field($id, $k, $v, 'informado', 'contrato');
 }
+// Este teste cobre o caminho em que só o cliente assina; testemunhas e advogado antes dele: tests/assinatura_equipe.php
+q("UPDATE doc_templates SET body = ? WHERE key = 'honorarios'", [preg_replace('/^@assinatura \{\{(escritorio|testemunha)[^\n]*\n?/m', '', (string) scalar("SELECT body FROM doc_templates WHERE key = 'honorarios'"))]);
 foreach (['honorarios', 'procuracao', 'parecer'] as $k) {
     kit_generate(find_case($id), $k);
     q("UPDATE case_artifact_versions SET status = 'publicado', published_at = ? WHERE case_id = ? AND kind = ?", [now_str(), $id, $k]);
@@ -206,7 +208,7 @@ ok(find_case($id)['contract_state'] === 'assinatura_pendente' && str_contains((s
 echo "\nS3b. Conferência pública e proteção do registro\n";
 $pub = new Http($base);
 $pub->get('/verificar/' . $sig['code']);
-ok(str_contains($pub->html, 'Registro de assinatura encontrado e preservado') && str_contains($pub->html, $sig['pdf_sha256']) && str_contains($pub->html, 'Bruno T. Souza') && !str_contains($pub->html, '529.982') && str_contains($pub->html, 'UTC-03:00'), 'o link do selo abre o registro direto: estado, signatário, data e hora com fuso e o hash do PDF');
+ok(str_contains($pub->html, 'Registro de assinatura encontrado e preservado') && str_contains($pub->html, $sig['pdf_sha256']) && str_contains($pub->html, 'Bruno Teste Souza') && !str_contains($pub->html, '529.982') && str_contains($pub->html, 'UTC-03:00'), 'o link do selo abre o registro direto: estado, signatário, data e hora com fuso e o hash do PDF');
 ok(str_contains($pub->html, 'Conferir minha cópia') && str_contains($pub->html, 'verificar.js') && str_contains($pub->html, 'não é enviado nem guardado') && str_contains($pub->html, 'não indica fraude'), 'conferência da cópia no navegador, com a explicação sobre reimpressões');
 ok($pub->get('/verificar/' . $sig['code'] . '/original') === $pdf, 'via original para ver e baixar: os mesmos bytes');
 $storeBefore = shell_exec('find ' . escapeshellarg($tmp) . ' -type f -not -path "*/sessions/*" -not -name "*.sqlite*" | sort | xargs md5sum');

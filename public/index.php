@@ -36,6 +36,7 @@ require APP_DIR . '/routes/portal.php';
 require APP_DIR . '/routes/panel.php';
 require APP_DIR . '/routes/inicial.php';
 require APP_DIR . '/routes/inicial_painel.php';
+require APP_DIR . '/routes/assinaturas.php';
 
 // Avisos por e-mail de novidades nas conversas: rodada leve ao fim da
 // requisição (no máximo uma por minuto), depois de entregar a resposta.

@@ -886,3 +886,5 @@ body.app-body { height: 100%; height: 100dvh; margin: 0; overflow: hidden; backg
 .verif-hash-calc { font-size: .8rem; color: var(--muted); word-break: break-all; }
 .verif-historico { padding-left: 1.2em; }
 .verif-historico span { color: var(--muted); font-size: .9rem; }
+.verif-assinantes { padding-left: 1.2em; display: grid; gap: 10px; }
+.verif-assinantes span { color: var(--muted); font-size: .9rem; }

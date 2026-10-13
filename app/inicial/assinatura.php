@@ -171,11 +171,22 @@ function sig_when(DateTimeImmutable $t): array
 }
 
 /** Dados impressos no selo e na faixa (os definitivos ficam guardados no registro). */
-function sig_meta(array $c, array $v, ?array $done = null): array
+function sig_meta(array $c, array $v, ?array $done = null, ?array $req = null): array
 {
-    return ['nome' => sig_expected_name($c), 'titulo' => kit_label($v['kind']), 'protocolo' => (string) $c['protocol'], 'versao' => (int) $v['version'],
-        'quando' => $done['quando'] ?? null, 'fuso' => $done['fuso'] ?? null, 'codigo' => $done['codigo'] ?? null, 'url' => $done['url'] ?? null,
+    $m = ['nome' => sig_expected_name($c), 'titulo' => kit_label($v['kind']), 'protocolo' => (string) $c['protocol'], 'versao' => (int) $v['version'],
+        'quando' => $done['quando'] ?? null, 'fuso' => $done['fuso'] ?? null, 'codigo' => $done['codigo'] ?? ($req['code'] ?? null), 'url' => $done['url'] ?? null,
         'host' => preg_replace('#^https?://#', '', rtrim(public_root(), '/'))];
+    if ($req) {
+        // a faixa leva o cliente e quem do escritório já assinou
+        $m['assinantes'] = [['nome' => $m['nome'], 'papel' => 'cliente', 'quando' => $m['quando']]];
+        foreach (sig_parties((int) $req['id']) as $p) {
+            if ($p['signed_at']) {
+                $m['assinantes'][] = ['nome' => $p['name'], 'papel' => $p['role'], 'quando' => sig_when(dt($p['signed_at']))[0]];
+            }
+        }
+        $m['fuso'] ??= 'horário de Brasília, UTC' . now()->format('P');
+    }
+    return $m;
 }
 
 /** Rubrica: traços desenhados no quadro, {"w","h","s":[[[x,y],…],…]} em px do quadro. */
@@ -287,7 +298,7 @@ function sig_seal_ops(array $m, ?array $strokes): array
     $x = 28.0;
     $w = SEAL_W - $x - 2.0;
     $lines = [];
-    $lines[] = [...sig_fit_text('ASSINADO ELETRONICAMENTE', 'poppinssb', 5.8, $w), 'poppinssb', PDOC_ACENTO];
+    $lines[] = [...sig_fit_text($m['rotulo'] ?? 'ASSINADO ELETRONICAMENTE', 'poppinssb', 5.8, $w), 'poppinssb', PDOC_ACENTO];
     // nome por extenso: até duas linhas, diminuindo o corpo se preciso
     foreach ([7.5, 7.0, 6.5, 6.0] as $pt) {
         $nl = pdoc_break(pdoc_items([[$m['nome'], pdoc_style(['f' => 'poppins', 'w' => 700, 's' => $pt])]]), $w, $w, pdoc_style(['f' => 'poppins', 's' => $pt]));
@@ -321,19 +332,38 @@ function sig_seal_ops(array $m, ?array $strokes): array
  */
 function sig_band_ops(array $m, int $page, int $total): array
 {
-    $done = (bool) $m['codigo'];
-    $parts = $done
-        ? [['Documento assinado eletronicamente', 600, PDOC_ACENTO], ['por ' . $m['nome'], 700, PDOC_TINTA], ['em ' . $m['quando'] . ' (' . $m['fuso'] . ')', 400, PDOC_TINTA],
-            [$m['titulo'] . ', versão ' . $m['versao'] . ' · atendimento ' . $m['protocolo'], 400, PDOC_TINTA], ['Código de verificação ' . $m['codigo'], 600, PDOC_TINTA],
-            ['Confira em ' . $m['url'], 400, PDOC_TINTA], ['Página ' . $page . ' de ' . $total, 400, PDOC_SECUNDARIA]]
-        : [['Prévia da assinatura eletrônica', 600, PDOC_ACENTO], ['por ' . $m['nome'], 700, PDOC_TINTA], ['data, hora e código de verificação registrados ao concluir', 400, PDOC_SECUNDARIA],
-            [$m['titulo'] . ', versão ' . $m['versao'] . ' · atendimento ' . $m['protocolo'], 400, PDOC_TINTA], ['Página ' . $page . ' de ' . $total, 400, PDOC_SECUNDARIA]];
+    $done = (bool) $m['quando'];
+    $papel = ['cliente' => 'contratante', 'testemunha' => 'testemunha', 'advogado' => 'advogado, certificado digital'];
+    if (!empty($m['assinantes'])) {
+        // cliente e equipe: nome, papel e data e hora de cada um
+        $parts = [[$done ? 'Documento assinado eletronicamente' : 'Prévia das assinaturas eletrônicas', 600, PDOC_ACENTO]];
+        foreach ($m['assinantes'] as $a) {
+            $parts[] = [$a['nome'], 700, PDOC_TINTA];
+            $parts[] = ['(' . ($papel[$a['papel']] ?? $a['papel']) . ($a['quando'] ? ', ' . $a['quando'] : ', ao concluir') . ')', 400, $a['quando'] ? PDOC_TINTA : PDOC_SECUNDARIA];
+        }
+        $parts[] = [$m['fuso'] ?? 'horário de Brasília', 400, PDOC_TINTA];
+        $parts[] = [$m['titulo'] . ', versão ' . $m['versao'] . ' · atendimento ' . $m['protocolo'], 400, PDOC_TINTA];
+        if ($m['codigo']) {
+            $parts[] = ['Código de verificação ' . $m['codigo'], 600, PDOC_TINTA];
+        }
+        if ($done) {
+            $parts[] = ['Confira em ' . $m['url'], 400, PDOC_TINTA];
+        }
+        $parts[] = ['Página ' . $page . ' de ' . $total, 400, PDOC_SECUNDARIA];
+    } else {
+        $parts = $done
+            ? [['Documento assinado eletronicamente', 600, PDOC_ACENTO], ['por ' . $m['nome'], 700, PDOC_TINTA], ['em ' . $m['quando'] . ' (' . $m['fuso'] . ')', 400, PDOC_TINTA],
+                [$m['titulo'] . ', versão ' . $m['versao'] . ' · atendimento ' . $m['protocolo'], 400, PDOC_TINTA], ['Código de verificação ' . $m['codigo'], 600, PDOC_TINTA],
+                ['Confira em ' . $m['url'], 400, PDOC_TINTA], ['Página ' . $page . ' de ' . $total, 400, PDOC_SECUNDARIA]]
+            : [['Prévia da assinatura eletrônica', 600, PDOC_ACENTO], ['por ' . $m['nome'], 700, PDOC_TINTA], ['data, hora e código de verificação registrados ao concluir', 400, PDOC_SECUNDARIA],
+                [$m['titulo'] . ', versão ' . $m['versao'] . ' · atendimento ' . $m['protocolo'], 400, PDOC_TINTA], ['Página ' . $page . ' de ' . $total, 400, PDOC_SECUNDARIA]];
+    }
     $len = BAND_QR_Y - 3.0 - BAND_TOP;
     foreach (BAND_SIZES as $pt) {
         $runs = [];
         foreach ($parts as $i => [$t, $wt, $color]) {
             if ($i) {
-                $runs[] = [' · ', pdoc_style(['f' => 'poppins', 's' => $pt, 'c' => PDOC_SECUNDARIA])];
+                $runs[] = [str_starts_with($t, '(') ? ' ' : ' · ', pdoc_style(['f' => 'poppins', 's' => $pt, 'c' => PDOC_SECUNDARIA])];
             }
             $runs[] = [$t, pdoc_style(['f' => 'poppins', 'w' => $wt, 's' => $pt, 'c' => $color])];
         }
@@ -380,24 +410,29 @@ function sig_qr_text(string $url, string $code): string
     return $root . $path . '/V/' . $code;
 }
 
-/** Diagramação do documento (cache por versão: o texto publicado não muda). */
-function sig_doc_layout(array $v): array
+/**
+ * Diagramação do documento (cache por versão: o texto publicado não muda).
+ * Com o pedido de assinaturas da equipe, as linhas das testemunhas levam o
+ * nome e o CPF de cada uma, e cada linha de assinatura sabe de quem é.
+ */
+function sig_doc_layout(array $v, ?array $req = null): array
 {
     static $cache = [];
-    return $cache[$v['id'] . ':' . sig_doc_hash($v)] ??= pdoc_chrome(pdoc_layout(doc_blocks((string) $v['content']), SEAL_H + 2.5));
+    $c = find_case((int) $v['case_id']);
+    $w = sig_request_witnesses($req);
+    return $cache[$v['id'] . ':' . sig_doc_hash($v) . ':' . md5(json_encode($w))]
+        ??= pdoc_chrome(pdoc_layout(sig_tag_blocks(doc_blocks((string) $v['content']), $c, $w), SEAL_H + 2.5));
 }
 
 /**
- * Posição sugerida do selo: logo acima da linha de assinatura do cliente (ou da
- * última), descendo sobre a linha se o texto de cima estiver perto.
+ * Lugar para um selo sobre a linha de assinatura do papel pedido: logo acima
+ * da linha, no centro ou nos lados, onde não cobrir texto nem outro selo.
  */
-function sig_seal_default(array $c, array $v): array
+function sig_seal_place(array $L, string $role, array $avoid = []): array
 {
-    $L = sig_doc_layout($v);
-    $want = sig_norm_name(sig_expected_name($c));
     $pick = null;
     foreach ($L['sigs'] as $s) {
-        if ($want !== '' && str_contains(sig_norm_name($s[4]), $want)) {
+        if (($s[5] ?? null) === $role) {
             $pick = $s;
             break;
         }
@@ -406,8 +441,8 @@ function sig_seal_default(array $c, array $v): array
     if (!$pick) {
         return sig_seal_clamp(['pagina' => count($L['pages']), 'x' => (PDOC_W - SEAL_W) / 2, 'y' => 200.0], count($L['pages']));
     }
-    // Centro da linha; se o texto de cima atrapalhar, à esquerda ou à direita da mancha.
     $best = null;
+    $taken = $avoid[$pick[0]] ?? [];
     foreach ([($pick[1] + $pick[2]) / 2 - SEAL_W / 2, PDOC_LEFT, PDOC_LEFT + PDOC_TEXT_W - SEAL_W] as $x) {
         $free = PDOC_TOP;
         foreach ($L['pages'][$pick[0] - 1] as $op) {
@@ -417,11 +452,23 @@ function sig_seal_default(array $c, array $v): array
         }
         $y = min(max($free + 1.0, $pick[3] - SEAL_H - 1.0), $pick[3] - SEAL_H + 1.0);
         $over = max(0.0, $free + 1.0 - $y);
+        foreach ($taken as [$tx, $ty, $tw, $th]) {
+            $ix = max(0.0, min($x + SEAL_W, $tx + $tw) - max($x, $tx));
+            $iy = max(0.0, min($y + SEAL_H, $ty + $th) - max($y, $ty));
+            $over += $ix * $iy;
+        }
         if (!$best || $over < $best[2] - 0.01) {
             $best = [$x, $y, $over];
         }
     }
     return sig_seal_clamp(['pagina' => $pick[0], 'x' => $best[0], 'y' => $best[1]], count($L['pages']));
+}
+
+/** Posição sugerida do selo do cliente: sobre a linha dele, sem cobrir os selos do escritório. */
+function sig_seal_default(array $c, array $v): array
+{
+    $req = function_exists('sig_request') ? sig_request((int) $v['id']) : null;
+    return sig_seal_place(sig_doc_layout($v, $req), 'cliente', sig_party_rects($req));
 }
 
 function sig_seal_clamp(array $s, int $pages): array
@@ -431,10 +478,16 @@ function sig_seal_clamp(array $s, int $pages): array
         'y' => round(max(2.0, min(PDOC_H - SEAL_H - 2.0, (float) $s['y'])), 2)];
 }
 
-/** Páginas com a faixa em todas e o selo no lugar escolhido. Sem $strokes: a prévia (sem selo). */
-function sig_signed_layout(array $v, array $m, ?array $strokes, ?array $seal): array
+/**
+ * Páginas com os selos da equipe já assinados, a faixa em todas e o selo do
+ * cliente no lugar escolhido. Sem $strokes: a prévia (sem o selo do cliente).
+ */
+function sig_signed_layout(array $v, array $m, ?array $strokes, ?array $seal, ?array $req = null): array
 {
-    $L = sig_doc_layout($v);
+    $L = sig_doc_layout($v, $req);
+    foreach (sig_party_seals($req) as $s) {
+        $L['pages'][$s['pagina'] - 1] = array_merge($L['pages'][$s['pagina'] - 1], $s['ops']);
+    }
     $n = count($L['pages']);
     foreach ($L['pages'] as $i => $ops) {
         $L['pages'][$i] = array_merge($ops, sig_band_ops($m, $i + 1, $n));
@@ -529,6 +582,11 @@ function sig_sign(array $c, array $v, array $in): array
     if (sig_for_version((int) $v['id'])) {
         return [null, 'Este documento já foi assinado.'];
     }
+    // Com testemunhas ou o escritório no documento, o cliente assina por último.
+    $req = sig_request_open($c, $v);
+    if ($req && $req['status'] !== 'cliente') {
+        return [null, 'O escritório ainda está assinando este documento. Você será avisado quando ele estiver pronto para a sua assinatura.'];
+    }
     if (($in['aceite'] ?? '') !== '1') {
         return [null, 'Marque que leu e concorda com o documento.'];
     }
@@ -542,7 +600,7 @@ function sig_sign(array $c, array $v, array $in): array
     }
     $png = (string) ($in['rubrica'] ?? '');
     $png = sig_image_ok($png) ? $png : null;
-    $L = sig_doc_layout($v);
+    $L = sig_doc_layout($v, $req);
     $pages = count($L['pages']);
     $posIn = is_string($in['selo'] ?? null) ? json_decode((string) $in['selo'], true) : null;
     $seal = is_array($posIn) && is_numeric($posIn['pagina'] ?? null) && is_numeric($posIn['x'] ?? null) && is_numeric($posIn['y'] ?? null)
@@ -557,15 +615,37 @@ function sig_sign(array $c, array $v, array $in): array
     $now = now();
     $utc = $now->setTimezone(new DateTimeZone('UTC'));
     $geo = sig_geo($in);
-    do {
-        $code = strtoupper(implode('-', str_split(substr(bin2hex(random_bytes(6)), 0, 12), 4)));
-    } while (one('SELECT 1 FROM doc_signatures WHERE code = ?', [$code]) || one('SELECT 1 FROM sig_log WHERE code = ?', [$code]));
+    if ($req) {
+        $code = (string) $req['code'];
+    } else {
+        do {
+            $code = strtoupper(implode('-', str_split(substr(bin2hex(random_bytes(6)), 0, 12), 4)));
+        } while (one('SELECT 1 FROM doc_signatures WHERE code = ?', [$code]) || one('SELECT 1 FROM sig_log WHERE code = ?', [$code]));
+    }
     [$quando, $fuso] = sig_when($now);
     $url = public_link('verificar/' . $code);
-    $m = sig_meta($c, $v, ['quando' => $quando, 'fuso' => $fuso, 'codigo' => $code, 'url' => $url]);
-    // A via definitiva: as páginas do documento, a faixa em todas e o selo onde o cliente pôs.
-    $pdf = pdoc_pdf(sig_signed_layout($v, $m, $strokes, $seal), ['titulo' => $m['titulo'] . ' · ' . $m['protocolo'] . ' · v' . $m['versao'] . ' · assinado',
-        'assunto' => 'Assinado eletronicamente por ' . $m['nome'] . ' em ' . $quando . ' (' . $fuso . ')', 'palavras' => 'verificação ' . $code . ' ' . $url, 'autor' => office('lawyer') ?: 'Sidney Fatuche']);
+    $m = sig_meta($c, $v, ['quando' => $quando, 'fuso' => $fuso, 'codigo' => $code, 'url' => $url], $req);
+    if ($req) {
+        // O PDF assinado pelo escritório fica intacto: o selo e a faixa do cliente entram como acréscimo.
+        $office = (string) @file_get_contents(sig_storage_dir() . '/' . basename((string) $req['signed_path']));
+        if ($office === '' || !hash_equals((string) $req['signed_sha256'], hash('sha256', $office))) {
+            sig_log($code, 'divergencia_arquivo', ['arquivo' => 'PDF assinado pelo escritório ausente ou alterado']);
+            return [null, 'O documento assinado pelo escritório não confere. Fale com Sidney.'];
+        }
+        $groups = [];
+        $band = [BAND_X - 1.0, BAND_TOP - 1.0, BAND_MAX_W + 2.0, BAND_QR_Y + BAND_QR - BAND_TOP + 2.0];
+        for ($i = 0; $i < $pages; $i++) {
+            $groups[$i][] = ['draw' => sig_band_ops($m, $i + 1, $pages), 'rect' => $band, 'name' => 'Verificacao', 'title' => 'Assinaturas e verificação · ' . $code];
+            $groups[$i][] = ['link' => $url, 'rect' => $band];
+        }
+        $groups[$seal['pagina'] - 1][] = ['draw' => pdoc_move(sig_seal_ops($m, $strokes), $seal['x'], $seal['y']), 'rect' => [$seal['x'], $seal['y'], SEAL_W, SEAL_H], 'name' => 'Assinatura', 'title' => 'Assinatura eletrônica de ' . $m['nome']];
+        $groups[$seal['pagina'] - 1][] = ['link' => $url, 'rect' => [$seal['x'], $seal['y'], SEAL_W, SEAL_H]];
+        $pdf = pdfx_add_annots($office, $groups, ['poppins', 'poppinsb', 'poppinssb']);
+    } else {
+        // A via definitiva: as páginas do documento, a faixa em todas e o selo onde o cliente pôs.
+        $pdf = pdoc_pdf(sig_signed_layout($v, $m, $strokes, $seal), ['titulo' => $m['titulo'] . ' · ' . $m['protocolo'] . ' · v' . $m['versao'] . ' · assinado',
+            'assunto' => 'Assinado eletronicamente por ' . $m['nome'] . ' em ' . $quando . ' (' . $fuso . ')', 'palavras' => 'verificação ' . $code . ' ' . $url, 'autor' => office('lawyer') ?: 'Sidney Fatuche']);
+    }
     $sha = hash('sha256', $pdf);
     $file = $code . '.pdf';
     $path = sig_storage_dir() . '/' . $file;
@@ -599,6 +679,9 @@ function sig_sign(array $c, array $v, array $in): array
     ]);
     sig_log($code, 'assinatura_registrada', ['versao_id' => (int) $v['id'], 'versao' => (int) $v['version'], 'hash_texto' => sig_doc_hash($v), 'hash_pdf' => $sha,
         'bytes' => strlen($pdf), 'paginas' => $pages, 'assinante' => sig_expected_name($c), 'assinado_em' => $now->format('Y-m-d H:i:s') . ' (' . $now->format('P') . ')', 'selo' => $seal]);
+    if ($req) {
+        q("UPDATE sig_requests SET status = 'concluido', updated_at = ? WHERE id = ?", [now_str(), $req['id']]);
+    }
     // Cópia idêntica (mesmos bytes) nos arquivos do atendimento, que também vai para o Drive.
     $dir = config('storage_dir') . '/uploads/' . $id;
     is_dir($dir) || mkdir($dir, 0700, true);
@@ -801,10 +884,20 @@ function sig_sheet_page(string $title, string $body, array $opts = []): string
  */
 function sig_sign_page(array $c, array $v): string
 {
-    $m = sig_meta($c, $v);
-    $L = sig_signed_layout($v, $m, null, null);
-    $seal = sig_seal_default($c, $v);
+    $req = sig_request_open($c, $v);
+    $m = sig_meta($c, $v, null, $req);
+    $L = sig_signed_layout($v, $m, null, null, $req);
+    if ($req && $req['status'] !== 'cliente') {
+        // o escritório ainda assina: o cliente lê e pode pedir retificação
+        $faltam = array_map(fn($p) => SIG_PARTY_LABELS[$p['role']] . ($p['role'] === 'testemunha' ? ' ' . $p['ord'] : ''), array_filter(sig_parties((int) $req['id']), fn($p) => !$p['signed_at']));
+        return sig_sheet_page(kit_label($v['kind']) . ' · ' . $c['protocol'],
+            '<header class="folhas-topo"><strong>' . e(kit_label($v['kind'])) . '</strong><span>versão ' . (int) $v['version'] . ' · atendimento ' . e($c['protocol']) . '</span></header>'
+            . '<main class="folhas">' . sig_sheets_html($L) . '</main>'
+            . sig_client_panel($c, $v, 'O escritório está assinando este documento (' . implode(', ', $faltam) . '). Você recebe um aviso quando ele estiver pronto para a sua assinatura; enquanto isso, leia com calma e, se algo estiver errado, peça retificação.'),
+            ['noprint' => true, 'scripts' => [asset('js/assinatura.js')]]);
+    }
     $label = kit_label($v['kind']);
+    $seal = sig_seal_default($c, $v);
     $dados = ['selo' => ['w' => SEAL_W, 'h' => SEAL_H, 'minX' => SEAL_MIN_X, 'folhaW' => PDOC_W, 'folhaH' => PDOC_H, 'tinta' => SEAL_INK] + $seal, 'paginas' => count($L['pages'])];
     $json = json_encode($dados, JSON_UNESCAPED_UNICODE | JSON_HEX_TAG | JSON_HEX_AMP);
     $sealSvg = '<svg viewBox="0 0 ' . SEAL_W . ' ' . SEAL_H . '" xmlns="http://www.w3.org/2000/svg">' . pdoc_svg(sig_seal_ops($m, null)) . '<g data-rubrica></g></svg>';
@@ -821,7 +914,7 @@ function sig_sign_page(array $c, array $v): string
 function sig_view_page(array $c, array $v, array $sig, bool $justSigned): string
 {
     $seal = json_decode((string) $sig['seal'], true) ?: [];
-    $L = sig_signed_layout($v, $seal['meta'] ?? sig_meta($c, $v), json_decode((string) $sig['strokes'], true), $seal);
+    $L = sig_signed_layout($v, $seal['meta'] ?? sig_meta($c, $v), json_decode((string) $sig['strokes'], true), $seal, one('SELECT * FROM sig_requests WHERE version_id = ? AND status = ?', [$v['id'], 'concluido']));
     $base = url('cliente/documento-kit/' . $v['id'] . '/pdf');
     $top = '<header class="folhas-topo -assinado"><strong>' . e(kit_label($v['kind'])) . ' · assinado</strong><span>' . e(fmt_datetime((string) $sig['signed_at'])) . ' · código ' . e($sig['code']) . '</span>'
         . '<nav><a class="assin-btn" href="' . e($base . '?baixar=1') . '">Baixar o PDF assinado</a><a class="assin-btn -sec" href="' . e($base) . '" target="_blank" rel="noopener">Abrir o PDF</a>'
@@ -832,7 +925,7 @@ function sig_view_page(array $c, array $v, array $sig, bool $justSigned): string
 }
 
 /** Barra e janelas: dados e rubrica → posicionar o selo → código e aceite. Retificação à parte. */
-function sig_client_panel(array $c, array $v): string
+function sig_client_panel(array $c, array $v, ?string $waiting = null): string
 {
     $base = url('cliente/documento-kit/' . $v['id']);
     $email = (string) $c['client_email'];
@@ -840,10 +933,10 @@ function sig_client_panel(array $c, array $v): string
     $rect = one("SELECT * FROM doc_rectifications WHERE version_id = ? AND status = 'aberta' ORDER BY id DESC LIMIT 1", [$v['id']]);
     $tok = csrf_field();
     return '<div class="assin" data-assin data-base="' . e($base) . '">'
-        . '<div class="assin-barra" data-barra="inicio"><p>' . ($rect ? '<strong>Retificação enviada em ' . e(fmt_datetime($rect['created_at'])) . '.</strong> Sidney vai revisar; você ainda pode assinar se preferir.'
-            : 'Leia o documento com atenção. Você pode <strong>assinar</strong> ou <strong>pedir retificação</strong>.') . '</p>'
+        . '<div class="assin-barra" data-barra="inicio"><p>' . ($rect ? '<strong>Retificação enviada em ' . e(fmt_datetime($rect['created_at'])) . '.</strong> Sidney vai revisar' . ($waiting ? '.' : '; você ainda pode assinar se preferir.')
+            : ($waiting !== null ? e($waiting) : 'Leia o documento com atenção. Você pode <strong>assinar</strong> ou <strong>pedir retificação</strong>.')) . '</p>'
         . '<div class="assin-acoes"><button type="button" class="assin-btn -sec" data-abrir="retificar">Pedir retificação</button>'
-        . '<button type="button" class="assin-btn" data-abrir="assinar">Assinar documento</button></div></div>'
+        . ($waiting === null ? '<button type="button" class="assin-btn" data-abrir="assinar">Assinar documento</button>' : '') . '</div></div>'
 
         . '<div class="assin-barra -selo" data-barra="selo" hidden><p><strong>Arraste o selo</strong> até o lugar da sua assinatura — em qualquer página. <span data-selo-onde></span></p>'
         . '<div class="assin-acoes"><button type="button" class="assin-btn -sec" data-voltar>Voltar</button><button type="button" class="assin-btn" data-confirmar-selo>Confirmar a posição</button></div></div>'

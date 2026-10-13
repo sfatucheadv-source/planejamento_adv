@@ -685,13 +685,19 @@ function sig_by_code(string $code): ?array
  */
 $router->get('/verificar/{code}', function (string $code) {
     $sig = sig_by_code($code);
+    $req = one('SELECT r.*, v.kind, v.version, v.content, c.protocol, c.client_name FROM sig_requests r JOIN case_artifact_versions v ON v.id = r.version_id JOIN cases c ON c.id = r.case_id WHERE r.code = ?',
+        [strtoupper(substr(preg_replace('/[^A-Za-z0-9-]/', '', $code), 0, 20))]);
     $state = null;
-    if ($sig) {
-        [$chain, $log] = sig_log_check((string) $sig['code']);
-        $state = ['original' => sig_original($sig) !== null, 'cadeia' => $chain, 'log' => $log, 'texto' => hash_equals((string) $sig['doc_hash'], hash('sha256', (string) $sig['content']))];
+    if ($sig || $req) {
+        [$chain, $log] = sig_log_check((string) ($sig['code'] ?? $req['code']));
+        $state = ['original' => $sig ? sig_original($sig) !== null : false, 'cadeia' => $chain, 'log' => $log,
+            'texto' => hash_equals((string) ($sig['doc_hash'] ?? sig_doc_hash($req)), hash('sha256', (string) ($sig['content'] ?? $req['content'])))];
+        // assinatura digital (certificado) dentro do PDF: confere de novo a cada consulta
+        $file = $sig && $sig['pdf_path'] ? sig_storage_dir() . '/' . basename((string) $sig['pdf_path']) : ($req && $req['signed_path'] ? sig_storage_dir() . '/' . basename((string) $req['signed_path']) : '');
+        $state['digitais'] = $file !== '' && is_file($file) ? pdfx_signatures((string) file_get_contents($file)) : [];
     }
     header('Cache-Control: no-store');
-    view('site/verificar', ['meta_title' => 'Conferir assinatura', 'noindex' => true, 'sig' => $sig, 'state' => $state, 'code' => $code]);
+    view('site/verificar', ['meta_title' => 'Conferir assinatura', 'noindex' => true, 'sig' => $sig, 'req' => $req, 'parties' => $req ? sig_parties((int) $req['id']) : [], 'state' => $state, 'code' => $code]);
 });
 
 /** Endereço curto do QR Code. */

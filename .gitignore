@@ -11,3 +11,4 @@ app/config.local.php
 storage/backup-*
 storage/mail/
 storage/assinados/
+storage/certificados/

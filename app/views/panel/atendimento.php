@@ -627,6 +627,11 @@ $abaBadge = ['resumo' => count($critMiss), 'documentos' => count($docsAtivos) - 
           <?php if ($v && !empty($noDrive[$v['id']])): ?><a class="tag tag-blue" href="https://drive.google.com/file/d/<?= e(rawurlencode((string) $noDrive[$v['id']])) ?>/view" target="_blank" rel="noopener">.docx no Drive</a><?php endif ?>
         </div>
         <?php if ($it['stale']): ?><p class="fk-aviso">Os dados mudaram depois desta versão: gere uma nova.</p><?php endif ?>
+        <?php $sreq = $v && $v['status'] === 'publicado' ? sig_request((int) $v['id']) : null; if ($sreq): ?>
+          <p class="fk-assin">Assinaturas do escritório: <strong><?= e(SIG_REQUEST_STATES[$sreq['status']] ?? $sreq['status']) ?></strong> ·
+            <?= e(implode(' · ', array_map(fn($p) => SIG_PARTY_LABELS[$p['role']] . ($p['role'] === 'testemunha' ? ' ' . $p['ord'] : '') . ': ' . ($p['signed_at'] ? ($p['name'] . ' ✓') : 'pendente'), sig_parties((int) $sreq['id'])))) ?>
+            · <a href="<?= e(url('painel/assinaturas')) ?>">abrir assinaturas</a></p>
+        <?php endif ?>
         <?php if ($vsig): $vev = json_decode((string) $vsig['evidence'], true) ?: []; ?>
           <p class="fk-assin">Assinado por <strong><?= e($vsig['signer_name']) ?></strong> · código <?= e($vsig['code']) ?> · IP <?= e($vsig['ip']) ?> · local: <?= e(sig_geo_text($vev['localizacao'] ?? [])) ?><?= isset($vev['selo']['pagina']) ? ' · selo na página ' . (int) $vev['selo']['pagina'] : '' ?><?= $vsig['pdf_sha256'] ? '<br><span class="hint">SHA-256 do PDF: ' . e($vsig['pdf_sha256']) . '</span>' : '' ?></p>
         <?php endif ?>

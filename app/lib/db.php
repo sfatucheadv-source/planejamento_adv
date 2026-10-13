@@ -715,6 +715,47 @@ CREATE TRIGGER IF NOT EXISTS sig_log_sem_exclusao BEFORE DELETE ON sig_log
 BEGIN SELECT RAISE(ABORT, 'O histórico da assinatura não pode ser apagado.'); END;
 SQL;
 
+    // Versão 21 — assinaturas da equipe: testemunhas (aprovação no sistema) e o
+    // advogado (certificado digital), antes do cliente. Qualificação e rubrica
+    // de cada usuário (colunas acrescentadas em migrate_team_signatures).
+    $migrations[21] = <<<SQL
+CREATE TABLE IF NOT EXISTS sig_requests (
+    id INTEGER PRIMARY KEY,
+    case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE CASCADE,
+    version_id INTEGER NOT NULL UNIQUE REFERENCES case_artifact_versions(id) ON DELETE CASCADE,
+    code TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL DEFAULT 'testemunhas',
+    base_path TEXT,
+    base_sha256 TEXT,
+    signed_path TEXT,
+    signed_sha256 TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sig_requests_status ON sig_requests(status);
+CREATE TABLE IF NOT EXISTS sig_parties (
+    id INTEGER PRIMARY KEY,
+    request_id INTEGER NOT NULL REFERENCES sig_requests(id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    ord INTEGER NOT NULL DEFAULT 1,
+    user_id INTEGER REFERENCES users(id),
+    name TEXT,
+    cpf TEXT,
+    seal TEXT,
+    strokes TEXT,
+    method TEXT,
+    cert_info TEXT,
+    evidence TEXT,
+    ip TEXT,
+    user_agent TEXT,
+    signed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sig_parties_user ON sig_parties(user_id, signed_at);
+CREATE TRIGGER IF NOT EXISTS sig_parties_protegido BEFORE UPDATE ON sig_parties
+WHEN OLD.signed_at IS NOT NULL
+BEGIN SELECT RAISE(ABORT, 'A assinatura registrada não pode ser alterada.'); END;
+SQL;
+
     foreach ($migrations as $v => $sql) {
         if ($v > $version) {
             if ($v === 11) {
@@ -752,6 +793,14 @@ SQL;
             }
             if ($v === 20) {
                 migrate_signatures_pdf($pdo);
+            }
+            if ($v === 21) {
+                $cols = array_column($pdo->query('PRAGMA table_info(users)')->fetchAll(), 'name');
+                foreach (['profile' => 'TEXT', 'signature_strokes' => 'TEXT', 'signature_at' => 'TEXT', 'cert_path' => 'TEXT', 'cert_info' => 'TEXT', 'cert_at' => 'TEXT'] as $col => $type) {
+                    if (!in_array($col, $cols, true)) {
+                        $pdo->exec("ALTER TABLE users ADD COLUMN $col $type");
+                    }
+                }
             }
             if ($v === 17) {
                 $st = $pdo->prepare('SELECT body FROM doc_templates WHERE key = ?');

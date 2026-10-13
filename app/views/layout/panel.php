@@ -6,7 +6,9 @@ $openTasks = $u ? (int) scalar("SELECT COUNT(*) FROM tasks WHERE status = 'abert
 $operator = $u && is_operator($u);
 $queueCount = $u ? count(guide_queue($u)[0]) : 0;
 $attCount = $operator ? (int) scalar("SELECT COUNT(*) FROM cases WHERE workflow_version = 'simple_v1' AND execution_started_at IS NULL AND operator_id = ? AND initial_status <> 'completed' AND archived_at IS NULL AND ((activity_at IS NOT NULL AND (activity_seen_at IS NULL OR activity_at > activity_seen_at)) OR (urgency_signal IS NOT NULL AND urgency_reviewed_at IS NULL))", [$u['id']]) : 0;
+$sigCount = $u ? count(sig_my_pending((int) $u['id'])) : 0;
 $icons = [
+    'pen' => 'M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
     'list' => 'M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01',
     'pulse' => 'M3 12h4l3 8 4-16 3 8h4',
     'rows' => 'M4 6h16M4 12h16M4 18h10',
@@ -29,18 +31,21 @@ $nav = $operator ? [
     'painel/fila' => ['Execução', $icons['pulse']],
     'painel/casos' => ['Casos contratados', $icons['rows']],
     'painel/tarefas' => ['Tarefas', $icons['check']],
+    'painel/assinaturas' => ['Assinaturas', $icons['pen']],
     'painel/modelos-documentos' => ['Modelos de documentos', $icons['doc']],
     'painel/propostas' => ['Propostas', $icons['coin']],
     'painel/variaveis' => ['Variáveis dos documentos', $icons['braces']],
     'painel/modelos' => ['Mensagens', $icons['chat']],
     'painel/assistente' => ['Assistente com IA', $icons['spark']],
     'painel/indicadores' => ['Indicadores', $icons['bars']],
+    'painel/equipe' => ['Equipe', $icons['team']],
     'painel/configuracoes' => ['Configurações', $icons['gear']],
 ] : [
     'painel/fila' => ['Minha fila', $icons['list']],
     'painel' => ['Visão geral', $icons['pulse']],
     'painel/casos' => ['Casos', $icons['rows']],
     'painel/tarefas' => ['Tarefas', $icons['check']],
+    'painel/assinaturas' => ['Assinaturas', $icons['pen']],
     'painel/casos/novo' => ['Novo atendimento', $icons['plus']],
     'painel/indicadores' => ['Indicadores', $icons['bars']],
     'painel/modelos' => ['Mensagens', $icons['chat']],
@@ -71,7 +76,7 @@ $nav = $operator ? [
             || ($href === 'painel/atendimentos' && str_starts_with($path, '/painel/atendimento/'))
             || (str_starts_with($path, '/' . $href) && !($href === 'painel/casos' && str_starts_with($path, '/painel/casos/novo')) && !($href === 'painel/atendimentos' && str_starts_with($path, '/painel/atendimentos/novo')) && !($href === 'painel/modelos' && str_starts_with($path, '/painel/modelos-')));
       ?>
-        <a class="<?= $active ? 'is-active' : '' ?>" href="<?= e(url($href)) ?>"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="<?= $icon ?>" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><?= e($label) ?><?php if ($href === 'painel/fila' && $queueCount): ?><span class="pill"><?= $queueCount ?></span><?php endif ?><?php if ($href === 'painel/atendimentos' && $attCount): ?><span class="pill"><?= $attCount ?></span><?php endif ?><?php if ($href === 'painel/tarefas' && $openTasks): ?><span class="pill"><?= $openTasks ?></span><?php endif ?></a>
+        <a class="<?= $active ? 'is-active' : '' ?>" href="<?= e(url($href)) ?>"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="<?= $icon ?>" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><?= e($label) ?><?php if ($href === 'painel/fila' && $queueCount): ?><span class="pill"><?= $queueCount ?></span><?php endif ?><?php if ($href === 'painel/atendimentos' && $attCount): ?><span class="pill"><?= $attCount ?></span><?php endif ?><?php if ($href === 'painel/tarefas' && $openTasks): ?><span class="pill"><?= $openTasks ?></span><?php endif ?><?php if ($href === 'painel/assinaturas' && $sigCount): ?><span class="pill"><?= $sigCount ?></span><?php endif ?></a>
       <?php endforeach ?>
     </nav>
     <div class="side-foot">

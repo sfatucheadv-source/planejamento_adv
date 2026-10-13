@@ -424,7 +424,7 @@ function pdoc_paras(array $blocks, float $sealH = 0.0): array
                 $st = $sans(['s' => 11.0, 'w' => 700]);
                 $name = $b['lines'][0];
                 $out[] = $P(['runs' => pdoc_smallcaps(array_map(fn($r) => [$r[0], ['caps' => true] + $r[1]], pdoc_runs($name, $st))), 'align' => 'C', 'mult' => 1.2,
-                    'before' => ($compact ? 10 : max(16, $sealH)) + 1.4, 'left' => 36, 'right' => 36, 'break' => $q, 'keep' => true, 'deco' => 'sigline', 'group' => $g, 'sig' => $name, 'base' => $st]);
+                    'before' => ($compact ? 10 : max(16, $sealH)) + 1.4, 'left' => 36, 'right' => 36, 'break' => $q, 'keep' => true, 'deco' => 'sigline', 'group' => $g, 'sig' => $name, 'papel' => $b['papel'] ?? null, 'base' => $st]);
                 $rest = array_slice($b['lines'], 1);
                 foreach ($rest as $k => $l) {
                     $st2 = $sans(['s' => 9.0, 'c' => PDOC_SECUNDARIA]);
@@ -538,7 +538,7 @@ function pdoc_layout(array $blocks, float $sealH = 0.0): array
                 $x2 = PDOC_LEFT + PDOC_TEXT_W - $p['right'];
                 $ly = $top - 1.4;
                 $pages[$pg][] = ['l', $x1, $ly, $x2, $ly, 0.75 * PDOC_PT, PDOC_TINTA];
-                $sigs[] = [$pg + 1, $x1, $x2, $ly, (string) $p['sig']];
+                $sigs[] = [$pg + 1, $x1, $x2, $ly, (string) $p['sig'], $p['papel'] ?? null];
             }
             if ($p['deco'] === 'bottom' && $k + $fit === $count) {
                 $pages[$pg][] = ['l', PDOC_LEFT, $y + 1.06, PDOC_LEFT + PDOC_TEXT_W, $y + 1.06, 0.5 * PDOC_PT, PDOC_REGUA];
@@ -639,6 +639,11 @@ function pdoc_pdf(array $layout, array $meta = []): string
     $pdf->SetSubject((string) ($meta['assunto'] ?? ''), true);
     $pdf->SetKeywords((string) ($meta['palavras'] ?? ''), true);
     $pdf->SetCreator('Sidney Fatuche Advocacia · assinatura eletrônica', true);
+    // fontes que acréscimos posteriores (selo e faixa do cliente) usam: vão embutidas desde já
+    foreach ($meta['fontes'] ?? [] as $fk) {
+        $pdf->AddFont($fk, '', $fk . '.json', APP_DIR . '/vendor/fpdf/font');
+        $pdf->loaded[$fk] = true;
+    }
     $k = $pdf->kk();
     $H = $pdf->hh();
     $img = ROOT_DIR . '/public/assets/formatador/';

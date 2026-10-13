@@ -602,6 +602,8 @@ function kit_publish(array $c, int $vid): ?string
     add_event((int) $c['id'], 'kit', 'Disponível para você: ' . $label, 'Versão ' . $v['version'] . '.', true);
     chat_post((int) $c['id'], 'operator', 'Disponibilizei para você: ' . $label . ' (versão ' . $v['version'] . '). Veja em “Reunião e proposta”.');
     contract_sync((int) $c['id']); // enviado ao cliente: assinatura pendente
+    // com testemunhas ou o escritório no documento, o escritório assina antes do cliente
+    sig_request_open(find_case((int) $c['id']), one('SELECT * FROM case_artifact_versions WHERE id = ?', [$vid]));
     return null;
 }
 

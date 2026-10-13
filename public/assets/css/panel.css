@@ -1056,3 +1056,16 @@ tr.muted td { color: var(--muted); text-decoration: line-through; }
 .contr-docs li.is-pend { background: #FFF6DB; }
 .contr-docs li.is-ok::before { content: "✓ "; color: var(--green); font-weight: 700; }
 .contr-docs li.is-pend::before { content: "… "; }
+
+/* Assinaturas da equipe */
+.sig-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.sig-lista li { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+.sig-pedido { padding: 10px 0; border-top: 1px solid var(--line, #E3E6EA); }
+.sig-pedido:first-of-type { border-top: 0; }
+.sig-partes { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; font-size: .92rem; }
+.sig-partes li { padding: 5px 10px; border-radius: 6px; background: #FFF6DB; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.sig-partes li.is-ok { background: var(--green-soft); }
+.sig-partes form.inline { display: inline-flex; gap: 6px; align-items: center; }
+.rubrica-atual { width: 160px; border: 1px solid var(--line, #E3E6EA); border-radius: 8px; background: #fff; margin-bottom: 10px; }
+.rubrica-atual svg { display: block; width: 100%; height: auto; }
+.rubrica-pad { display: block; width: 100%; height: 150px; border: 1px dashed #A7ACB4; border-radius: 8px; background: #FAFAFB; touch-action: none; cursor: crosshair; }
